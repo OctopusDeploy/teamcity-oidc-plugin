@@ -34,8 +34,12 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
         if (!jwtBuildFeatures.isEmpty()) {
             try {
-                JwtBuildFeature jwtBuildFeature = (JwtBuildFeature) jwtBuildFeatures.stream().findFirst().get().getBuildFeature();
+                SBuildFeatureDescriptor descriptor = jwtBuildFeatures.stream().findFirst().get();
+                JwtBuildFeature jwtBuildFeature = (JwtBuildFeature) descriptor.getBuildFeature();
                 RSAKey rsaKey = jwtBuildFeature.getRsaKey();
+
+                int ttlMinutes = Integer.parseInt(
+                        descriptor.getParameters().getOrDefault("ttl_minutes", "10"));
 
                 SRunningBuild build = buildStartContext.getBuild();
 
@@ -63,7 +67,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                         .issuer(buildServerRootUrl)
                         .issueTime(now.toDate()) // iat
                         .notBeforeTime(now.toDate()) // nbf
-                        .expirationTime(now.plusHours(1).toDate()) // exp
+                        .expirationTime(now.plusMinutes(ttlMinutes).toDate()) // exp
                         .claim("branch", branchName)
                         .claim("build_type_external_id", build.getBuildTypeExternalId())
                         .claim("project_external_id", build.getProjectExternalId())

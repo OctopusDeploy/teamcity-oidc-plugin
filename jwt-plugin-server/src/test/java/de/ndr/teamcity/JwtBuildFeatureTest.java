@@ -2,6 +2,7 @@ package de.ndr.teamcity;
 
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
+import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,9 @@ public class JwtBuildFeatureTest {
     @Mock
     private ServerPaths serverPaths;
 
+    @Mock
+    private PluginDescriptor pluginDescriptor;
+
     @TempDir
     private File tempDir;
 
@@ -37,7 +41,7 @@ public class JwtBuildFeatureTest {
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
         assertTrue(keyFile.exists());
         String fileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(fileContents).startsWith("scrambled:");
@@ -51,7 +55,7 @@ public class JwtBuildFeatureTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
 
-        new JwtBuildFeature(serverPaths);
+        new JwtBuildFeature(serverPaths, pluginDescriptor);
 
         Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(keyFile.toPath());
         assertThat(permissions).containsExactlyInAnyOrder(
@@ -68,10 +72,10 @@ public class JwtBuildFeatureTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
 
-        new JwtBuildFeature(serverPaths);
+        new JwtBuildFeature(serverPaths, pluginDescriptor);
         String keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
 
-        new JwtBuildFeature(serverPaths);
+        new JwtBuildFeature(serverPaths, pluginDescriptor);
         String keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(keyFileContents2).isEqualTo(keyFileContents);
     }

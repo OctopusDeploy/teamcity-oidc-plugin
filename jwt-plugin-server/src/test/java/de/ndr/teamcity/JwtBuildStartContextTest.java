@@ -3,6 +3,7 @@ package de.ndr.teamcity;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
+import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.users.SUser;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -44,6 +46,9 @@ public class JwtBuildStartContextTest {
     @Mock
     private ServerPaths serverPaths;
 
+    @Mock
+    private PluginDescriptor pluginDescriptor;
+
     @TempDir
     private File tempDir;
 
@@ -67,7 +72,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws NoSuchAlgorithmException, IOException, ParseException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -89,7 +94,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void branchClaimIsTheBranchNameNotAnObjectReference() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -116,9 +121,63 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void tokenTtlIsReadFromBuildFeatureParameters() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("JWT-Plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getBuildFeature()).thenReturn(jwtBuildFeature);
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("ttl_minutes", "5"));
+
+        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+        when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
+
+        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        long expirySeconds = jwt.getJWTClaimsSet().getExpirationTime().getTime() / 1000;
+        long issuedAtSeconds = jwt.getJWTClaimsSet().getIssueTime().getTime() / 1000;
+        assertThat(expirySeconds - issuedAtSeconds).isEqualTo(5 * 60);
+    }
+
+    @Test
+    public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("JWT-Plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getBuildFeature()).thenReturn(jwtBuildFeature);
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
+
+        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+        when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
+
+        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        long expirySeconds = jwt.getJWTClaimsSet().getExpirationTime().getTime() / 1000;
+        long issuedAtSeconds = jwt.getJWTClaimsSet().getIssueTime().getTime() / 1000;
+        assertThat(expirySeconds - issuedAtSeconds).isEqualTo(10 * 60);
+    }
+
+    @Test
     public void throwsWhenRootUrlIsNotHttps() throws NoSuchAlgorithmException, IOException, ParseException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
         when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -136,7 +195,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void updateParametersWhenBuildFeatureEnabled() throws NoSuchAlgorithmException, IOException, ParseException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);

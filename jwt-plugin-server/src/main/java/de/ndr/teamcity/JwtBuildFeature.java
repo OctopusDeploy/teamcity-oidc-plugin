@@ -7,6 +7,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
+import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -27,10 +28,12 @@ import java.text.ParseException;
 public class JwtBuildFeature extends BuildFeature {
 
     private final ServerPaths serverPaths;
+    private final PluginDescriptor pluginDescriptor;
     private final RSAKey rsaKey;
 
-    public JwtBuildFeature(@NotNull ServerPaths serverPaths) throws NoSuchAlgorithmException, IOException, ParseException {
+    public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor) throws NoSuchAlgorithmException, IOException, ParseException {
         this.serverPaths = serverPaths;
+        this.pluginDescriptor = pluginDescriptor;
         rsaKey = this.generateRSAKey();
     }
 
@@ -53,7 +56,7 @@ public class JwtBuildFeature extends BuildFeature {
     @Nullable
     @Override
     public String getEditParametersUrl() {
-        return "";
+        return pluginDescriptor.getPluginResourcesPath("editJwtBuildFeature.jsp");
     }
 
     @Override
