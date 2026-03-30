@@ -10,7 +10,7 @@
   <packaging>pom</packaging>
   <properties>
       <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
-      <teamcity.jwt-plugin.plugin.version>${parent.version}</teamcity.jwt-plugin.plugin.version>
+      <teamcity.jwt-plugin.plugin.version>${project.parent.version}</teamcity.jwt-plugin.plugin.version>
       <teamcity.jwt-plugin.plugin.vendorName>NDR</teamcity.jwt-plugin.plugin.vendorName>
       <teamcity.jwt-plugin.plugin.vendorUrl>https://www.ndr.de</teamcity.jwt-plugin.plugin.vendorUrl>
   </properties>
