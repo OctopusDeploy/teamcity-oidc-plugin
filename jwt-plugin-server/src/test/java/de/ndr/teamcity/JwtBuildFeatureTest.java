@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
@@ -101,6 +102,21 @@ public class JwtBuildFeatureTest {
         new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         String keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(keyFileContents2).isEqualTo(keyFileContents);
+    }
+
+    @Test
+    public void constructorThrowsRuntimeExceptionWithClearMessageWhenKeyFileIsCorrupt() throws Exception {
+        File pluginDirectory = new File(tempDir + File.separator + "corrupt");
+        pluginDirectory.mkdirs();
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+
+        File keyDir = new File(pluginDirectory, "JwtBuildFeature");
+        keyDir.mkdirs();
+        FileUtils.writeStringToFile(new File(keyDir, "key.json"), "not-valid-json", StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("JwtBuildFeature");
     }
 
     @Test

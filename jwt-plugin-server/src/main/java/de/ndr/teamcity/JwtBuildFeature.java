@@ -29,66 +29,74 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 
 public class JwtBuildFeature extends BuildFeature {
 
-    private final ServerPaths serverPaths;
+    record KeyMaterial(
+            RSAKey rsa,
+            @Nullable RSAKey retiredRsa,
+            ECKey ec,
+            @Nullable ECKey retiredEc
+    ) {}
+
     private final PluginDescriptor pluginDescriptor;
     private final SBuildServer buildServer;
-    private volatile RSAKey rsaKey;
-    @Nullable
-    private volatile RSAKey retiredRsaKey;
-    private volatile ECKey ecKey;
-    @Nullable
-    private volatile ECKey retiredEcKey;
+    private final File keyDirectory;
+    private final AtomicReference<KeyMaterial> keys;
 
-    public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor, @NotNull SBuildServer buildServer) throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
-        this.serverPaths = serverPaths;
+    public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor, @NotNull SBuildServer buildServer) {
         this.pluginDescriptor = pluginDescriptor;
         this.buildServer = buildServer;
-        this.rsaKey = loadOrGenerateRsaKey();
-        this.retiredRsaKey = loadRetiredRsaKey();
-        this.ecKey = loadOrGenerateEcKey();
-        this.retiredEcKey = loadRetiredEcKey();
+        this.keyDirectory = new File(serverPaths.getPluginDataDirectory() + File.separator + "JwtBuildFeature");
+        this.keyDirectory.mkdirs();
+        try {
+            this.keys = new AtomicReference<>(new KeyMaterial(
+                    loadOrGenerateRsaKey(),
+                    loadRetiredRsaKey(),
+                    loadOrGenerateEcKey(),
+                    loadRetiredEcKey()
+            ));
+        } catch (NoSuchAlgorithmException | IOException | ParseException | JOSEException | IllegalArgumentException e) {
+            throw new RuntimeException(
+                    "JwtBuildFeature failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
+        }
     }
 
     public RSAKey getRsaKey() {
-        return rsaKey;
+        return keys.get().rsa();
     }
 
     public ECKey getEcKey() {
-        return ecKey;
+        return keys.get().ec();
     }
 
     public List<JWK> getPublicKeys() {
-        List<JWK> keys = new ArrayList<>();
-        keys.add(rsaKey.toPublicJWK());
-        RSAKey retiredRsa = retiredRsaKey;
-        if (retiredRsa != null) {
-            keys.add(retiredRsa.toPublicJWK());
+        KeyMaterial snapshot = keys.get();
+        List<JWK> result = new ArrayList<>();
+        result.add(snapshot.rsa().toPublicJWK());
+        if (snapshot.retiredRsa() != null) {
+            result.add(snapshot.retiredRsa().toPublicJWK());
         }
-        keys.add(ecKey.toPublicJWK());
-        ECKey retiredEc = retiredEcKey;
-        if (retiredEc != null) {
-            keys.add(retiredEc.toPublicJWK());
+        result.add(snapshot.ec().toPublicJWK());
+        if (snapshot.retiredEc() != null) {
+            result.add(snapshot.retiredEc().toPublicJWK());
         }
-        return Collections.unmodifiableList(keys);
+        return Collections.unmodifiableList(result);
     }
 
     public void rotateKey() throws NoSuchAlgorithmException, JOSEException, IOException {
+        KeyMaterial current = keys.get();
         RSAKey newRsa = generateFreshRsaKey();
         ECKey newEc = generateFreshEcKey();
 
         saveKeyToFile(newRsa, "key.json");
-        saveKeyToFile(this.rsaKey, "retired-key.json");
+        saveKeyToFile(current.rsa(), "retired-key.json");
         saveKeyToFile(newEc, "ec-key.json");
-        saveKeyToFile(this.ecKey, "retired-ec-key.json");
+        saveKeyToFile(current.ec(), "retired-ec-key.json");
 
-        this.retiredRsaKey = this.rsaKey;
-        this.rsaKey = newRsa;
-        this.retiredEcKey = this.ecKey;
-        this.ecKey = newEc;
+        keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec()));
     }
 
     @NotNull
@@ -146,9 +154,7 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     private File getKeyDirectory() {
-        File directory = new File(serverPaths.getPluginDataDirectory() + File.separator + "JwtBuildFeature");
-        directory.mkdirs();
-        return directory;
+        return keyDirectory;
     }
 
     private RSAKey loadOrGenerateRsaKey() throws IOException, NoSuchAlgorithmException, ParseException, JOSEException {
