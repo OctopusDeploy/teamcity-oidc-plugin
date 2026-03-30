@@ -57,7 +57,7 @@ public class AlgorithmChoiceTest {
     @Test
     public void usesRS256ByDefault() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext context = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -82,7 +82,7 @@ public class AlgorithmChoiceTest {
     @Test
     public void usesES256WhenConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext context = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -107,7 +107,7 @@ public class AlgorithmChoiceTest {
     @Test
     public void jwksIncludesBothRsaAndEcPublicKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         List<JWK> keys = jwtBuildFeature.getPublicKeys();
         assertThat(keys).hasSize(2);
@@ -118,7 +118,7 @@ public class AlgorithmChoiceTest {
     @Test
     public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         ECKey ecKey = jwtBuildFeature.getEcKey();
         assertThat(ecKey.getKeyID()).isEqualTo(ecKey.computeThumbprint().toString());

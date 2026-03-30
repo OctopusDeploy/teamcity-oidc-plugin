@@ -39,13 +39,16 @@ public class JwksControllerTest {
     @Mock
     private PluginDescriptor pluginDescriptor;
 
+    @Mock
+    private jetbrains.buildServer.serverSide.SBuildServer buildServer;
+
     @TempDir
     private File tempDir;
 
     @Test
     public void registersAtWellKnownPath() throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         new JwksController(controllerManager, jwtBuildFeature);
 
@@ -55,7 +58,7 @@ public class JwksControllerTest {
     @Test
     public void returnsPublicKeyAsJwks() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         JwksController controller = new JwksController(controllerManager, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);

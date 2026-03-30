@@ -1,6 +1,10 @@
 package de.ndr.teamcity;
 
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.jwk.RSAKey;
+import jetbrains.buildServer.serverSide.InvalidProperty;
+import jetbrains.buildServer.serverSide.PropertiesProcessor;
+import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
@@ -16,9 +20,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermission;
-import com.nimbusds.jose.JOSEException;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +39,9 @@ public class JwtBuildFeatureTest {
     @Mock
     private PluginDescriptor pluginDescriptor;
 
+    @Mock
+    private SBuildServer buildServer;
+
     @TempDir
     private File tempDir;
 
@@ -43,7 +51,7 @@ public class JwtBuildFeatureTest {
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         assertTrue(keyFile.exists());
         String fileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(fileContents).startsWith("scrambled:");
@@ -57,7 +65,7 @@ public class JwtBuildFeatureTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
 
-        new JwtBuildFeature(serverPaths, pluginDescriptor);
+        new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(keyFile.toPath());
         assertThat(permissions).containsExactlyInAnyOrder(
@@ -72,7 +80,7 @@ public class JwtBuildFeatureTest {
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
 
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         RSAKey key = jwtBuildFeature.getRsaKey();
 
         assertThat(key.getKeyID()).isEqualTo(key.computeThumbprint().toString());
@@ -87,12 +95,62 @@ public class JwtBuildFeatureTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
 
-        new JwtBuildFeature(serverPaths, pluginDescriptor);
+        new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         String keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
 
-        new JwtBuildFeature(serverPaths, pluginDescriptor);
+        new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         String keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(keyFileContents2).isEqualTo(keyFileContents);
     }
 
+    @Test
+    public void validationRejectsHttpRootUrl() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        PropertiesProcessor processor = feature.getParametersProcessor();
+        Collection<InvalidProperty> errors = processor.process(Map.of());
+
+        assertThat(errors).hasSize(1);
+        assertThat(errors.iterator().next().getInvalidReason()).contains("HTTPS");
+    }
+
+    @Test
+    public void validationAcceptsHttpsRootUrl() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        PropertiesProcessor processor = feature.getParametersProcessor();
+        Collection<InvalidProperty> errors = processor.process(Map.of());
+
+        assertThat(errors).isEmpty();
+    }
+
+    @Test
+    public void validationRejectsNonNumericTtl() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        PropertiesProcessor processor = feature.getParametersProcessor();
+        Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "notanumber"));
+
+        assertThat(errors).hasSize(1);
+        assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
+    }
+
+    @Test
+    public void validationRejectsNonPositiveTtl() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        PropertiesProcessor processor = feature.getParametersProcessor();
+        Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "0"));
+
+        assertThat(errors).hasSize(1);
+        assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
+    }
 }

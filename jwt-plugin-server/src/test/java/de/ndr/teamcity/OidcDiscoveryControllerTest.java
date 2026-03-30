@@ -47,7 +47,7 @@ public class OidcDiscoveryControllerTest {
     @Test
     public void registersAtWellKnownPath() throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
 
@@ -58,7 +58,7 @@ public class OidcDiscoveryControllerTest {
     public void returnsDiscoveryDocument() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);

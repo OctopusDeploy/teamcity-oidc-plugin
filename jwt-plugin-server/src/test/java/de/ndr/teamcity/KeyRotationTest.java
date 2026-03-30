@@ -36,13 +36,16 @@ public class KeyRotationTest {
     @Mock
     private PluginDescriptor pluginDescriptor;
 
+    @Mock
+    private jetbrains.buildServer.serverSide.SBuildServer buildServer;
+
     @TempDir
     private File tempDir;
 
     @Test
     public void rotationGeneratesNewRsaAndEcKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         RSAKey originalRsa = jwtBuildFeature.getRsaKey();
         ECKey originalEc = jwtBuildFeature.getEcKey();
 
@@ -55,7 +58,7 @@ public class KeyRotationTest {
     @Test
     public void jwksContainsCurrentAndRetiredKeysAfterRotation() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         RSAKey originalRsa = jwtBuildFeature.getRsaKey();
         ECKey originalEc = jwtBuildFeature.getEcKey();
 
@@ -75,7 +78,7 @@ public class KeyRotationTest {
     @Test
     public void rotatingAgainRetiresPreviousRetiredKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
         RSAKey rsa1 = jwtBuildFeature.getRsaKey();
         ECKey ec1 = jwtBuildFeature.getEcKey();
 

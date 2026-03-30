@@ -6,6 +6,8 @@ import com.nimbusds.jose.jwk.*;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
+import jetbrains.buildServer.serverSide.InvalidProperty;
+import jetbrains.buildServer.serverSide.PropertiesProcessor;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.apache.commons.io.FileUtils;
@@ -15,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermission;
@@ -32,6 +35,7 @@ public class JwtBuildFeature extends BuildFeature {
 
     private final ServerPaths serverPaths;
     private final PluginDescriptor pluginDescriptor;
+    private final SBuildServer buildServer;
     private volatile RSAKey rsaKey;
     @Nullable
     private volatile RSAKey retiredRsaKey;
@@ -39,9 +43,10 @@ public class JwtBuildFeature extends BuildFeature {
     @Nullable
     private volatile ECKey retiredEcKey;
 
-    public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor) throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
+    public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor, @NotNull SBuildServer buildServer) throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         this.serverPaths = serverPaths;
         this.pluginDescriptor = pluginDescriptor;
+        this.buildServer = buildServer;
         this.rsaKey = loadOrGenerateRsaKey();
         this.retiredRsaKey = loadRetiredRsaKey();
         this.ecKey = loadOrGenerateEcKey();
@@ -112,6 +117,32 @@ public class JwtBuildFeature extends BuildFeature {
     @Override
     public boolean isMultipleFeaturesPerBuildTypeAllowed() {
         return false;
+    }
+
+    @Override
+    public PropertiesProcessor getParametersProcessor() {
+        return params -> {
+            Collection<InvalidProperty> errors = new ArrayList<>();
+
+            String rootUrl = buildServer.getRootUrl();
+            if (rootUrl == null || !rootUrl.startsWith("https://")) {
+                errors.add(new InvalidProperty("root_url",
+                        "The TeamCity server root URL must use HTTPS for OIDC token issuance. " +
+                        "Update it in Administration → Global Settings."));
+            }
+
+            String ttl = params.getOrDefault("ttl_minutes", "10");
+            try {
+                int ttlValue = Integer.parseInt(ttl);
+                if (ttlValue <= 0) {
+                    errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a positive integer."));
+                }
+            } catch (NumberFormatException e) {
+                errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));
+            }
+
+            return errors;
+        };
     }
 
     private File getKeyDirectory() {

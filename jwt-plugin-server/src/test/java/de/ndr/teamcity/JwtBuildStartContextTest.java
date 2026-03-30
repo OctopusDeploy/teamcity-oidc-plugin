@@ -72,7 +72,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -94,7 +94,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void branchClaimIsTheBranchNameNotAnObjectReference() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -123,7 +123,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void tokenTtlIsReadFromBuildFeatureParameters() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -150,7 +150,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -177,7 +177,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void throwsWhenRootUrlIsNotHttps() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -195,7 +195,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void updateParametersWhenBuildFeatureEnabled() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -216,7 +216,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void audienceIsConfigurablePerBuildFeature() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -240,7 +240,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void audienceDefaultsToServerRootUrlWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -264,7 +264,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void onlyConfiguredClaimsAreIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
@@ -295,7 +295,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void allClaimsIncludedWhenClaimsParamAbsent() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
