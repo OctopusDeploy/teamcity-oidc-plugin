@@ -1,7 +1,6 @@
 package de.ndr.teamcity;
 
-import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonObject;
@@ -14,16 +13,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.servlet.ModelAndView;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.security.NoSuchAlgorithmException;
-import java.text.ParseException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -45,87 +40,79 @@ public class KeyRotationTest {
     private File tempDir;
 
     @Test
-    public void jwksContainsBothKeysAfterRotation() throws Exception {
+    public void rotationGeneratesNewRsaAndEcKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
-        RSAKey originalKey = jwtBuildFeature.getRsaKey();
+        RSAKey originalRsa = jwtBuildFeature.getRsaKey();
+        ECKey originalEc = jwtBuildFeature.getEcKey();
 
         jwtBuildFeature.rotateKey();
-        RSAKey newKey = jwtBuildFeature.getRsaKey();
 
-        assertThat(newKey.getKeyID()).isNotEqualTo(originalKey.getKeyID());
+        assertThat(jwtBuildFeature.getRsaKey().getKeyID()).isNotEqualTo(originalRsa.getKeyID());
+        assertThat(jwtBuildFeature.getEcKey().getKeyID()).isNotEqualTo(originalEc.getKeyID());
+    }
 
-        JwksController controller = new JwksController(controllerManager, jwtBuildFeature);
+    @Test
+    public void jwksContainsCurrentAndRetiredKeysAfterRotation() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        RSAKey originalRsa = jwtBuildFeature.getRsaKey();
+        ECKey originalEc = jwtBuildFeature.getEcKey();
+
+        jwtBuildFeature.rotateKey();
+        RSAKey newRsa = jwtBuildFeature.getRsaKey();
+        ECKey newEc = jwtBuildFeature.getEcKey();
+
+        JsonArray keys = jwksKeys(jwtBuildFeature);
+        // current RSA + retired RSA + current EC + retired EC
+        assertThat(keys).hasSize(4);
+
+        var kids = kidsInArray(keys);
+        assertThat(kids).contains(originalRsa.getKeyID(), newRsa.getKeyID(),
+                                   originalEc.getKeyID(), newEc.getKeyID());
+    }
+
+    @Test
+    public void rotatingAgainRetiresPreviousRetiredKeys() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        RSAKey rsa1 = jwtBuildFeature.getRsaKey();
+        ECKey ec1 = jwtBuildFeature.getEcKey();
+
+        jwtBuildFeature.rotateKey();
+        RSAKey rsa2 = jwtBuildFeature.getRsaKey();
+        ECKey ec2 = jwtBuildFeature.getEcKey();
+
+        jwtBuildFeature.rotateKey();
+        RSAKey rsa3 = jwtBuildFeature.getRsaKey();
+        ECKey ec3 = jwtBuildFeature.getEcKey();
+
+        JsonArray keys = jwksKeys(jwtBuildFeature);
+        // current RSA3 + retired RSA2 (rsa1 dropped) + current EC3 + retired EC2 (ec1 dropped)
+        assertThat(keys).hasSize(4);
+
+        var kids = kidsInArray(keys);
+        assertThat(kids).doesNotContain(rsa1.getKeyID(), ec1.getKeyID());
+        assertThat(kids).contains(rsa2.getKeyID(), rsa3.getKeyID(), ec2.getKeyID(), ec3.getKeyID());
+    }
+
+    // --- helpers ---
+
+    private JsonArray jwksKeys(JwtBuildFeature feature) throws Exception {
+        JwksController controller = new JwksController(controllerManager, feature);
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
         controller.doHandle(request, response);
-
-        JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
-        JsonArray keys = json.get("keys").getAsJsonArray();
-        // current RSA + retired RSA + EC
-        assertThat(keys).hasSize(3);
-
-        boolean hasOriginalKid = false;
-        boolean hasNewKid = false;
-        for (int i = 0; i < keys.size(); i++) {
-            String kid = keys.get(i).getAsJsonObject().get("kid").getAsString();
-            if (kid.equals(originalKey.getKeyID())) hasOriginalKid = true;
-            if (kid.equals(newKey.getKeyID())) hasNewKid = true;
-        }
-        assertThat(hasOriginalKid).isTrue();
-        assertThat(hasNewKid).isTrue();
+        return JsonParser.parseString(writer.toString()).getAsJsonObject().get("keys").getAsJsonArray();
     }
 
-    @Test
-    public void activeKeyIsNewKeyAfterRotation() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
-        RSAKey originalKey = jwtBuildFeature.getRsaKey();
-
-        jwtBuildFeature.rotateKey();
-
-        RSAKey activeKey = jwtBuildFeature.getRsaKey();
-        assertThat(activeKey.getKeyID()).isNotEqualTo(originalKey.getKeyID());
-    }
-
-    @Test
-    public void rotatingAgainRetiresPreviousRetiredKey() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
-        RSAKey key1 = jwtBuildFeature.getRsaKey();
-
-        jwtBuildFeature.rotateKey();
-        RSAKey key2 = jwtBuildFeature.getRsaKey();
-
-        jwtBuildFeature.rotateKey();
-        RSAKey key3 = jwtBuildFeature.getRsaKey();
-
-        JwksController controller = new JwksController(controllerManager, jwtBuildFeature);
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        StringWriter writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        controller.doHandle(request, response);
-
-        JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
-        JsonArray keys = json.get("keys").getAsJsonArray();
-
-        // current RSA + most recently retired RSA (key2, not key1) + EC
-        assertThat(keys).hasSize(3);
-        boolean hasKey1 = false;
-        boolean hasKey2 = false;
-        boolean hasKey3 = false;
+    private java.util.List<String> kidsInArray(JsonArray keys) {
+        var kids = new java.util.ArrayList<String>();
         for (int i = 0; i < keys.size(); i++) {
-            String kid = keys.get(i).getAsJsonObject().get("kid").getAsString();
-            if (kid.equals(key1.getKeyID())) hasKey1 = true;
-            if (kid.equals(key2.getKeyID())) hasKey2 = true;
-            if (kid.equals(key3.getKeyID())) hasKey3 = true;
+            kids.add(keys.get(i).getAsJsonObject().get("kid").getAsString());
         }
-        assertThat(hasKey1).isFalse();
-        assertThat(hasKey2).isTrue();
-        assertThat(hasKey3).isTrue();
+        return kids;
     }
 }

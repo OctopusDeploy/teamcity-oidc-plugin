@@ -34,15 +34,18 @@ public class JwtBuildFeature extends BuildFeature {
     private final PluginDescriptor pluginDescriptor;
     private volatile RSAKey rsaKey;
     @Nullable
-    private volatile RSAKey retiredKey;
+    private volatile RSAKey retiredRsaKey;
     private volatile ECKey ecKey;
+    @Nullable
+    private volatile ECKey retiredEcKey;
 
     public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor) throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         this.serverPaths = serverPaths;
         this.pluginDescriptor = pluginDescriptor;
         this.rsaKey = loadOrGenerateRsaKey();
-        this.retiredKey = loadRetiredKey();
+        this.retiredRsaKey = loadRetiredRsaKey();
         this.ecKey = loadOrGenerateEcKey();
+        this.retiredEcKey = loadRetiredEcKey();
     }
 
     public RSAKey getRsaKey() {
@@ -56,23 +59,31 @@ public class JwtBuildFeature extends BuildFeature {
     public List<JWK> getPublicKeys() {
         List<JWK> keys = new ArrayList<>();
         keys.add(rsaKey.toPublicJWK());
-        RSAKey retired = retiredKey;
-        if (retired != null) {
-            keys.add(retired.toPublicJWK());
+        RSAKey retiredRsa = retiredRsaKey;
+        if (retiredRsa != null) {
+            keys.add(retiredRsa.toPublicJWK());
         }
         keys.add(ecKey.toPublicJWK());
+        ECKey retiredEc = retiredEcKey;
+        if (retiredEc != null) {
+            keys.add(retiredEc.toPublicJWK());
+        }
         return Collections.unmodifiableList(keys);
     }
 
     public void rotateKey() throws NoSuchAlgorithmException, JOSEException, IOException {
-        RSAKey newKey = generateFreshRsaKey();
-        RSAKey previousKey = this.rsaKey;
+        RSAKey newRsa = generateFreshRsaKey();
+        ECKey newEc = generateFreshEcKey();
 
-        saveKeyToFile(newKey, "key.json");
-        saveKeyToFile(previousKey, "retired-key.json");
+        saveKeyToFile(newRsa, "key.json");
+        saveKeyToFile(this.rsaKey, "retired-key.json");
+        saveKeyToFile(newEc, "ec-key.json");
+        saveKeyToFile(this.ecKey, "retired-ec-key.json");
 
-        this.retiredKey = previousKey;
-        this.rsaKey = newKey;
+        this.retiredRsaKey = this.rsaKey;
+        this.rsaKey = newRsa;
+        this.retiredEcKey = this.ecKey;
+        this.ecKey = newEc;
     }
 
     @NotNull
@@ -124,12 +135,23 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     @Nullable
-    private RSAKey loadRetiredKey() throws IOException, ParseException {
+    private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
         File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-key.json");
         if (retiredKeyFile.exists()) {
             Loggers.SERVER.info("Read retired RSA key from: " + retiredKeyFile);
             String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toRSAKey();
+        }
+        return null;
+    }
+
+    @Nullable
+    private ECKey loadRetiredEcKey() throws IOException, ParseException {
+        File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-ec-key.json");
+        if (retiredKeyFile.exists()) {
+            Loggers.SERVER.info("Read retired EC key from: " + retiredKeyFile);
+            String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
+            return JWK.parse(EncryptUtil.unscramble(encrypted)).toECKey();
         }
         return null;
     }
