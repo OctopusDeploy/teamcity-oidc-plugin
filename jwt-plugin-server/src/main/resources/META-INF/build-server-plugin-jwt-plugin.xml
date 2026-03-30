@@ -9,6 +9,7 @@
     <bean id="jwtBuildFeatureAdminPage" class="de.ndr.teamcity.JwtBuildFeatureAdminPage"/>
     <bean id="jwksController" class="de.ndr.teamcity.JwksController"/>
     <bean id="oidcDiscoveryController" class="de.ndr.teamcity.OidcDiscoveryController"/>
+    <bean id="keyRotationController" class="de.ndr.teamcity.KeyRotationController"/>
 
 </beans>
 
