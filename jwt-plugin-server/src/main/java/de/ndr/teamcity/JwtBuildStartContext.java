@@ -7,7 +7,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
-import org.apache.commons.lang3.ObjectUtils;
+import jetbrains.buildServer.users.SUser;
 import org.jetbrains.annotations.NotNull;
 import org.joda.time.DateTime;
 
@@ -44,23 +44,37 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                         .keyID(rsaKey.getKeyID())
                         .build();
 
+                String buildServerRootUrl = buildServer.getRootUrl();
+                if (!buildServerRootUrl.startsWith("https://")) {
+                    throw new IllegalStateException(
+                            "TeamCity root URL must use HTTPS for OIDC token issuance, but was: " + buildServerRootUrl);
+                }
+
+                Branch branch = build.getBranch();
+                String branchName = branch != null ? branch.getName() : "";
+
+                TriggeredBy triggeredBy = build.getTriggeredBy();
+                SUser user = triggeredBy.getUser();
+
                 DateTime now = new DateTime();
-                // Must start with https:// in order to be accepted for OIDC
-                String buildServerRootUrl = buildServer.getRootUrl().replaceFirst("http://", "https://");
-                JWTClaimsSet jwtClaimsSet = new JWTClaimsSet.Builder()
+                JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
                         .subject(build.getBuildTypeExternalId())
                         .audience(List.of(buildServerRootUrl))
                         .issuer(buildServerRootUrl)
                         .issueTime(now.toDate()) // iat
                         .notBeforeTime(now.toDate()) // nbf
                         .expirationTime(now.plusHours(1).toDate()) // exp
-                        .claim("branch", ObjectUtils.defaultIfNull(build.getBranch(), ""))
+                        .claim("branch", branchName)
                         .claim("build_type_external_id", build.getBuildTypeExternalId())
                         .claim("project_external_id", build.getProjectExternalId())
-                        .claim("triggered_by_id", build.getTriggeredBy().getUser().getId())
-                        .claim("triggered_by", build.getTriggeredBy().getAsString())
-                        .claim("build_number", build.getBuildNumber())
-                        .build();
+                        .claim("triggered_by", triggeredBy.getAsString())
+                        .claim("build_number", build.getBuildNumber());
+
+                if (user != null) {
+                    claimsBuilder.claim("triggered_by_id", user.getId());
+                }
+
+                JWTClaimsSet jwtClaimsSet = claimsBuilder.build();
 
                 SignedJWT signedJWT = new SignedJWT(jwsHeader, jwtClaimsSet);
                 JWSSigner signer = new RSASSASigner(rsaKey);
