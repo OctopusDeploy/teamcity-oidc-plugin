@@ -80,4 +80,62 @@ public class OidcDiscoveryControllerTest {
         assertThat(json.get("response_types_supported").getAsJsonArray().get(0).getAsString()).isEqualTo("id_token");
         assertThat(json.get("subject_types_supported").getAsJsonArray().get(0).getAsString()).isEqualTo("public");
     }
+
+    @Test
+    public void advertisesES256AlgorithmInDiscoveryDocument() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        StringWriter writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+
+        controller.doHandle(request, response);
+
+        JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
+        var algs = json.get("id_token_signing_alg_values_supported").getAsJsonArray();
+        var algNames = new java.util.ArrayList<String>();
+        algs.forEach(e -> algNames.add(e.getAsString()));
+        assertThat(algNames).contains("RS256", "ES256");
+    }
+
+    @Test
+    public void includesClaimsSupportedInDiscoveryDocument() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        StringWriter writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+
+        controller.doHandle(request, response);
+
+        JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
+        assertThat(json.has("claims_supported")).isTrue();
+        var claims = new java.util.ArrayList<String>();
+        json.get("claims_supported").getAsJsonArray().forEach(e -> claims.add(e.getAsString()));
+        assertThat(claims).contains("sub", "iss", "aud", "iat", "exp", "branch");
+    }
+
+    @Test
+    public void setsCacheControlHeader() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+        controller.doHandle(request, response);
+
+        verify(response).setHeader("Cache-Control", "max-age=300");
+    }
 }

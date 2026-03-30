@@ -1,7 +1,5 @@
 package de.ndr.teamcity;
 
-import com.nimbusds.jose.shaded.gson.JsonArray;
-import com.nimbusds.jose.shaded.gson.JsonObject;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -19,14 +17,10 @@ public class OidcDiscoveryController extends BaseController {
     @NotNull
     private final SBuildServer buildServer;
 
-    @NotNull
-    private final JwtBuildFeature jwtBuildFeature;
-
     public OidcDiscoveryController(@NotNull WebControllerManager controllerManager,
                                    @NotNull SBuildServer buildServer,
                                    @NotNull JwtBuildFeature jwtBuildFeature) {
         this.buildServer = buildServer;
-        this.jwtBuildFeature = jwtBuildFeature;
         controllerManager.registerController(PATH, this);
     }
 
@@ -34,26 +28,21 @@ public class OidcDiscoveryController extends BaseController {
     protected ModelAndView doHandle(@NotNull HttpServletRequest request,
                                     @NotNull HttpServletResponse response) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
+        response.setHeader("Cache-Control", "max-age=300");
 
         String issuer = buildServer.getRootUrl();
+        String body = "{"
+                + "\"issuer\":\"" + issuer + "\","
+                + "\"jwks_uri\":\"" + issuer + JwksController.PATH + "\","
+                + "\"id_token_signing_alg_values_supported\":[\"RS256\",\"ES256\"],"
+                + "\"response_types_supported\":[\"id_token\"],"
+                + "\"subject_types_supported\":[\"public\"],"
+                + "\"claims_supported\":[\"sub\",\"iss\",\"aud\",\"iat\",\"nbf\",\"exp\","
+                + "\"branch\",\"build_type_external_id\",\"project_external_id\","
+                + "\"triggered_by\",\"triggered_by_id\",\"build_number\"]"
+                + "}";
 
-        JsonObject doc = new JsonObject();
-        doc.addProperty("issuer", issuer);
-        doc.addProperty("jwks_uri", issuer + JwksController.PATH);
-
-        JsonArray signingAlgs = new JsonArray();
-        signingAlgs.add("RS256");
-        doc.add("id_token_signing_alg_values_supported", signingAlgs);
-
-        JsonArray responseTypes = new JsonArray();
-        responseTypes.add("id_token");
-        doc.add("response_types_supported", responseTypes);
-
-        JsonArray subjectTypes = new JsonArray();
-        subjectTypes.add("public");
-        doc.add("subject_types_supported", subjectTypes);
-
-        response.getWriter().write(doc.toString());
+        response.getWriter().write(body);
         return null;
     }
 }

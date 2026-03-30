@@ -27,6 +27,7 @@ public class JwksController extends BaseController {
     protected ModelAndView doHandle(@NotNull HttpServletRequest request,
                                     @NotNull HttpServletResponse response) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
+        response.setHeader("Cache-Control", "max-age=300");
         JWKSet jwks = new JWKSet(jwtBuildFeature.getPublicKeys());
         response.getWriter().write(jwks.toString());
         return null;

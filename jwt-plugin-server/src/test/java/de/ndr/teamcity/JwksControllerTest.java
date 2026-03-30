@@ -88,4 +88,19 @@ public class JwksControllerTest {
         assertThat(hasRsa).isTrue();
         assertThat(hasEc).isTrue();
     }
+
+    @Test
+    public void setsCacheControlHeader() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwksController controller = new JwksController(controllerManager, jwtBuildFeature);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+
+        controller.doHandle(request, response);
+
+        verify(response).setHeader("Cache-Control", "max-age=300");
+    }
 }
