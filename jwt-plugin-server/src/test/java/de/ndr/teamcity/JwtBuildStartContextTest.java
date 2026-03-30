@@ -83,7 +83,7 @@ public class JwtBuildStartContextTest {
 
         // Should succeed and inject JWT even when no user triggered the build
         AssertionsForClassTypes.assertThatNoException().isThrownBy(() -> jwtBuildStartContext.updateParameters(buildStartContext));
-        verify(buildStartContext, times(1)).addSharedParameter(eq("env.JWT"), any());
+        verify(buildStartContext, times(1)).addSharedParameter(eq("jwt.token"), any());
     }
 
     @Test
@@ -109,7 +109,7 @@ public class JwtBuildStartContextTest {
 
         ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
-        verify(buildStartContext).addSharedParameter(eq("env.JWT"), jwtCaptor.capture());
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
         SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
@@ -151,6 +151,6 @@ public class JwtBuildStartContextTest {
         when(triggeredByMock.getUser()).thenReturn(userMock);
 
         jwtBuildStartContext.updateParameters(buildStartContext);
-        verify(buildStartContext, times(1)).addSharedParameter(eq("env.JWT"), any());
+        verify(buildStartContext, times(1)).addSharedParameter(eq("jwt.token"), any());
     }
 }

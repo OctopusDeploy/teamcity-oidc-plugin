@@ -80,7 +80,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 JWSSigner signer = new RSASSASigner(rsaKey);
                 signedJWT.sign(signer);
 
-                buildStartContext.addSharedParameter("env.JWT", signedJWT.serialize());
+                buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, signedJWT.serialize());
             } catch (JOSEException e) {
                 throw new RuntimeException(e);
             }
