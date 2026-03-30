@@ -12,8 +12,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -39,6 +42,22 @@ public class JwtBuildFeatureTest {
         String fileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(fileContents).startsWith("scrambled:");
         assertThat(EncryptUtil.unscramble(fileContents)).isEqualTo(jwtBuildFeature.getRsaKey().toString());
+    }
+
+    @Test
+    public void keyFileIsReadableAndWritableByOwnerOnly() throws NoSuchAlgorithmException, IOException, ParseException {
+        File pluginDirectory = new File(tempDir + File.separator + new File("foobar"));
+        pluginDirectory.mkdirs();
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+        File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
+
+        new JwtBuildFeature(serverPaths);
+
+        Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(keyFile.toPath());
+        assertThat(permissions).containsExactlyInAnyOrder(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE
+        );
     }
 
     @Test

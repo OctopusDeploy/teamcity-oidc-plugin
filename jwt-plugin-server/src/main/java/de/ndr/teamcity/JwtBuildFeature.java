@@ -14,7 +14,10 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.*;
+import java.util.Set;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
@@ -84,6 +87,10 @@ public class JwtBuildFeature extends BuildFeature {
                     .algorithm(JWSAlgorithm.RS256)
                     .build();
             FileUtils.writeStringToFile(keyFile, EncryptUtil.scramble(jwk.toString()), StandardCharsets.UTF_8);
+            Files.setPosixFilePermissions(keyFile.toPath(), Set.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE
+            ));
         }
         return jwk.toRSAKey();
     }
