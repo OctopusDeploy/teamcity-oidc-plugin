@@ -2,9 +2,8 @@ package de.ndr.teamcity;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.*;
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
@@ -36,16 +35,22 @@ public class JwtBuildFeature extends BuildFeature {
     private volatile RSAKey rsaKey;
     @Nullable
     private volatile RSAKey retiredKey;
+    private volatile ECKey ecKey;
 
     public JwtBuildFeature(@NotNull ServerPaths serverPaths, @NotNull PluginDescriptor pluginDescriptor) throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         this.serverPaths = serverPaths;
         this.pluginDescriptor = pluginDescriptor;
-        this.rsaKey = loadOrGenerateKey();
+        this.rsaKey = loadOrGenerateRsaKey();
         this.retiredKey = loadRetiredKey();
+        this.ecKey = loadOrGenerateEcKey();
     }
 
     public RSAKey getRsaKey() {
         return rsaKey;
+    }
+
+    public ECKey getEcKey() {
+        return ecKey;
     }
 
     public List<JWK> getPublicKeys() {
@@ -55,11 +60,12 @@ public class JwtBuildFeature extends BuildFeature {
         if (retired != null) {
             keys.add(retired.toPublicJWK());
         }
+        keys.add(ecKey.toPublicJWK());
         return Collections.unmodifiableList(keys);
     }
 
     public void rotateKey() throws NoSuchAlgorithmException, JOSEException, IOException {
-        RSAKey newKey = generateFreshKey();
+        RSAKey newKey = generateFreshRsaKey();
         RSAKey previousKey = this.rsaKey;
 
         saveKeyToFile(newKey, "key.json");
@@ -103,15 +109,15 @@ public class JwtBuildFeature extends BuildFeature {
         return directory;
     }
 
-    private RSAKey loadOrGenerateKey() throws IOException, NoSuchAlgorithmException, ParseException, JOSEException {
+    private RSAKey loadOrGenerateRsaKey() throws IOException, NoSuchAlgorithmException, ParseException, JOSEException {
         File keyFile = new File(getKeyDirectory() + File.separator + "key.json");
         if (keyFile.exists()) {
-            Loggers.SERVER.info("Read existing key from: " + keyFile);
+            Loggers.SERVER.info("Read existing RSA key from: " + keyFile);
             String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toRSAKey();
         } else {
-            Loggers.SERVER.info("Generate new key to: " + keyFile);
-            RSAKey newKey = generateFreshKey();
+            Loggers.SERVER.info("Generate new RSA key to: " + keyFile);
+            RSAKey newKey = generateFreshRsaKey();
             saveKeyToFile(newKey, "key.json");
             return newKey;
         }
@@ -121,14 +127,28 @@ public class JwtBuildFeature extends BuildFeature {
     private RSAKey loadRetiredKey() throws IOException, ParseException {
         File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-key.json");
         if (retiredKeyFile.exists()) {
-            Loggers.SERVER.info("Read retired key from: " + retiredKeyFile);
+            Loggers.SERVER.info("Read retired RSA key from: " + retiredKeyFile);
             String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toRSAKey();
         }
         return null;
     }
 
-    private RSAKey generateFreshKey() throws NoSuchAlgorithmException, JOSEException {
+    private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
+        File keyFile = new File(getKeyDirectory() + File.separator + "ec-key.json");
+        if (keyFile.exists()) {
+            Loggers.SERVER.info("Read existing EC key from: " + keyFile);
+            String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+            return JWK.parse(EncryptUtil.unscramble(encrypted)).toECKey();
+        } else {
+            Loggers.SERVER.info("Generate new EC key to: " + keyFile);
+            ECKey newKey = generateFreshEcKey();
+            saveKeyToFile(newKey, "ec-key.json");
+            return newKey;
+        }
+    }
+
+    private RSAKey generateFreshRsaKey() throws NoSuchAlgorithmException, JOSEException {
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
         gen.initialize(2048);
         KeyPair keyPair = gen.generateKeyPair();
@@ -143,7 +163,17 @@ public class JwtBuildFeature extends BuildFeature {
                 .build();
     }
 
-    private void saveKeyToFile(RSAKey key, String fileName) throws IOException {
+    private ECKey generateFreshEcKey() throws JOSEException {
+        ECKey newKey = new ECKeyGenerator(Curve.P_256)
+                .keyUse(KeyUse.SIGNATURE)
+                .algorithm(JWSAlgorithm.ES256)
+                .generate();
+        return new ECKey.Builder(newKey)
+                .keyID(newKey.computeThumbprint().toString())
+                .build();
+    }
+
+    private void saveKeyToFile(JWK key, String fileName) throws IOException {
         File keyFile = new File(getKeyDirectory() + File.separator + fileName);
         FileUtils.writeStringToFile(keyFile, EncryptUtil.scramble(key.toString()), StandardCharsets.UTF_8);
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {

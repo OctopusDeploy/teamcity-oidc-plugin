@@ -65,7 +65,8 @@ public class KeyRotationTest {
 
         JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
         JsonArray keys = json.get("keys").getAsJsonArray();
-        assertThat(keys).hasSize(2);
+        // current RSA + retired RSA + EC
+        assertThat(keys).hasSize(3);
 
         boolean hasOriginalKid = false;
         boolean hasNewKid = false;
@@ -112,8 +113,8 @@ public class KeyRotationTest {
         JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
         JsonArray keys = json.get("keys").getAsJsonArray();
 
-        // Only current key and the most recently retired key — not key1
-        assertThat(keys).hasSize(2);
+        // current RSA + most recently retired RSA (key2, not key1) + EC
+        assertThat(keys).hasSize(3);
         boolean hasKey1 = false;
         boolean hasKey2 = false;
         boolean hasKey3 = false;

@@ -71,12 +71,18 @@ public class JwksControllerTest {
         String body = writer.toString();
         JsonObject json = JsonParser.parseString(body).getAsJsonObject();
         assertThat(json.has("keys")).isTrue();
-        assertThat(json.get("keys").getAsJsonArray()).hasSize(1);
+        // RSA (RS256) + EC (ES256)
+        assertThat(json.get("keys").getAsJsonArray()).hasSize(2);
 
-        JsonObject key = json.get("keys").getAsJsonArray().get(0).getAsJsonObject();
-        assertThat(key.get("kty").getAsString()).isEqualTo("RSA");
-        assertThat(key.get("use").getAsString()).isEqualTo("sig");
-        assertThat(key.has("d")).isFalse();
-        assertThat(key.get("kid").getAsString()).isEqualTo(jwtBuildFeature.getRsaKey().computeThumbprint().toString());
+        var keys = json.get("keys").getAsJsonArray();
+        boolean hasRsa = false, hasEc = false;
+        for (int i = 0; i < keys.size(); i++) {
+            JsonObject key = keys.get(i).getAsJsonObject();
+            assertThat(key.has("d")).isFalse(); // no private keys
+            if ("RSA".equals(key.get("kty").getAsString())) hasRsa = true;
+            if ("EC".equals(key.get("kty").getAsString())) hasEc = true;
+        }
+        assertThat(hasRsa).isTrue();
+        assertThat(hasEc).isTrue();
     }
 }

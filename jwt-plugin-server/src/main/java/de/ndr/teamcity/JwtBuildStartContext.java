@@ -1,7 +1,9 @@
 package de.ndr.teamcity;
 
 import com.nimbusds.jose.*;
+import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -11,13 +13,16 @@ import jetbrains.buildServer.users.SUser;
 import org.jetbrains.annotations.NotNull;
 import org.joda.time.DateTime;
 
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 
 public class JwtBuildStartContext implements BuildStartContextProcessor  {
     private final ExtensionHolder extensionHolder;
 
     private final SBuildServer buildServer;
+
+    private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of(
+            "branch", "build_type_external_id", "project_external_id",
+            "triggered_by", "triggered_by_id", "build_number");
 
     public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder, @NotNull SBuildServer buildServer) {
         this.extensionHolder = extensionHolder;
@@ -36,22 +41,42 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
             try {
                 SBuildFeatureDescriptor descriptor = jwtBuildFeatures.stream().findFirst().get();
                 JwtBuildFeature jwtBuildFeature = (JwtBuildFeature) descriptor.getBuildFeature();
-                RSAKey rsaKey = jwtBuildFeature.getRsaKey();
+                Map<String, String> params = descriptor.getParameters();
 
-                int ttlMinutes = Integer.parseInt(
-                        descriptor.getParameters().getOrDefault("ttl_minutes", "10"));
+                int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
+                String algorithmName = params.getOrDefault("algorithm", "RS256");
 
                 SRunningBuild build = buildStartContext.getBuild();
-
-                JWSHeader jwsHeader = new JWSHeader.Builder(JWSAlgorithm.RS256)
-                        .type(JOSEObjectType.JWT)
-                        .keyID(rsaKey.getKeyID())
-                        .build();
 
                 String buildServerRootUrl = buildServer.getRootUrl();
                 if (!buildServerRootUrl.startsWith("https://")) {
                     throw new IllegalStateException(
                             "TeamCity root URL must use HTTPS for OIDC token issuance, but was: " + buildServerRootUrl);
+                }
+
+                String audience = params.getOrDefault("audience", buildServerRootUrl);
+
+                String claimsParam = params.get("claims");
+                Set<String> enabledClaims = claimsParam != null
+                        ? new HashSet<>(Arrays.asList(claimsParam.split(",")))
+                        : ALL_CUSTOM_CLAIMS;
+
+                JWSHeader jwsHeader;
+                JWSSigner signer;
+                if ("ES256".equals(algorithmName)) {
+                    ECKey ecKey = jwtBuildFeature.getEcKey();
+                    jwsHeader = new JWSHeader.Builder(JWSAlgorithm.ES256)
+                            .type(JOSEObjectType.JWT)
+                            .keyID(ecKey.getKeyID())
+                            .build();
+                    signer = new ECDSASigner(ecKey);
+                } else {
+                    RSAKey rsaKey = jwtBuildFeature.getRsaKey();
+                    jwsHeader = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                            .type(JOSEObjectType.JWT)
+                            .keyID(rsaKey.getKeyID())
+                            .build();
+                    signer = new RSASSASigner(rsaKey);
                 }
 
                 Branch branch = build.getBranch();
@@ -63,25 +88,34 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 DateTime now = new DateTime();
                 JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
                         .subject(build.getBuildTypeExternalId())
-                        .audience(List.of(buildServerRootUrl))
+                        .audience(List.of(audience))
                         .issuer(buildServerRootUrl)
-                        .issueTime(now.toDate()) // iat
-                        .notBeforeTime(now.toDate()) // nbf
-                        .expirationTime(now.plusMinutes(ttlMinutes).toDate()) // exp
-                        .claim("branch", branchName)
-                        .claim("build_type_external_id", build.getBuildTypeExternalId())
-                        .claim("project_external_id", build.getProjectExternalId())
-                        .claim("triggered_by", triggeredBy.getAsString())
-                        .claim("build_number", build.getBuildNumber());
+                        .issueTime(now.toDate())
+                        .notBeforeTime(now.toDate())
+                        .expirationTime(now.plusMinutes(ttlMinutes).toDate());
 
-                if (user != null) {
+                if (enabledClaims.contains("branch")) {
+                    claimsBuilder.claim("branch", branchName);
+                }
+                if (enabledClaims.contains("build_type_external_id")) {
+                    claimsBuilder.claim("build_type_external_id", build.getBuildTypeExternalId());
+                }
+                if (enabledClaims.contains("project_external_id")) {
+                    claimsBuilder.claim("project_external_id", build.getProjectExternalId());
+                }
+                if (enabledClaims.contains("triggered_by")) {
+                    claimsBuilder.claim("triggered_by", triggeredBy.getAsString());
+                }
+                if (enabledClaims.contains("triggered_by_id") && user != null) {
                     claimsBuilder.claim("triggered_by_id", user.getId());
+                }
+                if (enabledClaims.contains("build_number")) {
+                    claimsBuilder.claim("build_number", build.getBuildNumber());
                 }
 
                 JWTClaimsSet jwtClaimsSet = claimsBuilder.build();
 
                 SignedJWT signedJWT = new SignedJWT(jwsHeader, jwtClaimsSet);
-                JWSSigner signer = new RSASSASigner(rsaKey);
                 signedJWT.sign(signer);
 
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, signedJWT.serialize());
