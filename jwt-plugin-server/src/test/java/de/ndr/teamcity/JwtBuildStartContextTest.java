@@ -293,6 +293,37 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void claimsWithWhitespaceAroundCommasAreAllIncluded() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("JWT-Plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getBuildFeature()).thenReturn(jwtBuildFeature);
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("claims", "branch, build_number"));
+
+        Branch branch = mock(Branch.class);
+        when(branch.getName()).thenReturn("refs/heads/main");
+        when(runningBuild.getBranch()).thenReturn(branch);
+        when(runningBuild.getBuildNumber()).thenReturn("42");
+
+        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
+        assertThat(jwt.getJWTClaimsSet().getStringClaim("build_number")).isEqualTo("42");
+        assertThat(jwt.getJWTClaimsSet().getClaim("project_external_id")).isNull();
+    }
+
+    @Test
     public void allClaimsIncludedWhenClaimsParamAbsent() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);

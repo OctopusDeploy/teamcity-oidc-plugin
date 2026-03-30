@@ -58,7 +58,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
                 String claimsParam = params.get("claims");
                 Set<String> enabledClaims = claimsParam != null
-                        ? new HashSet<>(Arrays.asList(claimsParam.split(",")))
+                        ? new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")))
                         : ALL_CUSTOM_CLAIMS;
 
                 JWSHeader jwsHeader;
