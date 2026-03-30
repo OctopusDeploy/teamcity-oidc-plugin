@@ -1,6 +1,7 @@
 package de.ndr.teamcity;
 
 import jetbrains.buildServer.serverSide.ServerPaths;
+import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,11 +11,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
@@ -35,7 +36,9 @@ public class JwtBuildFeatureTest {
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths);
         assertTrue(keyFile.exists());
-        assertEquals(jwtBuildFeature.getRsaKey().toString(), FileUtils.readFileToString(keyFile, Charset.defaultCharset()));
+        String fileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+        assertThat(fileContents).startsWith("scrambled:");
+        assertThat(EncryptUtil.unscramble(fileContents)).isEqualTo(jwtBuildFeature.getRsaKey().toString());
     }
 
     @Test
@@ -47,11 +50,11 @@ public class JwtBuildFeatureTest {
         File keyFile = new File(pluginDirectory + File.separator + "JwtBuildFeature" + File.separator + "key.json");
 
         new JwtBuildFeature(serverPaths);
-        String keyFileContents = FileUtils.readFileToString(keyFile, Charset.defaultCharset());
+        String keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
 
         new JwtBuildFeature(serverPaths);
-        String keyFileContents2 = FileUtils.readFileToString(keyFile, Charset.defaultCharset());
-        assertEquals(keyFileContents, keyFileContents2);
+        String keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+        assertThat(keyFileContents2).isEqualTo(keyFileContents);
     }
 
 }

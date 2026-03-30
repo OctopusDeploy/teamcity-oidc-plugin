@@ -6,13 +6,14 @@ import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
 import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
+import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
@@ -68,7 +69,8 @@ public class JwtBuildFeature extends BuildFeature {
         JWK jwk;
         if (keyFile.exists()) {
             Loggers.SERVER.info("Read existing key from: " + keyFile);
-            jwk = JWK.parse(FileUtils.readFileToString(keyFile, Charset.defaultCharset()));
+            String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+            jwk = JWK.parse(EncryptUtil.unscramble(encrypted));
         } else {
             Loggers.SERVER.info("Generate new key to: " + keyFile);
             KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
@@ -81,7 +83,7 @@ public class JwtBuildFeature extends BuildFeature {
                     .keyID("teamcity")
                     .algorithm(JWSAlgorithm.RS256)
                     .build();
-            FileUtils.writeStringToFile(keyFile, jwk.toString(), Charset.defaultCharset());
+            FileUtils.writeStringToFile(keyFile, EncryptUtil.scramble(jwk.toString()), StandardCharsets.UTF_8);
         }
         return jwk.toRSAKey();
     }
