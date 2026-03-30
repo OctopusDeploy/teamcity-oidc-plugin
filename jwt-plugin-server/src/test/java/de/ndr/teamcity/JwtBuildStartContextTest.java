@@ -70,7 +70,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws NoSuchAlgorithmException, IOException, ParseException {
+    public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
@@ -92,7 +92,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void branchClaimIsTheBranchNameNotAnObjectReference() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException {
+    public void branchClaimIsTheBranchNameNotAnObjectReference() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
@@ -121,7 +121,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void tokenTtlIsReadFromBuildFeatureParameters() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException {
+    public void tokenTtlIsReadFromBuildFeatureParameters() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
@@ -148,7 +148,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException {
+    public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws NoSuchAlgorithmException, IOException, ParseException, java.text.ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
@@ -175,7 +175,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void throwsWhenRootUrlIsNotHttps() throws NoSuchAlgorithmException, IOException, ParseException {
+    public void throwsWhenRootUrlIsNotHttps() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 
@@ -193,7 +193,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void updateParametersWhenBuildFeatureEnabled() throws NoSuchAlgorithmException, IOException, ParseException {
+    public void updateParametersWhenBuildFeatureEnabled() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
 

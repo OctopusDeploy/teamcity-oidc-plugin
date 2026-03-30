@@ -1,5 +1,6 @@
 package de.ndr.teamcity;
 
+import com.nimbusds.jose.jwk.RSAKey;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
@@ -15,6 +16,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermission;
+import com.nimbusds.jose.JOSEException;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.util.Set;
@@ -36,7 +38,7 @@ public class JwtBuildFeatureTest {
     private File tempDir;
 
     @Test
-    public void testGetRsaKeyCreatesFile() throws NoSuchAlgorithmException, IOException, ParseException {
+    public void testGetRsaKeyCreatesFile() throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         File pluginDirectory = new File(tempDir + File.separator + new File("foobar"));
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
@@ -49,7 +51,7 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void keyFileIsReadableAndWritableByOwnerOnly() throws NoSuchAlgorithmException, IOException, ParseException {
+    public void keyFileIsReadableAndWritableByOwnerOnly() throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
         File pluginDirectory = new File(tempDir + File.separator + new File("foobar"));
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
@@ -65,7 +67,20 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void testGetRsaKeyReusesFile() throws NoSuchAlgorithmException, IOException, ParseException {
+    public void keyIdIsThumbprintOfPublicKey() throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
+        File pluginDirectory = new File(tempDir + File.separator + new File("foobar"));
+        pluginDirectory.mkdirs();
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor);
+        RSAKey key = jwtBuildFeature.getRsaKey();
+
+        assertThat(key.getKeyID()).isEqualTo(key.computeThumbprint().toString());
+        assertThat(key.getKeyID()).isNotEqualTo("teamcity");
+    }
+
+    @Test
+    public void testGetRsaKeyReusesFile() throws NoSuchAlgorithmException, IOException, ParseException, JOSEException {
 
         File pluginDirectory = new File(tempDir + File.separator + new File("foobar"));
         pluginDirectory.mkdirs();
