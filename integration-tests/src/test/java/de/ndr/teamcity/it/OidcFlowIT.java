@@ -131,7 +131,191 @@ public class OidcFlowIT {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
 
-        // TODO: implement setup steps (see Tasks 5 and 6)
+        acceptTcLicenseAgreementIfRequired();
+        waitForTcReady();
+
+        String token = extractTcSuperUserTokenWithRetry();
+        String encoded = java.util.Base64.getEncoder().encodeToString((":" + token).getBytes());
+        superUserAuthHeader = "Basic " + encoded;
+
+        configureTcServerRootUrl();
+
+        // Create Octopus service account first to get the ExternalId GUID,
+        // which is used as the JWT audience in the TC build config.
+        octopusExternalId = createOctopusServiceAccount();
+        createTcProjectAndBuildConfig(octopusExternalId);
+        authorizeAgent();
+        attachOctopusOidcIdentity(octopusExternalId);
+    }
+
+    private static void acceptTcLicenseAgreementIfRequired() throws Exception {
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var result = teamcity.execInContainer(
+                    "grep", "-q", "Review and accept TeamCity license agreement",
+                    "/opt/teamcity/logs/teamcity-server.log"
+            );
+            if (result.getExitCode() == 0) break;
+            java.util.concurrent.TimeUnit.SECONDS.sleep(3);
+        }
+        teamcity.execInContainer(
+                "sh", "-c",
+                "curl -sc /tmp/tc-cookies.txt http://localhost:8111/mnt/ > /dev/null && " +
+                "curl -sb /tmp/tc-cookies.txt -X POST " +
+                "http://localhost:8111/mnt/do/acceptLicenseAgreement"
+        );
+    }
+
+    private static void waitForTcReady() throws Exception {
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var r = tcHttp.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(tcBaseUrl + "/"))
+                            .GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            if (r.statusCode() == 401 || r.statusCode() == 200) return;
+            java.util.concurrent.TimeUnit.SECONDS.sleep(3);
+        }
+        throw new IllegalStateException("TeamCity did not become ready");
+    }
+
+    private static String extractTcSuperUserTokenWithRetry() throws Exception {
+        long deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var result = teamcity.execInContainer(
+                    "grep", "-o", "Super user authentication token: [0-9]*",
+                    "/opt/teamcity/logs/teamcity-server.log"
+            );
+            var matcher = java.util.regex.Pattern.compile(
+                    "Super user authentication token: (\\d+)"
+            ).matcher(result.getStdout().trim());
+            if (matcher.find()) return matcher.group(1);
+            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("TC super user token not found in log after 60s");
+    }
+
+    private static void configureTcServerRootUrl() throws Exception {
+        var page = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/admin.html?item=serverConfigGeneral"))
+                        .header("Authorization", superUserAuthHeader)
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        var csrfMatcher = java.util.regex.Pattern.compile(
+                "tc-csrf-token\" content=\"([^\"]+)\""
+        ).matcher(page.body());
+        if (!csrfMatcher.find()) throw new IllegalStateException("CSRF token not found");
+        String csrf = csrfMatcher.group(1);
+
+        // TC_HTTPS_BASE = "https://teamcity-tls" — the Docker-internal Caddy URL
+        String encodedUrl = TC_HTTPS_BASE.replace(":", "%3A").replace("/", "%2F");
+        String form = "rootUrl=" + encodedUrl + "&submitSettings=store&tc-csrf-token=" + csrf;
+        tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/serverConfigGeneral.html"))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(form))
+                        .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+    }
+
+    private static String createTcProjectAndBuildConfig(String audience) throws Exception {
+        // Create project
+        String projectJson = """
+                {"id":"OidcTest","name":"OidcTest","parentProject":{"id":"_Root"}}
+                """;
+        tcPost("/httpAuth/app/rest/projects", projectJson);
+
+        // Create build config
+        String buildConfigJson = """
+                {"id":"OidcTest_Build","name":"OidcTest Build","project":{"id":"OidcTest"}}
+                """;
+        tcPost("/httpAuth/app/rest/buildTypes", buildConfigJson);
+
+        // Add JWT build feature — audience is the Octopus ExternalId GUID
+        String featureJson = """
+                {"type":"teamcity-jwt","properties":{"property":[
+                  {"name":"audience","value":"%s"},
+                  {"name":"ttl_minutes","value":"10"},
+                  {"name":"enabled_claims","value":"sub,iss,aud"}
+                ]}}
+                """.formatted(audience);
+        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
+
+        // Add echo build step
+        String stepJson = """
+                {"type":"simpleRunner","name":"echo","properties":{"property":[
+                  {"name":"script.content","value":"echo running"},
+                  {"name":"use.custom.script","value":"true"}
+                ]}}
+                """;
+        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/steps", stepJson);
+
+        return "OidcTest_Build";
+    }
+
+    private static void tcPost(String path, String json) throws Exception {
+        var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + path))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(json))
+                        .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("TC POST " + path + " returned " + response.statusCode() + ": " + response.body());
+        }
+    }
+
+    private static void authorizeAgent() throws Exception {
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var response = tcHttp.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    tcBaseUrl + "/httpAuth/app/rest/agents?locator=authorized:false"))
+                            .header("Authorization", superUserAuthHeader)
+                            .header("Accept", "application/json")
+                            .GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            // Parse the first agent id from the JSON
+            var matcher = java.util.regex.Pattern.compile("\"id\":(\\d+)")
+                    .matcher(response.body());
+            if (matcher.find()) {
+                String agentId = matcher.group(1);
+                tcHttp.send(
+                        java.net.http.HttpRequest.newBuilder()
+                                .uri(java.net.URI.create(
+                                        tcBaseUrl + "/httpAuth/app/rest/agents/id:" + agentId + "/authorized"))
+                                .header("Authorization", superUserAuthHeader)
+                                .header("Content-Type", "text/plain")
+                                .PUT(java.net.http.HttpRequest.BodyPublishers.ofString("true"))
+                                .build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofString()
+                );
+                return;
+            }
+            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("No unauthorized TC agent appeared within 3 minutes");
+    }
+
+    private static String createOctopusServiceAccount() throws Exception {
+        throw new UnsupportedOperationException("TODO Task 6");
+    }
+
+    private static void attachOctopusOidcIdentity(String externalId) throws Exception {
+        throw new UnsupportedOperationException("TODO Task 6");
     }
 
     @Test
