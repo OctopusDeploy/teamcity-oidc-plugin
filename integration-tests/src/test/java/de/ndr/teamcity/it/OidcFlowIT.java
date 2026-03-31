@@ -310,12 +310,75 @@ public class OidcFlowIT {
         throw new IllegalStateException("No unauthorized TC agent appeared within 3 minutes");
     }
 
+    private static String octopusGet(String path) throws Exception {
+        var response = octopusHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(octopusBaseUrl + path))
+                        .header("X-Octopus-ApiKey", OCTOPUS_ADMIN_API_KEY)
+                        .header("Accept", "application/json")
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException(
+                    "Octopus GET " + path + " returned " + response.statusCode() + ": " + response.body());
+        }
+        return response.body();
+    }
+
+    private static String octopusPost(String path, String json) throws Exception {
+        var response = octopusHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(octopusBaseUrl + path))
+                        .header("X-Octopus-ApiKey", OCTOPUS_ADMIN_API_KEY)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(json))
+                        .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException(
+                    "Octopus POST " + path + " returned " + response.statusCode() + ": " + response.body());
+        }
+        return response.body();
+    }
+
+    /**
+     * Creates an Octopus service account and returns its ExternalId GUID.
+     * The ExternalId is used as the JWT audience — it must be set on the TC build
+     * feature before triggering a build, and passed as "audience" in the token exchange.
+     */
     private static String createOctopusServiceAccount() throws Exception {
-        throw new UnsupportedOperationException("TODO Task 6");
+        // Create the service account
+        String userResponse = octopusPost("/api/users", """
+                {"Username":"teamcity-ci","DisplayName":"TeamCity CI",
+                 "IsActive":true,"IsService":true,"Identities":[]}
+                """);
+        var idMatcher = java.util.regex.Pattern.compile("\"Id\":\"(Users-\\d+)\"")
+                .matcher(userResponse);
+        if (!idMatcher.find()) throw new IllegalStateException(
+                "Could not extract user Id from Octopus response: " + userResponse);
+        String userId = idMatcher.group(1);
+
+        // Fetch ExternalId — the GUID Octopus expects in the JWT aud claim
+        String identitiesResponse = octopusGet(
+                "/api/serviceaccounts/" + userId + "/oidcidentities/v1?skip=0&take=1");
+        var externalIdMatcher = java.util.regex.Pattern.compile("\"ExternalId\":\"([^\"]+)\"")
+                .matcher(identitiesResponse);
+        if (!externalIdMatcher.find()) throw new IllegalStateException(
+                "Could not extract ExternalId from Octopus response: " + identitiesResponse);
+
+        // Store userId for use in attachOctopusOidcIdentity
+        octopusServiceAccountId = userId;
+        return externalIdMatcher.group(1);
     }
 
     private static void attachOctopusOidcIdentity(String externalId) throws Exception {
-        throw new UnsupportedOperationException("TODO Task 6");
+        octopusPost("/api/serviceaccounts/" + octopusServiceAccountId + "/oidcidentities/create/v1", """
+                {"ServiceAccountId":"%s","Name":"TeamCity Build",
+                 "Issuer":"%s","Subject":"%s"}
+                """.formatted(octopusServiceAccountId, TC_HTTPS_BASE, BUILD_CONFIG_EXTERNAL_ID));
     }
 
     @Test
