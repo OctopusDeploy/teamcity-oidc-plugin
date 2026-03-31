@@ -66,6 +66,10 @@ public class OidcFlowIT {
             .withEnv("ADMIN_PASSWORD", OCTOPUS_ADMIN_PASSWORD)
             .withEnv("ADMIN_API_KEY", OCTOPUS_ADMIN_API_KEY)
             .withEnv("DISABLE_DIND", "Y")
+            .withCopyFileToContainer(
+                    MountableFile.forClasspathResource("tls/ca.crt"),
+                    "/usr/local/share/ca-certificates/test-ca.crt"
+            )
             .dependsOn(mssql)
             .waitingFor(Wait.forHttp("/api").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5)));
 
@@ -145,6 +149,10 @@ public class OidcFlowIT {
         createTcProjectAndBuildConfig(octopusExternalId);
         authorizeAgent();
         attachOctopusOidcIdentity(octopusExternalId);
+
+        // Trust the self-signed Caddy CA inside the Octopus container so it can
+        // call back to https://teamcity-tls when validating JWTs
+        octopus.execInContainer("update-ca-certificates");
     }
 
     private static void acceptTcLicenseAgreementIfRequired() throws Exception {
@@ -482,6 +490,26 @@ public class OidcFlowIT {
                 .as("aud must contain octopusExternalId").contains(octopusExternalId);
         org.assertj.core.api.Assertions.assertThat(claims.getExpirationTime())
                 .as("JWT must not be expired").isAfter(new java.util.Date());
+
+        // Verify signature against the JWKS served by TC (via Caddy TLS)
+        // tcHttp trusts the self-signed cert via TlsTrustManager
+        var jwksResponse = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(
+                                "https://localhost:" + caddy.getMappedPort(443) + "/.well-known/jwks.json"))
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        com.nimbusds.jose.jwk.JWKSet jwks = com.nimbusds.jose.jwk.JWKSet.parse(jwksResponse.body());
+        com.nimbusds.jose.jwk.source.ImmutableJWKSet<com.nimbusds.jose.proc.SecurityContext> keySource =
+                new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(jwks);
+        com.nimbusds.jose.proc.JWSVerificationKeySelector<com.nimbusds.jose.proc.SecurityContext> keySelector =
+                new com.nimbusds.jose.proc.JWSVerificationKeySelector<>(
+                        parsed.getHeader().getAlgorithm(), keySource);
+        com.nimbusds.jwt.proc.DefaultJWTProcessor<com.nimbusds.jose.proc.SecurityContext> processor =
+                new com.nimbusds.jwt.proc.DefaultJWTProcessor<>();
+        processor.setJWSKeySelector(keySelector);
+        processor.process(parsed, null); // throws if signature invalid
     }
 
     private static String exchangeJwtWithOctopus(String jwt) throws Exception {
