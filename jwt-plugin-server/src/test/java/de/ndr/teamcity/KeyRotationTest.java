@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -29,6 +30,9 @@ public class KeyRotationTest {
 
     @Mock
     private WebControllerManager controllerManager;
+
+    @Mock
+    private AuthorizationInterceptor authorizationInterceptor;
 
     @Mock
     private ServerPaths serverPaths;
@@ -102,7 +106,7 @@ public class KeyRotationTest {
     // --- helpers ---
 
     private JsonArray jwksKeys(JwtBuildFeature feature) throws Exception {
-        JwksController controller = new JwksController(controllerManager, feature);
+        JwksController controller = new JwksController(controllerManager, authorizationInterceptor, feature);
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         StringWriter writer = new StringWriter();

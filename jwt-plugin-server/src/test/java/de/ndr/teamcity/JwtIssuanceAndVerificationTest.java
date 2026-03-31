@@ -9,6 +9,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
@@ -41,6 +42,7 @@ import static org.mockito.Mockito.*;
 public class JwtIssuanceAndVerificationTest {
 
     @Mock WebControllerManager controllerManager;
+    @Mock AuthorizationInterceptor authorizationInterceptor;
     @Mock ServerPaths serverPaths;
     @Mock PluginDescriptor pluginDescriptor;
     @Mock SBuildServer buildServer;
@@ -197,7 +199,7 @@ public class JwtIssuanceAndVerificationTest {
     }
 
     private JWKSet getJwks(JwtBuildFeature feature) throws Exception {
-        JwksController jwksController = new JwksController(controllerManager, feature);
+        JwksController jwksController = new JwksController(controllerManager, authorizationInterceptor, feature);
         HttpServletResponse response = mock(HttpServletResponse.class);
         StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));

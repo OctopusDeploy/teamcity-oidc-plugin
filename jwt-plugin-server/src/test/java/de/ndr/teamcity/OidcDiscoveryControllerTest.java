@@ -3,6 +3,7 @@ package de.ndr.teamcity;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
@@ -33,6 +34,9 @@ public class OidcDiscoveryControllerTest {
     private WebControllerManager controllerManager;
 
     @Mock
+    private AuthorizationInterceptor authorizationInterceptor;
+
+    @Mock
     private SBuildServer buildServer;
 
     @Mock
@@ -49,9 +53,19 @@ public class OidcDiscoveryControllerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
-        new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+        new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, jwtBuildFeature);
 
         verify(controllerManager).registerController(eq("/.well-known/openid-configuration"), any(OidcDiscoveryController.class));
+    }
+
+    @Test
+    public void registersPathAsPubliclyAccessible() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, jwtBuildFeature);
+
+        verify(authorizationInterceptor).addPathNotRequiringAuth(OidcDiscoveryController.class, "/.well-known/openid-configuration");
     }
 
     @Test
@@ -59,7 +73,7 @@ public class OidcDiscoveryControllerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -86,7 +100,7 @@ public class OidcDiscoveryControllerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -107,7 +121,7 @@ public class OidcDiscoveryControllerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -128,7 +142,7 @@ public class OidcDiscoveryControllerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, jwtBuildFeature);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);

@@ -4,6 +4,7 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -34,6 +35,9 @@ public class JwksControllerTest {
     private WebControllerManager controllerManager;
 
     @Mock
+    private AuthorizationInterceptor authorizationInterceptor;
+
+    @Mock
     private ServerPaths serverPaths;
 
     @Mock
@@ -50,16 +54,26 @@ public class JwksControllerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
-        new JwksController(controllerManager, jwtBuildFeature);
+        new JwksController(controllerManager, authorizationInterceptor, jwtBuildFeature);
 
         verify(controllerManager).registerController(eq("/.well-known/jwks.json"), any(JwksController.class));
+    }
+
+    @Test
+    public void registersPathAsPubliclyAccessible() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        new JwksController(controllerManager, authorizationInterceptor, jwtBuildFeature);
+
+        verify(authorizationInterceptor).addPathNotRequiringAuth(JwksController.class, "/.well-known/jwks.json");
     }
 
     @Test
     public void returnsPublicKeyAsJwks() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        JwksController controller = new JwksController(controllerManager, jwtBuildFeature);
+        JwksController controller = new JwksController(controllerManager, authorizationInterceptor, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -93,7 +107,7 @@ public class JwksControllerTest {
     public void setsCacheControlHeader() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        JwksController controller = new JwksController(controllerManager, jwtBuildFeature);
+        JwksController controller = new JwksController(controllerManager, authorizationInterceptor, jwtBuildFeature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);

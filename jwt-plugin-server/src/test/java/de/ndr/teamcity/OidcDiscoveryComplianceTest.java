@@ -3,6 +3,7 @@ package de.ndr.teamcity;
 import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.*;
 public class OidcDiscoveryComplianceTest {
 
     @Mock WebControllerManager controllerManager;
+    @Mock AuthorizationInterceptor authorizationInterceptor;
     @Mock ServerPaths serverPaths;
     @Mock PluginDescriptor pluginDescriptor;
     @Mock jetbrains.buildServer.serverSide.SBuildServer buildServer;
@@ -48,7 +50,7 @@ public class OidcDiscoveryComplianceTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, buildServer, feature);
+        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, feature);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);

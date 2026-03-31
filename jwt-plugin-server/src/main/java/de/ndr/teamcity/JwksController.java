@@ -1,6 +1,7 @@
 package de.ndr.teamcity;
 
 import com.nimbusds.jose.jwk.JWKSet;
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import org.jetbrains.annotations.NotNull;
@@ -18,8 +19,10 @@ public class JwksController extends BaseController {
     private final JwtBuildFeature jwtBuildFeature;
 
     public JwksController(@NotNull WebControllerManager controllerManager,
+                          @NotNull AuthorizationInterceptor authorizationInterceptor,
                           @NotNull JwtBuildFeature jwtBuildFeature) {
         this.jwtBuildFeature = jwtBuildFeature;
+        authorizationInterceptor.addPathNotRequiringAuth(JwksController.class, PATH);
         controllerManager.registerController(PATH, this);
     }
 

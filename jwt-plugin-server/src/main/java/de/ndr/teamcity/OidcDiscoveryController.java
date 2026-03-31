@@ -1,5 +1,6 @@
 package de.ndr.teamcity;
 
+import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -18,9 +19,11 @@ public class OidcDiscoveryController extends BaseController {
     private final SBuildServer buildServer;
 
     public OidcDiscoveryController(@NotNull WebControllerManager controllerManager,
+                                   @NotNull AuthorizationInterceptor authorizationInterceptor,
                                    @NotNull SBuildServer buildServer,
                                    @NotNull JwtBuildFeature jwtBuildFeature) {
         this.buildServer = buildServer;
+        authorizationInterceptor.addPathNotRequiringAuth(OidcDiscoveryController.class, PATH);
         controllerManager.registerController(PATH, this);
     }
 
