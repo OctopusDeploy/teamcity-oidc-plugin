@@ -3,7 +3,6 @@ package de.ndr.teamcity.it;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MSSQLServerContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
@@ -46,11 +45,13 @@ public class OidcFlowIT {
     static final Network network = Network.newNetwork();
 
     @Container
-    static final MSSQLServerContainer<?> mssql = new MSSQLServerContainer<>(MSSQL_IMAGE)
+    static final GenericContainer<?> mssql = new GenericContainer<>(MSSQL_IMAGE)
             .withNetwork(network)
             .withNetworkAliases("mssql")
-            .withPassword(MSSQL_PASSWORD)
-            .acceptLicense();
+            .withExposedPorts(1433)
+            .withEnv("ACCEPT_EULA", "Y")
+            .withEnv("MSSQL_SA_PASSWORD", MSSQL_PASSWORD)
+            .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(2)));
 
     // ADO.NET connection string using the Docker network alias for MSSQL
     private static final String OCTOPUS_DB_CONNECTION_STRING =
