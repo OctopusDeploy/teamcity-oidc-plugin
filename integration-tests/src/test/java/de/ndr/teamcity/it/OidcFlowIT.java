@@ -51,7 +51,10 @@ public class OidcFlowIT {
             .withExposedPorts(1433)
             .withEnv("ACCEPT_EULA", "Y")
             .withEnv("MSSQL_SA_PASSWORD", MSSQL_PASSWORD)
-            .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(2)));
+            // Wait for SQL Server to be fully initialised and accepting connections,
+            // not just the TCP port being open — Octopus will crash if it connects too early
+            .waitingFor(Wait.forLogMessage(".*SQL Server is now ready for client connections.*\\n", 1)
+                    .withStartupTimeout(Duration.ofMinutes(3)));
 
     // ADO.NET connection string using the Docker network alias for MSSQL
     private static final String OCTOPUS_DB_CONNECTION_STRING =
@@ -72,7 +75,7 @@ public class OidcFlowIT {
                     "/usr/local/share/ca-certificates/test-ca.crt"
             )
             .dependsOn(mssql)
-            .waitingFor(Wait.forHttp("/api").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5)));
+            .waitingFor(Wait.forHttp("/api").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(10)));
 
     @Container
     static final GenericContainer<?> teamcity = new GenericContainer<>(TC_IMAGE)
