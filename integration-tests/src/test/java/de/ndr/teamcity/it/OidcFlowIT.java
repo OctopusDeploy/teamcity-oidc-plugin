@@ -15,7 +15,6 @@ import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.time.Duration;
 
-import static org.assertj.core.api.Assertions.fail;
 
 @Testcontainers
 public class OidcFlowIT {
@@ -383,6 +382,153 @@ public class OidcFlowIT {
 
     @Test
     void teamCityJwtIsAcceptedByOctopus() throws Exception {
-        fail("not implemented yet");
+        // 1. Trigger build
+        String queueResponse = triggerBuild();
+        var buildIdMatcher = java.util.regex.Pattern.compile("\"id\":(\\d+)")
+                .matcher(queueResponse);
+        if (!buildIdMatcher.find()) throw new IllegalStateException(
+                "Could not parse build id from: " + queueResponse);
+        String buildId = buildIdMatcher.group(1);
+
+        // 2. Wait for build to finish
+        waitForBuildSuccess(buildId);
+
+        // 3. Extract jwt.token from resulting properties
+        String jwt = extractJwtFromBuild(buildId);
+        org.assertj.core.api.Assertions.assertThat(jwt)
+                .as("jwt.token must be present in build resulting properties")
+                .isNotBlank();
+
+        // 4. Sanity-check the JWT
+        verifyJwtClaims(jwt);
+
+        // 5. Exchange with Octopus
+        String accessToken = exchangeJwtWithOctopus(jwt);
+        org.assertj.core.api.Assertions.assertThat(accessToken)
+                .as("Octopus must return a non-blank access_token")
+                .isNotBlank();
+    }
+
+    private static String triggerBuild() throws Exception {
+        String body = """
+                {"buildType":{"id":"OidcTest_Build"}}
+                """;
+        var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/buildQueue"))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
+                        .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("Failed to queue build: " + response.statusCode() + " " + response.body());
+        }
+        return response.body();
+    }
+
+    private static void waitForBuildSuccess(String buildId) throws Exception {
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var response = tcHttp.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId))
+                            .header("Authorization", superUserAuthHeader)
+                            .header("Accept", "application/json")
+                            .GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            String body = response.body();
+            if (body.contains("\"state\":\"finished\"")) {
+                if (!body.contains("\"status\":\"SUCCESS\"")) {
+                    throw new IllegalStateException("Build " + buildId + " finished with non-SUCCESS status: " + body);
+                }
+                return;
+            }
+            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("Build " + buildId + " did not finish within 3 minutes");
+    }
+
+    private static String extractJwtFromBuild(String buildId) throws Exception {
+        var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(
+                                tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId + "/resulting-properties"))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Accept", "application/json")
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        // Response is {"property":[{"name":"jwt.token","value":"eyJ..."},...]}}
+        var matcher = java.util.regex.Pattern.compile(
+                "\"name\":\"jwt\\.token\",\"value\":\"([^\"]+)\""
+        ).matcher(response.body());
+        if (!matcher.find()) throw new IllegalStateException(
+                "jwt.token not found in build resulting-properties: " + response.body());
+        return matcher.group(1);
+    }
+
+    private static void verifyJwtClaims(String jwt) throws Exception {
+        com.nimbusds.jwt.SignedJWT parsed = com.nimbusds.jwt.SignedJWT.parse(jwt);
+        com.nimbusds.jwt.JWTClaimsSet claims = parsed.getJWTClaimsSet();
+
+        org.assertj.core.api.Assertions.assertThat(claims.getIssuer())
+                .as("iss must equal TC_HTTPS_BASE").isEqualTo(TC_HTTPS_BASE);
+        org.assertj.core.api.Assertions.assertThat(claims.getAudience())
+                .as("aud must contain octopusExternalId").contains(octopusExternalId);
+        org.assertj.core.api.Assertions.assertThat(claims.getExpirationTime())
+                .as("JWT must not be expired").isAfter(new java.util.Date());
+    }
+
+    private static String exchangeJwtWithOctopus(String jwt) throws Exception {
+        // Discover token endpoint from Octopus's own OIDC discovery doc
+        var discoveryResponse = octopusHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(octopusBaseUrl + "/.well-known/openid-configuration"))
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        var tokenEndpointMatcher = java.util.regex.Pattern.compile(
+                "\"token_endpoint\":\"([^\"]+)\""
+        ).matcher(discoveryResponse.body());
+        if (!tokenEndpointMatcher.find()) throw new IllegalStateException(
+                "token_endpoint not found in Octopus discovery doc: " + discoveryResponse.body());
+
+        // Rewrite the token endpoint to use the mapped localhost URL
+        java.net.URI rawEndpoint = java.net.URI.create(tokenEndpointMatcher.group(1));
+        java.net.URI tokenEndpoint = java.net.URI.create(
+                octopusBaseUrl + rawEndpoint.getRawPath()
+                + (rawEndpoint.getRawQuery() != null ? "?" + rawEndpoint.getRawQuery() : ""));
+
+        // Exchange the JWT — anonymous (no API key)
+        String exchangeBody = """
+                {"grant_type":"urn:ietf:params:oauth:grant-type:token-exchange",
+                 "audience":"%s",
+                 "subject_token":"%s",
+                 "subject_token_type":"urn:ietf:params:oauth:token-type:jwt"}
+                """.formatted(octopusExternalId, jwt);
+
+        var exchangeResponse = octopusHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(tokenEndpoint)
+                        .header("Content-Type", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(exchangeBody))
+                        .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        org.assertj.core.api.Assertions.assertThat(exchangeResponse.statusCode())
+                .as("Octopus OIDC token exchange must return 200. Body: " + exchangeResponse.body())
+                .isEqualTo(200);
+
+        var accessTokenMatcher = java.util.regex.Pattern.compile(
+                "\"access_token\":\"([^\"]+)\""
+        ).matcher(exchangeResponse.body());
+        if (!accessTokenMatcher.find()) throw new IllegalStateException(
+                "access_token not found in Octopus response: " + exchangeResponse.body());
+        return accessTokenMatcher.group(1);
     }
 }
