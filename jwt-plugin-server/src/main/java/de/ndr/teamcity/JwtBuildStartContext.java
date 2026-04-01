@@ -8,6 +8,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
+import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.users.SUser;
 import org.jetbrains.annotations.NotNull;
@@ -31,25 +32,37 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
     public void register() {
         extensionHolder.registerExtension(BuildStartContextProcessor.class, this.getClass().getName(), this);
+        Loggers.SERVER.info("JWT plugin: JwtBuildStartContext registered as BuildStartContextProcessor");
     }
 
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
-        Collection<SBuildFeatureDescriptor> jwtBuildFeatures = buildStartContext.getBuild().getBuildFeaturesOfType("JWT-Plugin");
+        SRunningBuild build = buildStartContext.getBuild();
+        Collection<SBuildFeatureDescriptor> jwtBuildFeatures = build.getBuildFeaturesOfType("JWT-Plugin");
+
+        Loggers.SERVER.debug("JWT plugin: updateParameters called for build " + build.getBuildId()
+                + " (" + build.getBuildTypeExternalId() + "), JWT features: " + jwtBuildFeatures.size());
 
         if (!jwtBuildFeatures.isEmpty()) {
             try {
                 SBuildFeatureDescriptor descriptor = jwtBuildFeatures.stream().findFirst().get();
                 JwtBuildFeature jwtBuildFeature = (JwtBuildFeature) descriptor.getBuildFeature();
+                if (jwtBuildFeature == null) {
+                    Loggers.SERVER.warn("JWT plugin: getBuildFeature() returned null for build " + build.getBuildId()
+                            + " — plugin may not be fully initialized");
+                    return;
+                }
                 Map<String, String> params = descriptor.getParameters();
 
                 int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
                 String algorithmName = params.getOrDefault("algorithm", "RS256");
 
-                SRunningBuild build = buildStartContext.getBuild();
-
                 String buildServerRootUrl = buildServer.getRootUrl();
+                Loggers.SERVER.info("JWT plugin: issuing JWT for build " + build.getBuildId()
+                        + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
+
                 if (!buildServerRootUrl.startsWith("https://")) {
+                    Loggers.SERVER.warn("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
                     throw new IllegalStateException(
                             "TeamCity root URL must use HTTPS for OIDC token issuance, but was: " + buildServerRootUrl);
                 }
@@ -118,9 +131,17 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 SignedJWT signedJWT = new SignedJWT(jwsHeader, jwtClaimsSet);
                 signedJWT.sign(signer);
 
-                buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, signedJWT.serialize());
+                String serialized = signedJWT.serialize();
+                buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
+                Loggers.SERVER.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
+                        + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
+                        + ", token[0..50]=" + serialized.substring(0, Math.min(50, serialized.length())) + ")");
             } catch (JOSEException e) {
+                Loggers.SERVER.error("JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
                 throw new RuntimeException(e);
+            } catch (Exception e) {
+                Loggers.SERVER.error("JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
+                throw e;
             }
         }
     }

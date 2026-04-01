@@ -6,6 +6,7 @@
     <bean id="jwtBuildFeature" class="de.ndr.teamcity.JwtBuildFeature" />
     <bean id="jwtBuildStartContext" class="de.ndr.teamcity.JwtBuildStartContext" init-method="register" />
     <bean id="jwtPasswordsProvider" class="de.ndr.teamcity.JwtPasswordsProvider" init-method="register" />
+    <bean id="jwtBuildParametersProvider" class="de.ndr.teamcity.JwtBuildParametersProvider" init-method="register" />
     <bean id="jwtBuildFeatureAdminPage" class="de.ndr.teamcity.JwtBuildFeatureAdminPage"/>
     <bean id="jwksController" class="de.ndr.teamcity.JwksController"/>
     <bean id="oidcDiscoveryController" class="de.ndr.teamcity.OidcDiscoveryController"/>

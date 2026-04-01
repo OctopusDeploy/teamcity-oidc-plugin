@@ -1,5 +1,6 @@
 package de.ndr.teamcity.it;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.BindMode;
@@ -20,7 +21,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.time.LocalDate;
 
 
 @Testcontainers
@@ -45,7 +45,8 @@ public class OidcFlowIT {
     static String octopusExternalId; // fetched after service account creation, used as JWT audience
     static String octopusServiceAccountId; // fetched after service account creation
 
-    private static final String CONTAINER_PREFIX = "jwt-it-" + LocalDate.now();
+    private static final String CONTAINER_PREFIX = "jwt-it-"
+            + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
 
     private static final Path PLUGIN_ZIP = Path.of(
             System.getProperty("project.basedir", "."),
@@ -214,6 +215,43 @@ public class OidcFlowIT {
         log("Setup complete.");
     }
 
+    @AfterAll
+    static void dumpContainerLogs() {
+        java.nio.file.Path logDir = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "tc-it-logs", CONTAINER_PREFIX);
+        try {
+            Files.createDirectories(logDir);
+        } catch (Exception e) {
+            log("Could not create log dir: " + e.getMessage());
+            return;
+        }
+
+        // TC server log — full file for thorough post-mortem
+        try {
+            var result = teamcity.execInContainer(
+                    "cat", "/opt/teamcity/logs/teamcity-server.log");
+            Files.writeString(logDir.resolve("teamcity-server.log"),
+                    result.getStdout() + result.getStderr());
+        } catch (Exception e) {
+            log("Could not read TC server log: " + e.getMessage());
+        }
+
+        // Container stdout/stderr
+        for (var entry : java.util.Map.of(
+                "teamcity", teamcity,
+                "agent", agent,
+                "caddy", caddy,
+                "octopus", octopus
+        ).entrySet()) {
+            try {
+                Files.writeString(logDir.resolve(entry.getKey() + ".log"),
+                        entry.getValue().getLogs());
+            } catch (Exception e) {
+                log("Could not write logs for " + entry.getKey() + ": " + e.getMessage());
+            }
+        }
+        log("Container logs written to " + logDir);
+    }
+
     private static void acceptTcLicenseAgreementIfRequired() throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
         while (System.currentTimeMillis() < deadline) {
@@ -277,7 +315,6 @@ public class OidcFlowIT {
         if (!csrfMatcher.find()) throw new IllegalStateException("CSRF token not found");
         String csrf = csrfMatcher.group(1);
 
-        // TC_HTTPS_BASE = "https://teamcity-tls" — the Docker-internal Caddy URL
         String encodedUrl = TC_HTTPS_BASE.replace(":", "%3A").replace("/", "%2F");
         String form = "rootUrl=" + encodedUrl + "&submitSettings=store&tc-csrf-token=" + csrf;
         var postResponse = tcHttp.send(
@@ -295,21 +332,25 @@ public class OidcFlowIT {
     }
 
     private static void verifyTcRootUrl() throws Exception {
-        var response = tcHttp.send(
-                java.net.http.HttpRequest.newBuilder()
-                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/server"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Accept", "application/json")
-                        .GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString()
-        );
-        // TC REST API returns the root URL in the "webUrl" field
-        String rootUrl = (String) parseJson(response.body()).get("webUrl");
-        log("TC root URL after configuration: " + rootUrl);
-        if (!TC_HTTPS_BASE.equals(rootUrl)) {
-            throw new IllegalStateException(
-                    "TC root URL was not set correctly. Expected: " + TC_HTTPS_BASE + " Actual: " + rootUrl);
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var response = tcHttp.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/server"))
+                            .header("Authorization", superUserAuthHeader)
+                            .header("Accept", "application/json")
+                            .GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            String rootUrl = (String) parseJson(response.body()).get("webUrl");
+            if (TC_HTTPS_BASE.equals(rootUrl)) {
+                log("TC root URL confirmed: " + rootUrl);
+                return;
+            }
+            log("TC root URL not yet updated (got: " + rootUrl + "), retrying...");
+            java.util.concurrent.TimeUnit.SECONDS.sleep(3);
         }
+        throw new IllegalStateException("TC root URL did not update to " + TC_HTTPS_BASE + " within 1 minute");
     }
 
     private static String createTcProjectAndBuildConfig(String audience) throws Exception {
@@ -334,12 +375,6 @@ public class OidcFlowIT {
                 ]}}
                 """.formatted(audience);
         tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
-
-        // Pre-define jwt.token as a password parameter so TC's pre-build parameter validation
-        // passes. JwtBuildStartContext overrides it with the real JWT at build start via
-        // addSharedParameter — but TC validates %jwt.token% references before that runs.
-        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/parameters",
-                "{\"name\":\"jwt.token\",\"value\":\"\",\"type\":{\"rawValue\":\"password\"}}");
 
         // Write jwt.token to a file artifact so we can retrieve it via the artifacts API.
         // The resulting-properties API masks password parameters; artifact file content is not masked.
@@ -435,33 +470,71 @@ public class OidcFlowIT {
      * triggering a build before the agent is idle leaves it stuck in the queue.
      */
     /**
-     * Polls the JWKS endpoint via Caddy until the JWT plugin returns a valid response.
-     * This ensures the plugin has generated its key material and registered its HTTP
-     * endpoints before we trigger a build — a missing check that caused intermittent
-     * empty jwt.token when builds started before the plugin was fully initialised.
+     * Polls the JWKS endpoint until the JWT plugin has generated its own key material.
+     *
+     * TC 2025.11 has built-in OIDC support that serves /.well-known/jwks.json and
+     * /.well-known/openid-configuration immediately (returning 200 with the correct issuer
+     * as soon as the root URL is configured). We must not stop at that — we need to wait
+     * until our plugin's own JWKS keys appear in the response.
+     *
+     * Our plugin generates one RSA key (RS256) and one EC key (ES256).  TC's built-in OIDC
+     * does not generate RSA/EC key pairs on first startup (or returns an empty JWKS).
+     * We treat ≥1 key in the JWKS as the signal that our plugin has finished initialising.
+     */
+    /**
+     * Polls until both conditions are true:
+     *   1. JWKS contains at least one key (our plugin has generated key material — TC's built-in
+     *      OIDC may respond with an empty JWKS before our plugin loads).
+     *   2. The OIDC discovery issuer equals TC_HTTPS_BASE — this calls buildServer.getRootUrl()
+     *      directly through the plugin's own code path, which is the same call made at build time
+     *      in JwtBuildStartContext.updateParameters(). Waiting here ensures the root URL change
+     *      has fully propagated through TC's internals, not just been committed to the REST API.
      */
     private static void waitForPluginReady() throws Exception {
-        long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
+        String httpsBase = "https://localhost:" + caddy.getMappedPort(443);
         while (System.currentTimeMillis() < deadline) {
             try {
-                var response = tcHttp.send(
+                var jwksResponse = tcHttp.send(
                         java.net.http.HttpRequest.newBuilder()
-                                .uri(java.net.URI.create(
-                                        "https://localhost:" + caddy.getMappedPort(443)
-                                                + "/.well-known/jwks.json"))
+                                .uri(java.net.URI.create(httpsBase + "/.well-known/jwks.json"))
                                 .GET().build(),
                         java.net.http.HttpResponse.BodyHandlers.ofString()
                 );
-                if (response.statusCode() == 200) {
-                    log("JWT plugin ready (JWKS returned 200).");
-                    return;
+                if (jwksResponse.statusCode() != 200) {
+                    java.util.concurrent.TimeUnit.SECONDS.sleep(5);
+                    continue;
+                }
+                JSONObject jwks = parseJson(jwksResponse.body());
+                JSONArray keys = (JSONArray) jwks.get("keys");
+                if (keys == null || keys.isEmpty()) {
+                    log("JWKS returned 200 but no keys yet (TC built-in?), retrying...");
+                    java.util.concurrent.TimeUnit.SECONDS.sleep(5);
+                    continue;
+                }
+
+                // Also verify the issuer — exercises buildServer.getRootUrl() through the
+                // plugin's own code path (WellKnownPublicFilter), same as updateParameters()
+                var discoveryResponse = tcHttp.send(
+                        java.net.http.HttpRequest.newBuilder()
+                                .uri(java.net.URI.create(httpsBase + "/.well-known/openid-configuration"))
+                                .GET().build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofString()
+                );
+                if (discoveryResponse.statusCode() == 200) {
+                    String issuer = (String) parseJson(discoveryResponse.body()).get("issuer");
+                    if (TC_HTTPS_BASE.equals(issuer)) {
+                        log("JWT plugin ready (JWKS has " + keys.size() + " key(s), issuer=" + issuer + ").");
+                        return;
+                    }
+                    log("JWKS ready but issuer not yet updated (got: " + issuer + "), retrying...");
                 }
             } catch (Exception ignored) {
                 // Caddy or TC not ready yet — keep polling
             }
-            java.util.concurrent.TimeUnit.SECONDS.sleep(3);
+            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
         }
-        throw new IllegalStateException("JWT plugin JWKS endpoint did not become ready within 2 minutes");
+        throw new IllegalStateException("JWT plugin did not become ready with correct issuer within 5 minutes");
     }
 
     private static void waitForAgentIdle() throws Exception {
@@ -598,6 +671,21 @@ public class OidcFlowIT {
                 .as("Octopus must return a non-blank access_token")
                 .isNotBlank();
         log("Octopus accepted the JWT and returned an access token.");
+
+        // 6. Verify the access token works — call /api/users/me with it
+        log("Verifying access token against /api/users/me...");
+        var meResponse = octopusHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(octopusBaseUrl + "/api/users/me"))
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("Accept", "application/json")
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        log("/api/users/me status=" + meResponse.statusCode() + " body=" + meResponse.body());
+        org.assertj.core.api.Assertions.assertThat(meResponse.statusCode())
+                .as("/api/users/me must return 200 with the service account identity")
+                .isEqualTo(200);
     }
 
     private static String triggerBuild() throws Exception {
@@ -641,7 +729,7 @@ public class OidcFlowIT {
                 lastState = state;
             }
             if ("finished".equals(state)) {
-                printBuildLog(buildId);
+                saveBuildLog(buildId);
                 if (!"SUCCESS".equals(status)) {
                     throw new IllegalStateException(
                             "Build " + buildId + " finished with non-SUCCESS status: " + response.body());
@@ -653,7 +741,7 @@ public class OidcFlowIT {
         throw new IllegalStateException("Build " + buildId + " did not finish within 3 minutes");
     }
 
-    private static void printBuildLog(String buildId) {
+    private static void saveBuildLog(String buildId) {
         try {
             var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
@@ -663,11 +751,14 @@ public class OidcFlowIT {
                             .GET().build(),
                     java.net.http.HttpResponse.BodyHandlers.ofString()
             );
-            log("=== Build log (id=" + buildId + ", status=" + response.statusCode() + ") ===");
-            System.out.println(response.body());
-            log("=== End build log ===");
+            java.nio.file.Path logDir = java.nio.file.Path.of(
+                    System.getProperty("java.io.tmpdir"), "tc-it-logs", CONTAINER_PREFIX);
+            Files.createDirectories(logDir);
+            Files.writeString(logDir.resolve("build-" + buildId + ".log"), response.body());
+            log("Build log saved to " + logDir.resolve("build-" + buildId + ".log")
+                    + " (status=" + response.statusCode() + ")");
         } catch (Exception e) {
-            log("Could not fetch build log: " + e.getMessage());
+            log("Could not save build log: " + e.getMessage());
         }
     }
 
