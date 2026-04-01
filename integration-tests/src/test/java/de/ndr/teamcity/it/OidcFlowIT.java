@@ -2,6 +2,7 @@ package de.ndr.teamcity.it;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -9,10 +10,17 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
+
 import javax.net.ssl.SSLContext;
 import java.net.http.HttpClient;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.time.LocalDate;
 
 
 @Testcontainers
@@ -25,7 +33,7 @@ public class OidcFlowIT {
     private static final String CADDY_IMAGE = "caddy:latest";
     private static final String MSSQL_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest";
 
-    private static final String OCTOPUS_ADMIN_API_KEY = "API-INTEGRATION-TEST-0000000000001";
+    private static final String OCTOPUS_ADMIN_API_KEY = "API-TESTKEY000000000000000000001";
     private static final String OCTOPUS_ADMIN_PASSWORD = "P@ssw0rd123!";
     private static final String MSSQL_PASSWORD = "P@ssw0rd123!";
 
@@ -37,10 +45,30 @@ public class OidcFlowIT {
     static String octopusExternalId; // fetched after service account creation, used as JWT audience
     static String octopusServiceAccountId; // fetched after service account creation
 
+    private static final String CONTAINER_PREFIX = "jwt-it-" + LocalDate.now();
+
     private static final Path PLUGIN_ZIP = Path.of(
             System.getProperty("project.basedir", "."),
             "../target/jwt-plugin.zip"
     ).normalize();
+
+    /**
+     * Temp directory bind-mounted as TC's plugins dir.
+     * Using a bind mount (not withCopyFileToContainer) so TC can create subdirectories
+     * like .bundledTools — docker cp sets root ownership on the parent dir, which
+     * prevents the tcuser process from writing into it.
+     */
+    private static final Path TC_PLUGINS_DIR;
+    static {
+        try {
+            TC_PLUGINS_DIR = Files.createTempDirectory("tc-plugins-");
+            Files.copy(PLUGIN_ZIP, TC_PLUGINS_DIR.resolve("jwt-plugin.zip"),
+                    StandardCopyOption.REPLACE_EXISTING);
+            TC_PLUGINS_DIR.toFile().setWritable(true, false);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to prepare TC plugins directory", e);
+        }
+    }
 
     static final Network network = Network.newNetwork();
 
@@ -51,6 +79,7 @@ public class OidcFlowIT {
             .withExposedPorts(1433)
             .withEnv("ACCEPT_EULA", "Y")
             .withEnv("MSSQL_SA_PASSWORD", MSSQL_PASSWORD)
+            .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-mssql"))
             // Wait for SQL Server to be fully initialised and accepting connections,
             // not just the TCP port being open — Octopus will crash if it connects too early
             .waitingFor(Wait.forLogMessage(".*SQL Server is now ready for client connections.*\\n", 1)
@@ -74,6 +103,7 @@ public class OidcFlowIT {
                     MountableFile.forClasspathResource("tls/ca.crt"),
                     "/usr/local/share/ca-certificates/test-ca.crt"
             )
+            .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-octopus"))
             .dependsOn(mssql)
             .waitingFor(Wait.forHttp("/api").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(10)));
 
@@ -83,10 +113,9 @@ public class OidcFlowIT {
             .withNetworkAliases(TC_INTERNAL_ALIAS)
             .withExposedPorts(TC_PORT)
             .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(PLUGIN_ZIP),
-                    "/data/teamcity_server/datadir/plugins/jwt-plugin.zip"
-            )
+            .withFileSystemBind(TC_PLUGINS_DIR.toString(),
+                    "/data/teamcity_server/datadir/plugins", BindMode.READ_WRITE)
+            .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-teamcity"))
             .waitingFor(
                     Wait.forHttp("/mnt/").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5))
             );
@@ -108,13 +137,19 @@ public class OidcFlowIT {
                     MountableFile.forClasspathResource("tls/server.key"),
                     "/etc/caddy/tls/server.key"
             )
+            .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-caddy"))
             .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(1)));
 
     @Container
     static final GenericContainer<?> agent = new GenericContainer<>(AGENT_IMAGE)
             .withNetwork(network)
-            .withEnv("SERVER_URL", TC_HTTPS_BASE)
-            .dependsOn(teamcity, caddy);
+            // Connect directly to TC over plain HTTP — the agent doesn't need to go through
+            // Caddy and would fail TLS verification anyway (self-signed cert, no custom truststore).
+            // The JWT iss claim comes from TC's configured root URL (https://teamcity-tls), not
+            // from how the agent connects.
+            .withEnv("SERVER_URL", "http://" + TC_INTERNAL_ALIAS + ":" + TC_PORT)
+            .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-agent"))
+            .dependsOn(teamcity);
 
     static String tcBaseUrl;       // http://localhost:<mapped TC port> — for test→TC calls
     static String octopusBaseUrl;  // http://localhost:<mapped Octopus port> — for test→Octopus calls
@@ -122,10 +157,15 @@ public class OidcFlowIT {
     static HttpClient tcHttp;      // talks to TC (plain HTTP from test host)
     static HttpClient octopusHttp; // talks to Octopus (plain HTTP from test host)
 
+    static void log(String msg) {
+        System.out.println("[OidcFlowIT] " + java.time.LocalTime.now() + " " + msg);
+    }
+
     @BeforeAll
     static void setup() throws Exception {
         tcBaseUrl = "http://localhost:" + teamcity.getMappedPort(TC_PORT);
         octopusBaseUrl = "http://localhost:" + octopus.getMappedPort(8080);
+        log("Containers up. TC=" + tcBaseUrl + " Octopus=" + octopusBaseUrl);
 
         SSLContext ssl = TlsTrustManager.buildSslContext();
         tcHttp = HttpClient.newBuilder()
@@ -138,25 +178,40 @@ public class OidcFlowIT {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
 
+        log("Accepting TC license agreement...");
         acceptTcLicenseAgreementIfRequired();
+        log("Waiting for TC to be ready...");
         waitForTcReady();
 
+        log("Extracting TC super user token...");
         String token = extractTcSuperUserTokenWithRetry();
         String encoded = java.util.Base64.getEncoder().encodeToString((":" + token).getBytes());
         superUserAuthHeader = "Basic " + encoded;
 
+        log("TC super user token: " + token + "  (login at " + tcBaseUrl + " with empty username)");
+        log("Configuring TC root URL to " + TC_HTTPS_BASE + "...");
         configureTcServerRootUrl();
+        verifyTcRootUrl();
 
-        // Create Octopus service account first to get the ExternalId GUID,
-        // which is used as the JWT audience in the TC build config.
+        log("Creating Octopus service account...");
         octopusExternalId = createOctopusServiceAccount();
+        log("Octopus ExternalId=" + octopusExternalId + " userId=" + octopusServiceAccountId);
+
+        log("Creating TC project and build config (audience=" + octopusExternalId + ")...");
         createTcProjectAndBuildConfig(octopusExternalId);
+
+        log("Waiting for TC agent to register...");
         authorizeAgent();
+
+        log("Attaching Octopus OIDC identity...");
         attachOctopusOidcIdentity(octopusExternalId);
 
-        // Trust the self-signed Caddy CA inside the Octopus container so it can
-        // call back to https://teamcity-tls when validating JWTs
+        log("Updating CA certificates in Octopus container...");
         octopus.execInContainer("update-ca-certificates");
+
+        log("Waiting for JWT plugin to be ready (JWKS endpoint)...");
+        waitForPluginReady();
+        log("Setup complete.");
     }
 
     private static void acceptTcLicenseAgreementIfRequired() throws Exception {
@@ -225,7 +280,7 @@ public class OidcFlowIT {
         // TC_HTTPS_BASE = "https://teamcity-tls" — the Docker-internal Caddy URL
         String encodedUrl = TC_HTTPS_BASE.replace(":", "%3A").replace("/", "%2F");
         String form = "rootUrl=" + encodedUrl + "&submitSettings=store&tc-csrf-token=" + csrf;
-        tcHttp.send(
+        var postResponse = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/serverConfigGeneral.html"))
                         .header("Authorization", superUserAuthHeader)
@@ -234,6 +289,27 @@ public class OidcFlowIT {
                         .build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString()
         );
+        if (postResponse.statusCode() < 200 || postResponse.statusCode() >= 300) {
+            throw new IllegalStateException("TC root URL POST returned " + postResponse.statusCode());
+        }
+    }
+
+    private static void verifyTcRootUrl() throws Exception {
+        var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/server"))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Accept", "application/json")
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        // TC REST API returns the root URL in the "webUrl" field
+        String rootUrl = (String) parseJson(response.body()).get("webUrl");
+        log("TC root URL after configuration: " + rootUrl);
+        if (!TC_HTTPS_BASE.equals(rootUrl)) {
+            throw new IllegalStateException(
+                    "TC root URL was not set correctly. Expected: " + TC_HTTPS_BASE + " Actual: " + rootUrl);
+        }
     }
 
     private static String createTcProjectAndBuildConfig(String audience) throws Exception {
@@ -251,7 +327,7 @@ public class OidcFlowIT {
 
         // Add JWT build feature — audience is the Octopus ExternalId GUID
         String featureJson = """
-                {"type":"teamcity-jwt","properties":{"property":[
+                {"type":"JWT-Plugin","properties":{"property":[
                   {"name":"audience","value":"%s"},
                   {"name":"ttl_minutes","value":"10"},
                   {"name":"enabled_claims","value":"sub,iss,aud"}
@@ -259,16 +335,50 @@ public class OidcFlowIT {
                 """.formatted(audience);
         tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
 
-        // Add echo build step
+        // Pre-define jwt.token as a password parameter so TC's pre-build parameter validation
+        // passes. JwtBuildStartContext overrides it with the real JWT at build start via
+        // addSharedParameter — but TC validates %jwt.token% references before that runs.
+        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/parameters",
+                "{\"name\":\"jwt.token\",\"value\":\"\",\"type\":{\"rawValue\":\"password\"}}");
+
+        // Write jwt.token to a file artifact so we can retrieve it via the artifacts API.
+        // The resulting-properties API masks password parameters; artifact file content is not masked.
         String stepJson = """
-                {"type":"simpleRunner","name":"echo","properties":{"property":[
-                  {"name":"script.content","value":"echo running"},
+                {"type":"simpleRunner","name":"capture-jwt","properties":{"property":[
+                  {"name":"script.content","value":"JWT=%jwt.token%\\nprintf 'JWT (first 50): %.50s\\\\n' \\"$JWT\\"\\nprintf '%s' \\"$JWT\\" > jwt.txt"},
                   {"name":"use.custom.script","value":"true"}
                 ]}}
                 """;
         tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/steps", stepJson);
 
+        // Publish jwt.txt as an artifact so the test can download it via the artifacts API
+        tcPut("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/artifactRules", "jwt.txt");
+
         return "OidcTest_Build";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static JSONObject parseJson(String body) {
+        try {
+            return (JSONObject) new JSONParser(JSONParser.DEFAULT_PERMISSIVE_MODE).parse(body);
+        } catch (net.minidev.json.parser.ParseException e) {
+            throw new IllegalStateException("Failed to parse JSON: " + body, e);
+        }
+    }
+
+    private static void tcPut(String path, String textBody) throws Exception {
+        var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + path))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Content-Type", "text/plain")
+                        .PUT(java.net.http.HttpRequest.BodyPublishers.ofString(textBody))
+                        .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("TC PUT " + path + " returned " + response.statusCode() + ": " + response.body());
+        }
     }
 
     private static void tcPost(String path, String json) throws Exception {
@@ -299,11 +409,9 @@ public class OidcFlowIT {
                             .GET().build(),
                     java.net.http.HttpResponse.BodyHandlers.ofString()
             );
-            // Parse the first agent id from the JSON
-            var matcher = java.util.regex.Pattern.compile("\"id\":(\\d+)")
-                    .matcher(response.body());
-            if (matcher.find()) {
-                String agentId = matcher.group(1);
+            JSONArray agentList = (JSONArray) parseJson(response.body()).get("agent");
+            if (agentList != null && !agentList.isEmpty()) {
+                String agentId = String.valueOf(((JSONObject) agentList.get(0)).get("id"));
                 tcHttp.send(
                         java.net.http.HttpRequest.newBuilder()
                                 .uri(java.net.URI.create(
@@ -319,6 +427,71 @@ public class OidcFlowIT {
             java.util.concurrent.TimeUnit.SECONDS.sleep(5);
         }
         throw new IllegalStateException("No unauthorized TC agent appeared within 3 minutes");
+    }
+
+    /**
+     * Waits until at least one agent is connected, authorized, enabled and has no active build.
+     * After authorization the agent must download plugins from TC before it can run builds;
+     * triggering a build before the agent is idle leaves it stuck in the queue.
+     */
+    /**
+     * Polls the JWKS endpoint via Caddy until the JWT plugin returns a valid response.
+     * This ensures the plugin has generated its key material and registered its HTTP
+     * endpoints before we trigger a build — a missing check that caused intermittent
+     * empty jwt.token when builds started before the plugin was fully initialised.
+     */
+    private static void waitForPluginReady() throws Exception {
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                var response = tcHttp.send(
+                        java.net.http.HttpRequest.newBuilder()
+                                .uri(java.net.URI.create(
+                                        "https://localhost:" + caddy.getMappedPort(443)
+                                                + "/.well-known/jwks.json"))
+                                .GET().build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofString()
+                );
+                if (response.statusCode() == 200) {
+                    log("JWT plugin ready (JWKS returned 200).");
+                    return;
+                }
+            } catch (Exception ignored) {
+                // Caddy or TC not ready yet — keep polling
+            }
+            java.util.concurrent.TimeUnit.SECONDS.sleep(3);
+        }
+        throw new IllegalStateException("JWT plugin JWKS endpoint did not become ready within 2 minutes");
+    }
+
+    private static void waitForAgentIdle() throws Exception {
+        log("Waiting for agent to become idle...");
+        long deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            var response = tcHttp.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    tcBaseUrl + "/httpAuth/app/rest/agents"
+                                            + "?locator=authorized:true,connected:true,enabled:true"
+                                            + "&fields=agent(id,build)"))
+                            .header("Authorization", superUserAuthHeader)
+                            .header("Accept", "application/json")
+                            .GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            JSONArray agentList = (JSONArray) parseJson(response.body()).get("agent");
+            if (agentList != null) {
+                for (Object item : agentList) {
+                    JSONObject agentObj = (JSONObject) item;
+                    if (agentObj.get("build") == null) {
+                        log("Agent is idle.");
+                        return;
+                    }
+                }
+            }
+            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("No idle TC agent within 5 minutes");
     }
 
     private static String octopusGet(String path) throws Exception {
@@ -366,23 +539,20 @@ public class OidcFlowIT {
                 {"Username":"teamcity-ci","DisplayName":"TeamCity CI",
                  "IsActive":true,"IsService":true,"Identities":[]}
                 """);
-        var idMatcher = java.util.regex.Pattern.compile("\"Id\":\"(Users-\\d+)\"")
-                .matcher(userResponse);
-        if (!idMatcher.find()) throw new IllegalStateException(
+        String userId = (String) parseJson(userResponse).get("Id");
+        if (userId == null) throw new IllegalStateException(
                 "Could not extract user Id from Octopus response: " + userResponse);
-        String userId = idMatcher.group(1);
 
         // Fetch ExternalId — the GUID Octopus expects in the JWT aud claim
         String identitiesResponse = octopusGet(
                 "/api/serviceaccounts/" + userId + "/oidcidentities/v1?skip=0&take=1");
-        var externalIdMatcher = java.util.regex.Pattern.compile("\"ExternalId\":\"([^\"]+)\"")
-                .matcher(identitiesResponse);
-        if (!externalIdMatcher.find()) throw new IllegalStateException(
+        String externalId = (String) parseJson(identitiesResponse).get("ExternalId");
+        if (externalId == null) throw new IllegalStateException(
                 "Could not extract ExternalId from Octopus response: " + identitiesResponse);
 
         // Store userId for use in attachOctopusOidcIdentity
         octopusServiceAccountId = userId;
-        return externalIdMatcher.group(1);
+        return externalId;
     }
 
     private static void attachOctopusOidcIdentity(String externalId) throws Exception {
@@ -394,31 +564,40 @@ public class OidcFlowIT {
 
     @Test
     void teamCityJwtIsAcceptedByOctopus() throws Exception {
-        // 1. Trigger build
+        // 1. Wait for agent idle, then trigger build
+        waitForAgentIdle();
+        log("Triggering build...");
         String queueResponse = triggerBuild();
-        var buildIdMatcher = java.util.regex.Pattern.compile("\"id\":(\\d+)")
-                .matcher(queueResponse);
-        if (!buildIdMatcher.find()) throw new IllegalStateException(
+        String buildId = String.valueOf(parseJson(queueResponse).get("id"));
+        if (buildId == null || buildId.equals("null")) throw new IllegalStateException(
                 "Could not parse build id from: " + queueResponse);
-        String buildId = buildIdMatcher.group(1);
+        log("Build queued, id=" + buildId);
 
         // 2. Wait for build to finish
+        log("Waiting for build to finish...");
         waitForBuildSuccess(buildId);
+        log("Build finished successfully.");
 
-        // 3. Extract jwt.token from resulting properties
+        // 3. Extract jwt.token from artifact
+        log("Extracting JWT from build artifact...");
         String jwt = extractJwtFromBuild(buildId);
         org.assertj.core.api.Assertions.assertThat(jwt)
-                .as("jwt.token must be present in build resulting properties")
+                .as("jwt.token must be present in build artifact")
                 .isNotBlank();
+        log("JWT extracted (length=" + jwt.length() + ")");
 
         // 4. Sanity-check the JWT
+        log("Verifying JWT claims and signature...");
         verifyJwtClaims(jwt);
+        log("JWT verified.");
 
         // 5. Exchange with Octopus
+        log("Exchanging JWT with Octopus...");
         String accessToken = exchangeJwtWithOctopus(jwt);
         org.assertj.core.api.Assertions.assertThat(accessToken)
                 .as("Octopus must return a non-blank access_token")
                 .isNotBlank();
+        log("Octopus accepted the JWT and returned an access token.");
     }
 
     private static String triggerBuild() throws Exception {
@@ -443,6 +622,7 @@ public class OidcFlowIT {
 
     private static void waitForBuildSuccess(String buildId) throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
+        String lastState = null;
         while (System.currentTimeMillis() < deadline) {
             var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
@@ -453,10 +633,18 @@ public class OidcFlowIT {
                             .GET().build(),
                     java.net.http.HttpResponse.BodyHandlers.ofString()
             );
-            String body = response.body();
-            if (body.contains("\"state\":\"finished\"")) {
-                if (!body.contains("\"status\":\"SUCCESS\"")) {
-                    throw new IllegalStateException("Build " + buildId + " finished with non-SUCCESS status: " + body);
+            JSONObject build = parseJson(response.body());
+            String state = String.valueOf(build.get("state"));
+            String status = String.valueOf(build.get("status"));
+            if (!state.equals(lastState)) {
+                log("Build " + buildId + " state=" + state + " status=" + status);
+                lastState = state;
+            }
+            if ("finished".equals(state)) {
+                printBuildLog(buildId);
+                if (!"SUCCESS".equals(status)) {
+                    throw new IllegalStateException(
+                            "Build " + buildId + " finished with non-SUCCESS status: " + response.body());
                 }
                 return;
             }
@@ -465,23 +653,42 @@ public class OidcFlowIT {
         throw new IllegalStateException("Build " + buildId + " did not finish within 3 minutes");
     }
 
+    private static void printBuildLog(String buildId) {
+        try {
+            var response = tcHttp.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    tcBaseUrl + "/httpAuth/downloadBuildLog.html?buildId=" + buildId))
+                            .header("Authorization", superUserAuthHeader)
+                            .GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            log("=== Build log (id=" + buildId + ", status=" + response.statusCode() + ") ===");
+            System.out.println(response.body());
+            log("=== End build log ===");
+        } catch (Exception e) {
+            log("Could not fetch build log: " + e.getMessage());
+        }
+    }
+
     private static String extractJwtFromBuild(String buildId) throws Exception {
+        // jwt.token is a password parameter — masked in resulting-properties.
+        // The build step writes it to jwt.txt; we download that artifact instead.
         var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(
-                                tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId + "/resulting-properties"))
+                                tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId
+                                        + "/artifacts/content/jwt.txt"))
                         .header("Authorization", superUserAuthHeader)
-                        .header("Accept", "application/json")
                         .GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString()
         );
-        // Response is {"property":[{"name":"jwt.token","value":"eyJ..."},...]}}
-        var matcher = java.util.regex.Pattern.compile(
-                "\"name\":\"jwt\\.token\",\"value\":\"([^\"]+)\""
-        ).matcher(response.body());
-        if (!matcher.find()) throw new IllegalStateException(
-                "jwt.token not found in build resulting-properties: " + response.body());
-        return matcher.group(1);
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Failed to download jwt.txt artifact: " + response.statusCode()
+                            + " " + response.body());
+        }
+        return response.body().trim();
     }
 
     private static void verifyJwtClaims(String jwt) throws Exception {
@@ -524,14 +731,12 @@ public class OidcFlowIT {
                         .GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString()
         );
-        var tokenEndpointMatcher = java.util.regex.Pattern.compile(
-                "\"token_endpoint\":\"([^\"]+)\""
-        ).matcher(discoveryResponse.body());
-        if (!tokenEndpointMatcher.find()) throw new IllegalStateException(
+        String tokenEndpointStr = (String) parseJson(discoveryResponse.body()).get("token_endpoint");
+        if (tokenEndpointStr == null) throw new IllegalStateException(
                 "token_endpoint not found in Octopus discovery doc: " + discoveryResponse.body());
 
         // Rewrite the token endpoint to use the mapped localhost URL
-        java.net.URI rawEndpoint = java.net.URI.create(tokenEndpointMatcher.group(1));
+        java.net.URI rawEndpoint = java.net.URI.create(tokenEndpointStr);
         java.net.URI tokenEndpoint = java.net.URI.create(
                 octopusBaseUrl + rawEndpoint.getRawPath()
                 + (rawEndpoint.getRawQuery() != null ? "?" + rawEndpoint.getRawQuery() : ""));
@@ -556,11 +761,9 @@ public class OidcFlowIT {
                 .as("Octopus OIDC token exchange must return 200. Body: " + exchangeResponse.body())
                 .isEqualTo(200);
 
-        var accessTokenMatcher = java.util.regex.Pattern.compile(
-                "\"access_token\":\"([^\"]+)\""
-        ).matcher(exchangeResponse.body());
-        if (!accessTokenMatcher.find()) throw new IllegalStateException(
+        String accessToken = (String) parseJson(exchangeResponse.body()).get("access_token");
+        if (accessToken == null) throw new IllegalStateException(
                 "access_token not found in Octopus response: " + exchangeResponse.body());
-        return accessTokenMatcher.group(1);
+        return accessToken;
     }
 }
