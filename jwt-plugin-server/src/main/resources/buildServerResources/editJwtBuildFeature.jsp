@@ -3,8 +3,9 @@
 <%@ taglib prefix="l" tagdir="/WEB-INF/tags/layout" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
+<jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
 
-<l:settingsGroup title="JWT Build Feature">
+<l:settingsGroup title="">
     <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
@@ -32,12 +33,37 @@
         </td>
     </tr>
     <tr>
-        <th><label for="claims">Claims to include:</label></th>
+        <th><label>Claims to include:</label></th>
         <td>
-            <props:textProperty name="claims" value="${propertiesBean.properties['claims']}" style="width:40em;"/>
-            <span class="smallNote">Comma-separated list of claims to include in the token. Leave blank to include all.
-                Available: <code>branch</code>, <code>build_type_external_id</code>, <code>project_external_id</code>,
-                <code>triggered_by</code>, <code>triggered_by_id</code>, <code>build_number</code>.</span>
+            <%-- Hidden field holds the comma-separated value that TC saves; JS keeps it in sync --%>
+            <input type="hidden" id="claims" name="claims" value="${fn:escapeXml(propertiesBean.properties['claims'])}"/>
+            <table style="border-collapse:collapse;">
+                <tr>
+                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="branch"/> branch</label></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="build_type_external_id"/> build_type_external_id</label></td>
+                    <td><span class="smallNote"><code>${fn:escapeXml(buildForm.externalId)}</code></span></td>
+                </tr>
+                <tr>
+                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="project_external_id"/> project_external_id</label></td>
+                    <td><span class="smallNote"><code>${fn:escapeXml(buildForm.project.externalId)}</code></span></td>
+                </tr>
+                <tr>
+                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="triggered_by"/> triggered_by</label></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="triggered_by_id"/> triggered_by_id</label></td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="build_number"/> build_number</label></td>
+                    <td></td>
+                </tr>
+            </table>
+            <span class="smallNote">Uncheck claims to exclude them from the token.</span>
             <span class="error" id="error_claims"></span>
         </td>
     </tr>
@@ -161,5 +187,22 @@
             placeholder.empty();
             placeholder.append($j('span#jwtTestConnectionBtnHolder').children());
         }
+
+        // Initialise claim checkboxes from stored comma-separated value.
+        // Blank = all claims enabled, so tick all boxes when the field is empty.
+        var ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
+                          'triggered_by','triggered_by_id','build_number'];
+        var stored = $j('#claims').val().trim();
+        var enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
+        $j('.jwt-claim-cb').each(function() {
+            $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
+        });
+
+        // Sync hidden field on every checkbox change.
+        // All checked → store blank (= "all"); partial → store comma-separated list.
+        $j('.jwt-claim-cb').on('change', function() {
+            var checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
+            $j('#claims').val(checked.length === ALL_CLAIMS.length ? '' : checked.join(','));
+        });
     });
 </script>
