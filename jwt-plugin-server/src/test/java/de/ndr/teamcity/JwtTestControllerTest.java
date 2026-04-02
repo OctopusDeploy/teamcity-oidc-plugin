@@ -566,6 +566,38 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void exchangeStepStripsTrailingSlashesFromServiceUrl() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        int port = server.getAddress().getPort();
+        String serviceUrl = "http://localhost:" + port;
+        addContext(server, "/.well-known/openid-configuration", 200,
+            "{\"token_endpoint\":\"" + serviceUrl + "/token\"}");
+        addContext(server, "/token", 200,
+            "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
+        server.start();
+
+        try {
+            JSONObject result = callStep(Map.of(
+                "step", "exchange", "token", token,
+                "serviceUrl", serviceUrl + "///", // trailing slashes
+                "audience", "aud"
+            ));
+            assertThat((Boolean) result.get("ok")).isTrue();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void exchangeStepFailsWhenServiceUrlParamMissing() throws Exception {
         JSONObject result = callStep(Map.of("step", "exchange", "token", "some.jwt.token"));
         assertThat((Boolean) result.get("ok")).isFalse();
