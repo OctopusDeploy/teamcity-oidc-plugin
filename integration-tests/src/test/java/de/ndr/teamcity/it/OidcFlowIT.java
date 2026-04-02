@@ -60,15 +60,51 @@ public class OidcFlowIT {
      * prevents the tcuser process from writing into it.
      */
     private static final Path TC_PLUGINS_DIR;
+    /**
+     * The TC container's JVM cacerts with the test CA cert added, so that
+     * JwtTestController's HttpClient can reach Caddy over HTTPS without
+     * an SSLHandshakeException. Built on the host (where we have write access)
+     * and bind-mounted read-only into the container at startup.
+     */
+    private static final Path TC_CACERTS_WITH_TEST_CA;
     static {
         try {
             TC_PLUGINS_DIR = Files.createTempDirectory("tc-plugins-");
             Files.copy(PLUGIN_ZIP, TC_PLUGINS_DIR.resolve("jwt-plugin.zip"),
                     StandardCopyOption.REPLACE_EXISTING);
             TC_PLUGINS_DIR.toFile().setWritable(true, false);
+
+            TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to prepare TC plugins directory", e);
+            throw new RuntimeException("Failed to prepare TC runtime files", e);
         }
+    }
+
+    /** Copies the host JVM's cacerts and adds the test CA so TC can talk to Caddy. */
+    private static Path buildCacertsWithTestCa() throws Exception {
+        String javaHome = System.getProperty("java.home");
+        java.nio.file.Path hostCacerts = java.nio.file.Path.of(javaHome, "lib", "security", "cacerts");
+
+        java.security.KeyStore ks = java.security.KeyStore.getInstance("JKS");
+        char[] pass = "changeit".toCharArray();
+        if (java.nio.file.Files.exists(hostCacerts)) {
+            try (java.io.InputStream in = java.nio.file.Files.newInputStream(hostCacerts)) {
+                ks.load(in, pass);
+            }
+        } else {
+            ks.load(null, pass);
+        }
+
+        java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
+        try (java.io.InputStream in = OidcFlowIT.class.getResourceAsStream("/tls/ca.crt")) {
+            ks.setCertificateEntry("test-ca", cf.generateCertificate(in));
+        }
+
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("tc-cacerts-", ".jks");
+        try (java.io.OutputStream out = java.nio.file.Files.newOutputStream(tmp)) {
+            ks.store(out, pass);
+        }
+        return tmp;
     }
 
     static final Network network = Network.newNetwork();
@@ -93,6 +129,7 @@ public class OidcFlowIT {
     @Container
     static final GenericContainer<?> octopus = new GenericContainer<>(OCTOPUS_IMAGE)
             .withNetwork(network)
+            .withNetworkAliases("octopus")
             .withExposedPorts(8080)
             .withEnv("ACCEPT_EULA", "Y")
             .withEnv("DB_CONNECTION_STRING", OCTOPUS_DB_CONNECTION_STRING)
@@ -116,6 +153,10 @@ public class OidcFlowIT {
             .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
             .withFileSystemBind(TC_PLUGINS_DIR.toString(),
                     "/data/teamcity_server/datadir/plugins", BindMode.READ_WRITE)
+            // Replace the JVM truststore with one that includes our test CA, so that
+            // JwtTestController's HttpClient can reach Caddy over HTTPS.
+            .withFileSystemBind(TC_CACERTS_WITH_TEST_CA.toString(),
+                    "/opt/java/openjdk/lib/security/cacerts", BindMode.READ_ONLY)
             .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-teamcity"))
             .waitingFor(
                     Wait.forHttp("/mnt/").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5))
@@ -856,5 +897,54 @@ public class OidcFlowIT {
         if (accessToken == null) throw new IllegalStateException(
                 "access_token not found in Octopus response: " + exchangeResponse.body());
         return accessToken;
+    }
+
+    /**
+     * Blocks until Enter is pressed, keeping all containers alive for manual UI testing.
+     *
+     * Run with:
+     *   TESTCONTAINERS_RYUK_DISABLED=true \
+     *   JAVA_HOME=$(jenv prefix 21) \
+     *   mvn verify -pl integration-tests -Dit.test=OidcFlowIT#manualTestingPause -Dmanual
+     *
+     * Add to /etc/hosts (once):
+     *   127.0.0.1  teamcity-tls
+     *
+     * Then browse to https://teamcity-tls:<port> printed below.
+     * Accept the cert warning (self-signed CA), log in with empty username + the token below.
+     */
+    @Test
+    void manualTestingPause() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                System.getProperty("manual") != null,
+                "Skipped — pass -Dmanual to activate manual testing pause"
+        );
+
+        int caddyPort = caddy.getMappedPort(443);
+        String httpsUrl = "https://teamcity-tls:" + caddyPort;
+        String superUserToken = superUserAuthHeader.replace("Basic ", "");
+        String decodedToken = new String(java.util.Base64.getDecoder().decode(superUserToken)).substring(1); // strip leading ":"
+
+        System.out.println();
+        System.out.println("╔══════════════════════════════════════════════════════════════════╗");
+        System.out.println("║  Stack is ready for manual testing                               ║");
+        System.out.println("║                                                                  ║");
+        System.out.printf( "║  TeamCity:    %-51s║%n", httpsUrl);
+        System.out.printf( "║  Login:       %-51s║%n", "(empty username)");
+        System.out.printf( "║  Password:    %-51s║%n", decodedToken);
+        System.out.println("║                                                                  ║");
+        System.out.printf( "║  Octopus (browser): %-47s║%n", octopusBaseUrl);
+        System.out.printf( "║  Octopus (Try Exchange URL): %-38s║%n", "http://octopus:8080");
+        System.out.printf( "║  API key:     %-51s║%n", OCTOPUS_ADMIN_API_KEY);
+        System.out.printf( "║  Octopus ExternalId (JWT aud): %-35s║%n", octopusExternalId);
+        System.out.println("║                                                                  ║");
+        System.out.println("║  /etc/hosts:  127.0.0.1  teamcity-tls                           ║");
+        System.out.println("║  Cert warning: accept in browser (self-signed CA)               ║");
+        System.out.println("║                                                                  ║");
+        System.out.println("║  Press Ctrl+C to stop all containers                            ║");
+        System.out.println("╚══════════════════════════════════════════════════════════════════╝");
+        System.out.println();
+
+        Thread.sleep(Long.MAX_VALUE);
     }
 }
