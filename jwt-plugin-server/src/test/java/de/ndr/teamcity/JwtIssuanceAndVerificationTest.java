@@ -9,11 +9,9 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
-import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
-import jetbrains.buildServer.web.openapi.WebControllerManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,8 +39,6 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 public class JwtIssuanceAndVerificationTest {
 
-    @Mock WebControllerManager controllerManager;
-    @Mock AuthorizationInterceptor authorizationInterceptor;
     @Mock ServerPaths serverPaths;
     @Mock PluginDescriptor pluginDescriptor;
     @Mock SBuildServer buildServer;
@@ -199,11 +195,14 @@ public class JwtIssuanceAndVerificationTest {
     }
 
     private JWKSet getJwks(JwtBuildFeature feature) throws Exception {
-        JwksController jwksController = new JwksController(controllerManager, authorizationInterceptor, feature);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, mock(SBuildServer.class));
+        HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        jwksController.doHandle(mock(HttpServletRequest.class), response);
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
+        filter.doFilter(request, response, mock(javax.servlet.FilterChain.class));
         return JWKSet.parse(writer.toString());
     }
 }
