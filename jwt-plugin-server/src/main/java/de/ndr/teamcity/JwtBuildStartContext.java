@@ -103,6 +103,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
                 DateTime now = new DateTime();
                 JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
+                        .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
                         .subject(build.getBuildTypeExternalId())
                         .audience(List.of(audience))
                         .issuer(buildServerRootUrl)

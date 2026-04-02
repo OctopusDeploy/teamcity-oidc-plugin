@@ -352,4 +352,36 @@ public class JwtBuildStartContextTest {
                 "branch", "build_type_external_id", "project_external_id",
                 "triggered_by", "build_number");
     }
+
+    @Test
+    public void jtiClaimIsUniquePerToken() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("JWT-Plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getBuildFeature()).thenReturn(jwtBuildFeature);
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
+        when(runningBuild.getBuildId()).thenReturn(42L);
+
+        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext, times(2)).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        List<String> tokens = jwtCaptor.getAllValues();
+        String jti1 = SignedJWT.parse(tokens.get(0)).getJWTClaimsSet().getJWTID();
+        String jti2 = SignedJWT.parse(tokens.get(1)).getJWTClaimsSet().getJWTID();
+
+        assertThat(jti1).startsWith("42-");
+        assertThat(jti2).startsWith("42-");
+        assertThat(jti1).isNotEqualTo(jti2);
+    }
 }

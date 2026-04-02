@@ -80,7 +80,7 @@ For tokens to work as proper OIDC tokens, the server must implement the OIDC dis
 
 ## Claims & Token Quality
 
-- [ ] **Add `jti` claim** — Unique per-token identifier (build ID + random nonce) to support replay
+- [x] **Add `jti` claim** — Unique per-token identifier (build ID + random nonce) to support replay
       detection and future revocation.
 - [x] **Configurable audience** — Allow the `aud` claim to be set per build feature instance
       (cloud providers often require a specific audience value).
