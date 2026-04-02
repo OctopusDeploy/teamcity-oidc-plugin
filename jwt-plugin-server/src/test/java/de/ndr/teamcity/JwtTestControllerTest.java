@@ -249,6 +249,98 @@ public class JwtTestControllerTest {
         }
     }
 
+    // ---- step=exchange ----
+
+    @Test
+    void exchangeStepSucceedsWhenTokenEndpointReturns200() throws Exception {
+        // Issue a JWT first (HTTPS rootUrl required for step=jwt)
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "my-ext-id"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        // Stand up a mock service that serves discovery + token endpoint
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        int port = server.getAddress().getPort();
+        String serviceUrl = "http://localhost:" + port;
+        String tokenEndpoint = serviceUrl + "/token";
+
+        addContext(server, "/.well-known/openid-configuration", 200,
+            "{\"issuer\":\"" + serviceUrl + "\",\"token_endpoint\":\"" + tokenEndpoint + "\"}");
+        addContext(server, "/token", 200,
+            "{\"access_token\":\"fake-token\",\"token_type\":\"Bearer\"}");
+        server.start();
+
+        try {
+            JSONObject result = callStep(Map.of(
+                "step", "exchange",
+                "token", token,
+                "serviceUrl", serviceUrl,
+                "audience", "my-ext-id"
+            ));
+            assertThat((Boolean) result.get("ok")).isTrue();
+            assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void exchangeStepFailsWhenTokenEndpointReturns401() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        server.start();
+        int port = server.getAddress().getPort();
+        String serviceUrl = "http://localhost:" + port;
+        addContext(server, "/.well-known/openid-configuration", 200,
+            "{\"token_endpoint\":\"" + serviceUrl + "/token\"}");
+        addContext(server, "/token", 401, "{\"error\":\"invalid_token\"}");
+
+        try {
+            JSONObject result = callStep(Map.of(
+                "step", "exchange", "token", token, "serviceUrl", serviceUrl, "audience", "aud"
+            ));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).contains("Exchange failed (HTTP 401)");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void exchangeStepFailsWhenDiscoveryDocMissingTokenEndpoint() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/openid-configuration", 200, "{\"issuer\":\"http://svc\"}");
+        server.start();
+        int port = server.getAddress().getPort();
+
+        try {
+            JSONObject result = callStep(Map.of(
+                "step", "exchange", "token", token,
+                "serviceUrl", "http://localhost:" + port, "audience", "aud"
+            ));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).contains("token_endpoint not found");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     // ---- helpers ----
 
     private static void addContext(com.sun.net.httpserver.HttpServer server,
