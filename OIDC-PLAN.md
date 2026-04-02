@@ -192,9 +192,9 @@ For tokens to work as proper OIDC tokens, the server must implement the OIDC dis
 
 ### Minor
 
-- [ ] **`getKeyDirectory()` is an unnecessary indirection** — the private method just returns the
+- [x] **`getKeyDirectory()` is an unnecessary indirection** — the private method just returns the
       `keyDirectory` field; all callers can access it directly.
-- [ ] **Logging a 50-char JWT prefix at INFO adds little value** — the prefix is always base64
+- [x] **Logging a 50-char JWT prefix at INFO adds little value** — the prefix is always base64
       header bytes; you can't distinguish tokens from it. Log the `kid` header value instead,
       which is human-meaningful and non-sensitive.
 - [x] **Duplicate `ParseException` import in `JwtBuildStartContextTest`** — `java.text.ParseException`

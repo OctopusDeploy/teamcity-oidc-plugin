@@ -138,7 +138,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                         + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
-                        + ", token[0..50]=" + serialized.substring(0, Math.min(50, serialized.length())) + ")");
+                        + ", kid=" + jwsHeader.getKeyID() + ")");
             } catch (JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
                 throw new RuntimeException(e);

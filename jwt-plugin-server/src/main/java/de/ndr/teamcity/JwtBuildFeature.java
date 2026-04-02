@@ -153,12 +153,8 @@ public class JwtBuildFeature extends BuildFeature {
         };
     }
 
-    private File getKeyDirectory() {
-        return keyDirectory;
-    }
-
     private RSAKey loadOrGenerateRsaKey() throws IOException, NoSuchAlgorithmException, ParseException, JOSEException {
-        File keyFile = new File(getKeyDirectory() + File.separator + "key.json");
+        File keyFile = new File(keyDirectory + File.separator + "key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing RSA key from: " + keyFile);
             String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
@@ -173,7 +169,7 @@ public class JwtBuildFeature extends BuildFeature {
 
     @Nullable
     private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
-        File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-key.json");
+        File retiredKeyFile = new File(keyDirectory + File.separator + "retired-key.json");
         if (retiredKeyFile.exists()) {
             LOG.info("Read retired RSA key from: " + retiredKeyFile);
             String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
@@ -184,7 +180,7 @@ public class JwtBuildFeature extends BuildFeature {
 
     @Nullable
     private ECKey loadRetiredEcKey() throws IOException, ParseException {
-        File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-ec-key.json");
+        File retiredKeyFile = new File(keyDirectory + File.separator + "retired-ec-key.json");
         if (retiredKeyFile.exists()) {
             LOG.info("Read retired EC key from: " + retiredKeyFile);
             String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
@@ -194,7 +190,7 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
-        File keyFile = new File(getKeyDirectory() + File.separator + "ec-key.json");
+        File keyFile = new File(keyDirectory + File.separator + "ec-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing EC key from: " + keyFile);
             String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
@@ -233,7 +229,7 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     private void saveKeyToFile(JWK key, String fileName) throws IOException {
-        File keyFile = new File(getKeyDirectory() + File.separator + fileName);
+        File keyFile = new File(keyDirectory + File.separator + fileName);
         FileUtils.writeStringToFile(keyFile, EncryptUtil.scramble(key.toString()), StandardCharsets.UTF_8);
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             Files.setPosixFilePermissions(keyFile.toPath(), Set.of(
