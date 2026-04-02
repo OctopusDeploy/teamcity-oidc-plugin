@@ -28,6 +28,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
             "branch", "build_type_external_id", "project_external_id",
             "triggered_by", "triggered_by_id", "build_number");
 
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder, @NotNull SBuildServer buildServer) {
         this.extensionHolder = extensionHolder;
         this.buildServer = buildServer;

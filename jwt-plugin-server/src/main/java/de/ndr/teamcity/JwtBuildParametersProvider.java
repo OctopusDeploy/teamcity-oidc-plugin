@@ -26,6 +26,7 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
 
     private final ExtensionHolder extensionHolder;
 
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     public JwtBuildParametersProvider(@NotNull ExtensionHolder extensionHolder) {
         this.extensionHolder = extensionHolder;
     }

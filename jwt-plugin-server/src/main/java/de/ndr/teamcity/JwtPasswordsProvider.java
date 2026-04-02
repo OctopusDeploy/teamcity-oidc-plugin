@@ -17,6 +17,7 @@ public class JwtPasswordsProvider implements PasswordsProvider {
 
     private final ExtensionHolder extensionHolder;
 
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     public JwtPasswordsProvider(@NotNull ExtensionHolder extensionHolder) {
         this.extensionHolder = extensionHolder;
     }
