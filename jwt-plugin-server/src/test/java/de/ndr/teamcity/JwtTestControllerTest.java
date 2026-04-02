@@ -455,6 +455,115 @@ public class JwtTestControllerTest {
         }
     }
 
+    // ---- step parameter validation ----
+
+    @Test
+    void missingStepReturnsError() throws Exception {
+        JSONObject result = callStep(Map.of());
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("step");
+    }
+
+    @Test
+    void unknownStepReturnsError() throws Exception {
+        JSONObject result = callStep(Map.of("step", "bogus"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("bogus");
+    }
+
+    // ---- step=jwt defaults ----
+
+    @Test
+    void jwtStepDefaultsAlgorithmToRS256() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+            // no algorithm param
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
+    }
+
+    @Test
+    void jwtStepDefaultsAudienceToRootUrl() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "buildTypeId", "buildType:MyBuildType"
+            // no audience param
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("https://tc.example.com");
+    }
+
+    // ---- step=jwks validation ----
+
+    @Test
+    void jwksStepFailsWhenTokenParamMissing() throws Exception {
+        JSONObject result = callStep(Map.of("step", "jwks"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("token");
+    }
+
+    @Test
+    void jwksStepFailsWhenJwksEndpointReturnsNon200() throws Exception {
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/jwks.json", 500, "{}");
+        server.start();
+        int port = server.getAddress().getPort();
+        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+
+        try {
+            JSONObject result = callStep(Map.of("step", "jwks", "token", "dummy.token.here"));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).contains("JWKS endpoint returned HTTP 500");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    // ---- step=exchange validation ----
+
+    @Test
+    void exchangeStepFailsWhenTokenParamMissing() throws Exception {
+        JSONObject result = callStep(Map.of("step", "exchange", "serviceUrl", "http://svc.example.com"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("token");
+    }
+
+    @Test
+    void exchangeStepFailsWhenServiceUrlParamMissing() throws Exception {
+        JSONObject result = callStep(Map.of("step", "exchange", "token", "some.jwt.token"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("serviceUrl");
+    }
+
+    @Test
+    void exchangeStepFailsWhenServiceDiscoveryReturnsNon200() throws Exception {
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/openid-configuration", 404, "not found");
+        server.start();
+        int port = server.getAddress().getPort();
+
+        try {
+            JSONObject result = callStep(Map.of(
+                "step", "exchange", "token", "some.jwt.token",
+                "serviceUrl", "http://localhost:" + port, "audience", "aud"
+            ));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).contains("Service discovery returned HTTP 404");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     // ---- helpers ----
 
     private static void addContext(com.sun.net.httpserver.HttpServer server,

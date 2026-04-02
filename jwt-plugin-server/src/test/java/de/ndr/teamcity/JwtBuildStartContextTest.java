@@ -52,6 +52,18 @@ public class JwtBuildStartContextTest {
     private File tempDir;
 
     @Test
+    public void doesNotCrashWhenGetBuildFeatureReturnsNull() {
+        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("JWT-Plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getBuildFeature()).thenReturn(null);
+
+        AssertionsForClassTypes.assertThatNoException()
+                .isThrownBy(() -> jwtBuildStartContext.updateParameters(buildStartContext));
+        verify(buildStartContext, never()).addSharedParameter(any(), any());
+    }
+
+    @Test
     public void testRegister() {
         JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer);
         jwtBuildStartContext.register();
