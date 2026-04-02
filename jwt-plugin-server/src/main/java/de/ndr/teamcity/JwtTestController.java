@@ -219,6 +219,7 @@ public class JwtTestController extends BaseController {
         if (serviceUrl == null || serviceUrl.isBlank()) {
             throw new TestStepException("Missing required parameter: serviceUrl");
         }
+        serviceUrl = serviceUrl.stripTrailing().replaceAll("/+$", "");
 
         String discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
         HttpResponse<String> discoveryResp = httpGet(discoveryUrl);
