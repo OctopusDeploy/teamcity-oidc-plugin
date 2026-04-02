@@ -131,10 +131,25 @@ public class JwtTestController extends BaseController {
             signer = new RSASSASigner(rsaKey);
         }
 
+        String buildTypeId = request.getParameter("buildTypeId");
+        if (buildTypeId == null || buildTypeId.isBlank()) {
+            throw new TestStepException("Missing required parameter: buildTypeId");
+        }
+        // TC passes the id param as "buildType:<externalId>" — strip the prefix if present
+        String externalId = buildTypeId.startsWith("buildType:")
+                ? buildTypeId.substring("buildType:".length())
+                : buildTypeId;
+        jetbrains.buildServer.serverSide.SBuildType buildType =
+                buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
+        if (buildType == null) {
+            throw new TestStepException("Build type not found: " + buildTypeId);
+        }
+        String subject = buildType.getExternalId();
+
         Date now = new Date();
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .jwtID(UUID.randomUUID().toString())
-                .subject("test")
+                .subject(subject)
                 .issuer(rootUrl)
                 .audience(List.of(audience))
                 .issueTime(now)
@@ -143,7 +158,7 @@ public class JwtTestController extends BaseController {
         SignedJWT jwt = new SignedJWT(header, claims);
         jwt.sign(signer);
         String serialized = jwt.serialize();
-        String message = "JWT issued (kid: " + header.getKeyID() + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
+        String message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
         return new String[]{message, serialized};
     }
 
@@ -216,13 +231,21 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("token_endpoint not found in service discovery document");
         }
 
+        // Rewrite the token endpoint's origin to match serviceUrl — the discovery doc
+        // may contain the service's own internal hostname (e.g. localhost) which is
+        // unreachable from TC's JVM.
+        URI serviceUri = URI.create(serviceUrl);
+        URI rawEndpointUri = URI.create(tokenEndpoint);
+        URI resolvedEndpoint = new URI(serviceUri.getScheme(), serviceUri.getAuthority(),
+                rawEndpointUri.getPath(), rawEndpointUri.getQuery(), null);
+
         String formBody = "grant_type=" + encode("urn:ietf:params:oauth:grant-type:token-exchange")
                 + "&audience=" + encode(audience != null ? audience : "")
                 + "&subject_token=" + encode(token)
                 + "&subject_token_type=" + encode("urn:ietf:params:oauth:token-type:jwt");
 
         HttpRequest exchangeReq = HttpRequest.newBuilder()
-                .uri(URI.create(tokenEndpoint))
+                .uri(resolvedEndpoint)
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))

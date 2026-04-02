@@ -108,7 +108,20 @@ public class JwtBuildFeature extends BuildFeature {
     @NotNull
     @Override
     public String getDisplayName() {
-        return "JWT";
+        return "OIDC JWT Token";
+    }
+
+    @Override
+    public String describeParameters(@NotNull java.util.Map<String, String> params) {
+        String algorithm = params.getOrDefault("algorithm", "RS256");
+        String ttl = params.getOrDefault("ttl_minutes", "10");
+        String audience = params.get("audience");
+        StringBuilder sb = new StringBuilder();
+        sb.append("alg: ").append(algorithm).append(", ttl: ").append(ttl).append("m");
+        if (audience != null && !audience.isBlank()) {
+            sb.append(", aud: ").append(audience);
+        }
+        return sb.toString();
     }
 
     @Nullable
