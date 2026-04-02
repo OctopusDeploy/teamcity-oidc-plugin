@@ -120,7 +120,147 @@ public class JwtTestControllerTest {
         assertThat(result.getAsString("message")).contains("not HTTPS");
     }
 
+    // ---- step=discovery ----
+
+    @Test
+    void discoveryStepSucceedsWhenIssuerMatches() throws Exception {
+        // HttpServer.create() binds immediately — port is known before start()
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        int port = server.getAddress().getPort();
+        String issuer = "http://localhost:" + port;
+        addContext(server, "/.well-known/openid-configuration",
+            200, "{\"issuer\":\"" + issuer + "\"}");
+        server.start();
+        when(buildServer.getRootUrl()).thenReturn(issuer);
+
+        try {
+            JSONObject result = callStep(Map.of("step", "discovery"));
+            assertThat((Boolean) result.get("ok")).isTrue();
+            assertThat(result.getAsString("message")).contains("Discovery endpoint OK");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void discoveryStepFailsWhenIssuerMismatches() throws Exception {
+        // HttpServer.create() binds immediately — port is known before start()
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/openid-configuration",
+            200, "{\"issuer\":\"https://wrong.example.com\"}");
+        server.start();
+        int port = server.getAddress().getPort();
+        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+
+        try {
+            JSONObject result = callStep(Map.of("step", "discovery"));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).contains("issuer mismatch");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void discoveryStepFailsWhenServerUnreachable() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("http://localhost:1"); // nothing listening on port 1
+        JSONObject result = callStep(Map.of("step", "discovery"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Could not reach");
+    }
+
+    // ---- step=jwks ----
+
+    @Test
+    void jwksStepVerifiesValidRs256Token() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        // Issue a real RS256 token
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        // Serve our JWKS on a local HTTP server
+        String jwksJson = new com.nimbusds.jose.jwk.JWKSet(feature.getPublicKeys()).toString();
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/jwks.json", 200, jwksJson);
+        server.start();
+        int port = server.getAddress().getPort();
+        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+
+        try {
+            JSONObject result = callStep(Map.of("step", "jwks", "token", token));
+            assertThat((Boolean) result.get("ok")).isTrue();
+            assertThat(result.getAsString("message")).contains("JWKS OK");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void jwksStepVerifiesValidEs256Token() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "ES256", "ttl_minutes", "5", "audience", "aud"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        String jwksJson = new com.nimbusds.jose.jwk.JWKSet(feature.getPublicKeys()).toString();
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/jwks.json", 200, jwksJson);
+        server.start();
+        int port = server.getAddress().getPort();
+        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+
+        try {
+            JSONObject result = callStep(Map.of("step", "jwks", "token", token));
+            assertThat((Boolean) result.get("ok")).isTrue();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void jwksStepFailsWhenKidNotInJwks() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        // Serve an empty JWKS
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        addContext(server, "/.well-known/jwks.json", 200, "{\"keys\":[]}");
+        server.start();
+        int port = server.getAddress().getPort();
+        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+
+        try {
+            JSONObject result = callStep(Map.of("step", "jwks", "token", token));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).contains("Key ID not found");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     // ---- helpers ----
+
+    private static void addContext(com.sun.net.httpserver.HttpServer server,
+                                    String path, int status, String body) {
+        server.createContext(path, exchange -> {
+            byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+    }
 
     JSONObject callStep(Map<String, String> params) throws Exception {
         HttpServletRequest req = mockPost(params);
