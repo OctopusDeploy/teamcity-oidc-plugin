@@ -68,6 +68,8 @@ public class JwtTestController extends BaseController {
             return null;
         }
 
+        response.setContentType("application/json;charset=UTF-8");
+
         SUser user = SessionUser.getUser(request);
         if (user == null || !user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -75,8 +77,11 @@ public class JwtTestController extends BaseController {
             return null;
         }
 
-        response.setContentType("application/json;charset=UTF-8");
         String step = request.getParameter("step");
+        if (step == null || step.isBlank()) {
+            writeJson(response, false, "Missing required parameter: step");
+            return null;
+        }
         try {
             if ("jwt".equals(step)) {
                 String[] result = stepJwt(request); // [message, serializedToken]
@@ -159,6 +164,9 @@ public class JwtTestController extends BaseController {
 
     private String stepJwks(HttpServletRequest request) throws Exception {
         String token = request.getParameter("token");
+        if (token == null || token.isBlank()) {
+            throw new TestStepException("Missing required parameter: token");
+        }
         String rootUrl = buildServer.getRootUrl();
         String url = rootUrl + "/.well-known/jwks.json";
         HttpResponse<String> resp = httpGet(url);
@@ -190,6 +198,12 @@ public class JwtTestController extends BaseController {
         String token = request.getParameter("token");
         String serviceUrl = request.getParameter("serviceUrl");
         String audience = request.getParameter("audience");
+        if (token == null || token.isBlank()) {
+            throw new TestStepException("Missing required parameter: token");
+        }
+        if (serviceUrl == null || serviceUrl.isBlank()) {
+            throw new TestStepException("Missing required parameter: serviceUrl");
+        }
 
         String discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
         HttpResponse<String> discoveryResp = httpGet(discoveryUrl);
