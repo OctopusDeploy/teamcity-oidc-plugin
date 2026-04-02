@@ -97,9 +97,11 @@ For tokens to work as proper OIDC tokens, the server must implement the OIDC dis
 - [x] **Configurable audience** — Input field for `aud` claim value.
 - [x] **Validation on save** — Check that the TeamCity root URL is HTTPS before allowing the
       feature to be enabled.
-- [ ] **Test connection button** — Add a "Test" button to the build feature config page that
-      triggers a dry-run JWT issuance and verifies the OIDC discovery/JWKS endpoints are
-      reachable, so operators can confirm the setup works before running a real build.
+- [x] **Test connection button** — Add a "Test" button to the build feature config page that:
+  - triggers a dry-run JWT issuance
+  - verifies the OIDC discovery/JWKS endpoints are reachable
+  - optionally asks for a service id and url (or similar) so that it can go and try and exchange jwt for a token
+  - Note: exchange step sends `Content-Type: application/json` (required by Octopus); standard OAuth servers (AWS, Azure, GCP) expect `application/x-www-form-urlencoded` per RFC 8693 — may need per-provider handling in future
 
 ---
 
