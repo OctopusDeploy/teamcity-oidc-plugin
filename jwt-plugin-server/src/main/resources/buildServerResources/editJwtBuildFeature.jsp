@@ -2,6 +2,7 @@
 <%@ taglib prefix="props" tagdir="/WEB-INF/tags/props" %>
 <%@ taglib prefix="l" tagdir="/WEB-INF/tags/layout" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 
 <l:settingsGroup title="JWT Build Feature">
     <tr>
@@ -43,7 +44,8 @@
 </l:settingsGroup>
 
 <%-- Hidden holder; JS moves its contents into TC's editBuildFeatureAdditionalButtons on DOM ready --%>
-<span id="jwtTestConnectionBtnHolder" style="display:none;">
+<%-- data-build-type-id carries the build type ID safely without inline JS injection --%>
+<span id="jwtTestConnectionBtnHolder" style="display:none;" data-build-type-id="${fn:escapeXml(param.id)}">
     <input type="button" value="Test Connection" class="btn btn_primary submitButton"
            onclick="event.stopPropagation(); window.jwtTestOpen();" />
 </span>
@@ -56,17 +58,17 @@
         <div id="jwtRow1" style="margin-bottom:6px;color:#888;">&#x25CB; OIDC discovery endpoint</div>
         <div id="jwtRow2" style="margin-bottom:6px;color:#888;">&#x25CB; JWKS signature verification</div>
         <hr style="border:none;border-top:1px solid #444;margin:12px 0;"/>
-        <div style="color:#aaa;margin-bottom:6px;">Optional: test token exchange</div>
+        <div style="color:#aaa;margin-bottom:6px;">Test token exchange</div>
         <div style="display:flex;gap:8px;align-items:center;">
             <input id="jwtServiceUrl" type="text" placeholder="https://octopus.example.com"
                    style="flex:1;background:#1e1e1e;border:1px solid #555;color:#ccc;padding:4px 6px;border-radius:3px;"
                    disabled/>
-            <button type="button" id="jwtExchangeBtn" class="btn" onclick="jwtTestExchange()" disabled
+            <button type="button" id="jwtExchangeBtn" class="btn" onclick="window.jwtTestExchange()" disabled
                     style="white-space:nowrap;">Try Exchange</button>
         </div>
         <div id="jwtRow3" style="margin-top:6px;min-height:18px;color:#888;"></div>
         <div style="text-align:right;margin-top:14px;">
-            <button type="button" class="btn" onclick="jwtTestClose()">Close</button>
+            <button type="button" class="btn" onclick="window.jwtTestClose()">Close</button>
         </div>
     </div>
 </div>
@@ -119,7 +121,7 @@
         var algorithm = document.getElementById('algorithm').value;
         var ttl = document.getElementById('ttl_minutes').value || '10';
         var audience = document.getElementById('audience').value;
-        var buildTypeId = '${param.id}';
+        var buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
 
         document.getElementById('jwtRow0').textContent = '\u23F3 Issuing JWT...';
         var r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});

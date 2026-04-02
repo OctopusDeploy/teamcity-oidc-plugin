@@ -16,11 +16,16 @@ import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 
 import javax.net.ssl.SSLContext;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.KeyStore;
+import java.security.cert.CertificateFactory;
 import java.time.Duration;
+import java.util.Base64;
 
 
 @Testcontainers
@@ -83,25 +88,25 @@ public class OidcFlowIT {
     /** Copies the host JVM's cacerts and adds the test CA so TC can talk to Caddy. */
     private static Path buildCacertsWithTestCa() throws Exception {
         String javaHome = System.getProperty("java.home");
-        java.nio.file.Path hostCacerts = java.nio.file.Path.of(javaHome, "lib", "security", "cacerts");
+        Path hostCacerts = Path.of(javaHome, "lib", "security", "cacerts");
 
-        java.security.KeyStore ks = java.security.KeyStore.getInstance("JKS");
+        KeyStore ks = KeyStore.getInstance("JKS");
         char[] pass = "changeit".toCharArray();
-        if (java.nio.file.Files.exists(hostCacerts)) {
-            try (java.io.InputStream in = java.nio.file.Files.newInputStream(hostCacerts)) {
+        if (Files.exists(hostCacerts)) {
+            try (InputStream in = Files.newInputStream(hostCacerts)) {
                 ks.load(in, pass);
             }
         } else {
             ks.load(null, pass);
         }
 
-        java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
-        try (java.io.InputStream in = OidcFlowIT.class.getResourceAsStream("/tls/ca.crt")) {
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        try (InputStream in = OidcFlowIT.class.getResourceAsStream("/tls/ca.crt")) {
             ks.setCertificateEntry("test-ca", cf.generateCertificate(in));
         }
 
-        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("tc-cacerts-", ".jks");
-        try (java.io.OutputStream out = java.nio.file.Files.newOutputStream(tmp)) {
+        Path tmp = Files.createTempFile("tc-cacerts-", ".jks");
+        try (OutputStream out = Files.newOutputStream(tmp)) {
             ks.store(out, pass);
         }
         return tmp;
@@ -922,8 +927,9 @@ public class OidcFlowIT {
 
         int caddyPort = caddy.getMappedPort(443);
         String httpsUrl = "https://teamcity-tls:" + caddyPort;
+        // superUserAuthHeader is "Basic <base64(:token)>" — decode and split on ":" to get the token
         String superUserToken = superUserAuthHeader.replace("Basic ", "");
-        String decodedToken = new String(java.util.Base64.getDecoder().decode(superUserToken)).substring(1); // strip leading ":"
+        String decodedToken = new String(Base64.getDecoder().decode(superUserToken)).split(":", 2)[1];
 
         System.out.println();
         System.out.println("╔══════════════════════════════════════════════════════════════════╗");

@@ -11,6 +11,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import jetbrains.buildServer.serverSide.SBuildType;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -139,8 +140,7 @@ public class JwtTestController extends BaseController {
         String externalId = buildTypeId.startsWith("buildType:")
                 ? buildTypeId.substring("buildType:".length())
                 : buildTypeId;
-        jetbrains.buildServer.serverSide.SBuildType buildType =
-                buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
+        SBuildType buildType = buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
         if (buildType == null) {
             throw new TestStepException("Build type not found: " + buildTypeId);
         }
@@ -281,7 +281,8 @@ public class JwtTestController extends BaseController {
 
     private static int parseTtl(String value) {
         try {
-            return (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
+            int ttl = (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
+            return Math.max(1, Math.min(ttl, 1440)); // clamp to [1, 1440] minutes
         } catch (NumberFormatException e) {
             return 10;
         }

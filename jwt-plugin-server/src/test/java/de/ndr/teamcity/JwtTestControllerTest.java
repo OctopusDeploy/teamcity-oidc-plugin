@@ -164,6 +164,18 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void jwtStepFailsWhenBuildTypeIdIsBlank() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", ""
+        ));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("buildTypeId");
+    }
+
+    @Test
     void jwtStepFailsWhenBuildTypeNotFound() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         when(buildServer.getProjectManager()).thenReturn(projectManager);
@@ -175,6 +187,22 @@ public class JwtTestControllerTest {
 
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("Build type not found");
+    }
+
+    @Test
+    void jwtStepClampsTtlToOneDayMaximum() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "999999",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
+        long ttlSeconds = (jwt.getJWTClaimsSet().getExpirationTime().getTime()
+                - jwt.getJWTClaimsSet().getIssueTime().getTime()) / 1000;
+        assertThat(ttlSeconds).isEqualTo(1440 * 60); // clamped to 24 hours
     }
 
     @Test
