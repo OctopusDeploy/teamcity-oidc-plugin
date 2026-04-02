@@ -216,17 +216,16 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("token_endpoint not found in service discovery document");
         }
 
-        JSONObject body = new JSONObject();
-        body.put("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange");
-        body.put("audience", audience);
-        body.put("subject_token", token);
-        body.put("subject_token_type", "urn:ietf:params:oauth:token-type:jwt");
+        String formBody = "grant_type=" + encode("urn:ietf:params:oauth:grant-type:token-exchange")
+                + "&audience=" + encode(audience != null ? audience : "")
+                + "&subject_token=" + encode(token)
+                + "&subject_token_type=" + encode("urn:ietf:params:oauth:token-type:jwt");
 
         HttpRequest exchangeReq = HttpRequest.newBuilder()
                 .uri(URI.create(tokenEndpoint))
                 .timeout(Duration.ofSeconds(10))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toJSONString()))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
         HttpResponse<String> exchangeResp = httpClient.send(exchangeReq,
                 HttpResponse.BodyHandlers.ofString());
@@ -237,6 +236,10 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Exchange failed (HTTP " + status + "): " + bodySnippet);
         }
         return "Exchange succeeded (HTTP " + status + ")";
+    }
+
+    private static String encode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private HttpResponse<String> httpGet(String url) throws Exception {
