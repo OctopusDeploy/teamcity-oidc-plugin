@@ -95,6 +95,37 @@ public class WellKnownPublicFilterTest {
     }
 
     @Test
+    public void jwksContainsBothRsaAndEcPublicKeys() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
+        StringWriter writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        com.nimbusds.jose.shaded.gson.JsonObject json =
+                com.nimbusds.jose.shaded.gson.JsonParser.parseString(writer.toString()).getAsJsonObject();
+        var keys = json.get("keys").getAsJsonArray();
+        assertThat(keys).hasSize(2);
+        boolean hasRsa = false, hasEc = false;
+        for (int i = 0; i < keys.size(); i++) {
+            var key = keys.get(i).getAsJsonObject();
+            assertThat(key.has("d")).isFalse(); // no private key material
+            if ("RSA".equals(key.get("kty").getAsString())) hasRsa = true;
+            if ("EC".equals(key.get("kty").getAsString())) hasEc = true;
+        }
+        assertThat(hasRsa).isTrue();
+        assertThat(hasEc).isTrue();
+    }
+
+    @Test
     public void stripsContextPathBeforeMatching() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);

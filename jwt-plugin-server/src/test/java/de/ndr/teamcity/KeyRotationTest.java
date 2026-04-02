@@ -5,16 +5,15 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
-import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
-import jetbrains.buildServer.web.openapi.WebControllerManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import javax.servlet.FilterChain;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
@@ -27,12 +26,6 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class KeyRotationTest {
-
-    @Mock
-    private WebControllerManager controllerManager;
-
-    @Mock
-    private AuthorizationInterceptor authorizationInterceptor;
 
     @Mock
     private ServerPaths serverPaths;
@@ -106,12 +99,15 @@ public class KeyRotationTest {
     // --- helpers ---
 
     private JsonArray jwksKeys(JwtBuildFeature feature) throws Exception {
-        JwksController controller = new JwksController(controllerManager, authorizationInterceptor, feature);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, mock(jetbrains.buildServer.serverSide.SBuildServer.class));
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
         StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        controller.doHandle(request, response);
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
+        filter.doFilter(request, response, chain);
         return JsonParser.parseString(writer.toString()).getAsJsonObject().get("keys").getAsJsonArray();
     }
 

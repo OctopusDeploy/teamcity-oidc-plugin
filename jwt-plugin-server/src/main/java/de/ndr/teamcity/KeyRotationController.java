@@ -2,6 +2,7 @@ package de.ndr.teamcity;
 
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.auth.Permission;
+import net.minidev.json.JSONObject;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
@@ -53,7 +54,10 @@ public class KeyRotationController extends BaseController {
             LOG.log(Level.SEVERE, "JWT plugin: key rotation failed", e);
             response.setContentType("application/json;charset=UTF-8");
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            response.getWriter().write("{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}");
+            JSONObject error = new JSONObject();
+            error.put("status", "error");
+            error.put("message", e.getMessage());
+            response.getWriter().write(error.toJSONString());
         }
         return null;
     }

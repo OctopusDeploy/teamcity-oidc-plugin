@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -175,7 +174,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void throwsWhenRootUrlIsNotHttps() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
+    public void doesNotInjectTokenWhenRootUrlIsNotHttps() throws NoSuchAlgorithmException, IOException, ParseException, com.nimbusds.jose.JOSEException {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
 
@@ -186,10 +185,10 @@ public class JwtBuildStartContextTest {
         when(runningBuild.getBuildFeaturesOfType("JWT-Plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getBuildFeature()).thenReturn(jwtBuildFeature);
 
-        // Should fail fast rather than silently coercing http -> https
-        assertThatThrownBy(() -> jwtBuildStartContext.updateParameters(buildStartContext))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("HTTPS");
+        // Should log a warning and skip token injection rather than crashing the build
+        AssertionsForClassTypes.assertThatNoException()
+                .isThrownBy(() -> jwtBuildStartContext.updateParameters(buildStartContext));
+        verify(buildStartContext, never()).addSharedParameter(any(), any());
     }
 
     @Test

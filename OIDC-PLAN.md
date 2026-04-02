@@ -169,25 +169,25 @@ For tokens to work as proper OIDC tokens, the server must implement the OIDC dis
 
 ### Important
 
-- [ ] **Duplicate serving logic** — `WellKnownPublicFilter` short-circuits TC's dispatcher so
+- [x] **Duplicate serving logic** — `WellKnownPublicFilter` short-circuits TC's dispatcher so
       `OidcDiscoveryController` and `JwksController` are never reached for `/.well-known/*` paths.
       The OIDC discovery JSON is duplicated in two places and can drift. Fix: either serve both
       endpoints entirely from the filter and remove the Spring controllers, or make the filter
       delegate to the Spring dispatcher for these paths.
-- [ ] **`OidcDiscoveryController` takes `JwtBuildFeature` but never uses it** — appears to be
+- [x] **`OidcDiscoveryController` takes `JwtBuildFeature` but never uses it** — appears to be
       implicit DI ordering. Document the reason or replace with `@DependsOn` in the Spring XML.
-- [ ] **JSON responses built by string concatenation** — `buildServer.getRootUrl()` and
+- [x] **JSON responses built by string concatenation** — `buildServer.getRootUrl()` and
       `e.getMessage()` are embedded directly into JSON strings in `OidcDiscoveryController`,
       `WellKnownPublicFilter`, and `KeyRotationController`. A malformed root URL or exception
       message with quotes/backslashes will produce invalid JSON. Fix: use Nimbus's bundled
       `net.minidev.json.JSONObject` (already on classpath) or any JSON serializer.
-- [ ] **Empty `claims` param silently disables all custom claims** — if the claims field is saved
+- [x] **Empty `claims` param silently disables all custom claims** — if the claims field is saved
       as an empty string (not absent), `"".split(",")` produces `[""]` and no claims are included.
       Fix: treat blank as equivalent to null — `(claimsParam == null || claimsParam.isBlank())`.
-- [ ] **`updateParameters()` should not throw** — `BuildStartContextProcessor` throwing an
+- [x] **`updateParameters()` should not throw** — `BuildStartContextProcessor` throwing an
       uncaught `RuntimeException` has undefined behavior in TC (build may hang or fail with a
       confusing internal error). The HTTPS guard should log a warning and return rather than throw.
-- [ ] **Integration tests use `octopusdeploy:latest`** — non-deterministic; a new Octopus release
+- [x] **Integration tests use `octopusdeploy:latest`** — non-deterministic; a new Octopus release
       can silently break the OIDC token exchange test. Pin to a specific version tag.
 
 ### Minor

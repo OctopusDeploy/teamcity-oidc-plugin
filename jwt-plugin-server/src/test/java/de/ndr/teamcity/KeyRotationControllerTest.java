@@ -1,12 +1,16 @@
 package de.ndr.teamcity;
 
 import jetbrains.buildServer.serverSide.ServerPaths;
+import jetbrains.buildServer.serverSide.auth.Permission;
+import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
+import jetbrains.buildServer.web.util.SessionUser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.servlet.ModelAndView;
 
@@ -62,13 +66,20 @@ public class KeyRotationControllerTest {
         StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
 
-        ModelAndView result = controller.doHandle(request, response);
+        SUser adminUser = mock(SUser.class);
+        when(adminUser.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(true);
 
-        assertThat(result).isNull();
-        assertThat(jwtBuildFeature.getRsaKey().getKeyID()).isNotEqualTo(originalRsaKid);
-        assertThat(jwtBuildFeature.getEcKey().getKeyID()).isNotEqualTo(originalEcKid);
-        verify(response).setContentType("application/json;charset=UTF-8");
-        assertThat(writer.toString()).contains("rotated");
+        try (MockedStatic<SessionUser> sessionUser = mockStatic(SessionUser.class)) {
+            sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(adminUser);
+
+            ModelAndView result = controller.doHandle(request, response);
+
+            assertThat(result).isNull();
+            assertThat(jwtBuildFeature.getRsaKey().getKeyID()).isNotEqualTo(originalRsaKid);
+            assertThat(jwtBuildFeature.getEcKey().getKeyID()).isNotEqualTo(originalEcKid);
+            verify(response).setContentType("application/json;charset=UTF-8");
+            assertThat(writer.toString()).contains("rotated");
+        }
     }
 
     @Test
@@ -85,5 +96,46 @@ public class KeyRotationControllerTest {
         controller.doHandle(request, response);
 
         verify(response).setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+    }
+
+    @Test
+    public void postWithNoSessionUserReturns403() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        KeyRotationController controller = new KeyRotationController(controllerManager, jwtBuildFeature);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getMethod()).thenReturn("POST");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        try (MockedStatic<SessionUser> sessionUser = mockStatic(SessionUser.class)) {
+            sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(null);
+
+            controller.doHandle(request, response);
+
+            verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        }
+    }
+
+    @Test
+    public void postWithNonAdminUserReturns403() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        KeyRotationController controller = new KeyRotationController(controllerManager, jwtBuildFeature);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getMethod()).thenReturn("POST");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        SUser nonAdminUser = mock(SUser.class);
+        when(nonAdminUser.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(false);
+
+        try (MockedStatic<SessionUser> sessionUser = mockStatic(SessionUser.class)) {
+            sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(nonAdminUser);
+
+            controller.doHandle(request, response);
+
+            verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        }
     }
 }

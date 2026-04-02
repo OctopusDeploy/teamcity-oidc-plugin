@@ -67,16 +67,15 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
                 if (!buildServerRootUrl.startsWith("https://")) {
                     LOG.warning("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
-                    throw new IllegalStateException(
-                            "TeamCity root URL must use HTTPS for OIDC token issuance, but was: " + buildServerRootUrl);
+                    return;
                 }
 
                 String audience = params.getOrDefault("audience", buildServerRootUrl);
 
                 String claimsParam = params.get("claims");
-                Set<String> enabledClaims = claimsParam != null
-                        ? new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")))
-                        : ALL_CUSTOM_CLAIMS;
+                Set<String> enabledClaims = (claimsParam == null || claimsParam.isBlank())
+                        ? ALL_CUSTOM_CLAIMS
+                        : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
 
                 JWSHeader jwsHeader;
                 JWSSigner signer;

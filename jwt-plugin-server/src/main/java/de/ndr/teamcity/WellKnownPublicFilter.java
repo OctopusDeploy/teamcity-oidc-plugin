@@ -3,6 +3,8 @@ package de.ndr.teamcity;
 import com.nimbusds.jose.jwk.JWKSet;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.DelegatingFilter;
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
 import org.jetbrains.annotations.NotNull;
 
 import javax.servlet.*;
@@ -22,6 +24,9 @@ import java.util.logging.Logger;
  */
 public class WellKnownPublicFilter implements Filter {
     private static final Logger LOG = Logger.getLogger(WellKnownPublicFilter.class.getName());
+
+    static final String JWKS_PATH = "/.well-known/jwks.json";
+    static final String OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration";
 
     private final JwtBuildFeature jwtBuildFeature;
     private final SBuildServer buildServer;
@@ -46,7 +51,7 @@ public class WellKnownPublicFilter implements Filter {
             path = path.substring(contextPath.length());
         }
 
-        if (JwksController.PATH.equals(path)) {
+        if (JWKS_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=300");
             JWKSet jwks = new JWKSet(jwtBuildFeature.getPublicKeys());
@@ -55,21 +60,38 @@ public class WellKnownPublicFilter implements Filter {
             return;
         }
 
-        if (OidcDiscoveryController.PATH.equals(path)) {
+        if (OIDC_DISCOVERY_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=300");
             String issuer = buildServer.getRootUrl();
             LOG.info("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
-            resp.getWriter().write(
-                    "{\"issuer\":\"" + issuer + "\","
-                    + "\"jwks_uri\":\"" + issuer + JwksController.PATH + "\","
-                    + "\"id_token_signing_alg_values_supported\":[\"RS256\",\"ES256\"],"
-                    + "\"response_types_supported\":[\"id_token\"],"
-                    + "\"subject_types_supported\":[\"public\"],"
-                    + "\"claims_supported\":[\"sub\",\"iss\",\"aud\",\"iat\",\"nbf\",\"exp\","
-                    + "\"branch\",\"build_type_external_id\",\"project_external_id\","
-                    + "\"triggered_by\",\"triggered_by_id\",\"build_number\"]}"
-            );
+
+            JSONArray algs = new JSONArray();
+            algs.add("RS256");
+            algs.add("ES256");
+
+            JSONArray responseTypes = new JSONArray();
+            responseTypes.add("id_token");
+
+            JSONArray subjectTypes = new JSONArray();
+            subjectTypes.add("public");
+
+            JSONArray claims = new JSONArray();
+            for (String c : new String[]{"sub", "iss", "aud", "iat", "nbf", "exp",
+                    "branch", "build_type_external_id", "project_external_id",
+                    "triggered_by", "triggered_by_id", "build_number"}) {
+                claims.add(c);
+            }
+
+            JSONObject doc = new JSONObject();
+            doc.put("issuer", issuer);
+            doc.put("jwks_uri", issuer + JWKS_PATH);
+            doc.put("id_token_signing_alg_values_supported", algs);
+            doc.put("response_types_supported", responseTypes);
+            doc.put("subject_types_supported", subjectTypes);
+            doc.put("claims_supported", claims);
+
+            resp.getWriter().write(doc.toJSONString());
             return;
         }
 

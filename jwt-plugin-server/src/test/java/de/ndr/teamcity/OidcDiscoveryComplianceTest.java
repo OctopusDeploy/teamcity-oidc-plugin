@@ -3,10 +3,8 @@ package de.ndr.teamcity;
 import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
-import jetbrains.buildServer.controllers.AuthorizationInterceptor;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
-import jetbrains.buildServer.web.openapi.WebControllerManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import javax.servlet.FilterChain;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
@@ -27,7 +26,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * Integration tests: verify that the OIDC discovery document produced by
- * OidcDiscoveryController is compliant with the OpenID Connect Discovery 1.0 spec
+ * WellKnownPublicFilter is compliant with the OpenID Connect Discovery 1.0 spec
  * and contains the fields required by cloud provider OIDC federation setups.
  *
  * Reference: https://openid.net/specs/openid-connect-discovery-1_0.html
@@ -35,8 +34,6 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 public class OidcDiscoveryComplianceTest {
 
-    @Mock WebControllerManager controllerManager;
-    @Mock AuthorizationInterceptor authorizationInterceptor;
     @Mock ServerPaths serverPaths;
     @Mock PluginDescriptor pluginDescriptor;
     @Mock jetbrains.buildServer.serverSide.SBuildServer buildServer;
@@ -50,14 +47,17 @@ public class OidcDiscoveryComplianceTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        OidcDiscoveryController controller = new OidcDiscoveryController(controllerManager, authorizationInterceptor, buildServer, feature);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
         StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
+        when(request.getContextPath()).thenReturn("");
 
-        controller.doHandle(request, response);
+        filter.doFilter(request, response, chain);
 
         discoveryDocument = JsonParser.parseString(writer.toString()).getAsJsonObject();
     }
@@ -159,9 +159,8 @@ public class OidcDiscoveryComplianceTest {
 
     @Test
     public void jwksUriSuffix() {
-        // Must match JwksController.PATH so the controller actually handles the request
         assertThat(discoveryDocument.get("jwks_uri").getAsString())
-                .endsWith(JwksController.PATH);
+                .endsWith(WellKnownPublicFilter.JWKS_PATH);
     }
 
     // --- helper ---

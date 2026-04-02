@@ -8,8 +8,6 @@
     <bean id="jwtPasswordsProvider" class="de.ndr.teamcity.JwtPasswordsProvider" init-method="register" />
     <bean id="jwtBuildParametersProvider" class="de.ndr.teamcity.JwtBuildParametersProvider" init-method="register" />
     <bean id="jwtBuildFeatureAdminPage" class="de.ndr.teamcity.JwtBuildFeatureAdminPage"/>
-    <bean id="jwksController" class="de.ndr.teamcity.JwksController"/>
-    <bean id="oidcDiscoveryController" class="de.ndr.teamcity.OidcDiscoveryController"/>
     <bean id="keyRotationController" class="de.ndr.teamcity.KeyRotationController"/>
     <bean id="wellKnownPublicFilter" class="de.ndr.teamcity.WellKnownPublicFilter"/>
 
