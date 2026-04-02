@@ -91,10 +91,10 @@ public class JwtBuildFeature extends BuildFeature {
         RSAKey newRsa = generateFreshRsaKey();
         ECKey newEc = generateFreshEcKey();
 
-        saveKeyToFile(newRsa, "key.json");
         saveKeyToFile(current.rsa(), "retired-key.json");
-        saveKeyToFile(newEc, "ec-key.json");
         saveKeyToFile(current.ec(), "retired-ec-key.json");
+        saveKeyToFile(newRsa, "key.json");
+        saveKeyToFile(newEc, "ec-key.json");
 
         keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec()));
     }
