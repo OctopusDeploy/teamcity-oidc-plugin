@@ -2,6 +2,8 @@ package de.ndr.teamcity;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jwt.SignedJWT;
+import jetbrains.buildServer.serverSide.ProjectManager;
+import jetbrains.buildServer.serverSide.SBuildType;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.auth.Permission;
@@ -35,6 +37,7 @@ public class JwtTestControllerTest {
 
     @Mock WebControllerManager controllerManager;
     @Mock SBuildServer buildServer;
+    @Mock ProjectManager projectManager;
     @Mock ServerPaths serverPaths;
     @Mock PluginDescriptor pluginDescriptor;
 
@@ -84,11 +87,20 @@ public class JwtTestControllerTest {
 
     // ---- step=jwt ----
 
+    private void mockBuildType(String externalId) {
+        SBuildType buildType = mock(SBuildType.class);
+        when(buildType.getExternalId()).thenReturn(externalId);
+        when(buildServer.getProjectManager()).thenReturn(projectManager);
+        when(projectManager.findBuildTypeByExternalId(externalId)).thenReturn(buildType);
+    }
+
     @Test
     void jwtStepRS256ReturnsSignedToken() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject result = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10", "audience", "https://tc.example.com"
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "https://tc.example.com", "buildTypeId", "buildType:MyBuildType"
         ));
 
         assertThat((Boolean) result.get("ok")).isTrue();
@@ -100,13 +112,69 @@ public class JwtTestControllerTest {
     @Test
     void jwtStepES256ReturnsSignedToken() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject result = callStep(Map.of(
-            "step", "jwt", "algorithm", "ES256", "ttl_minutes", "10", "audience", "https://tc.example.com"
+            "step", "jwt", "algorithm", "ES256", "ttl_minutes", "10",
+            "audience", "https://tc.example.com", "buildTypeId", "buildType:MyBuildType"
         ));
 
         assertThat((Boolean) result.get("ok")).isTrue();
         SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.ES256);
+    }
+
+    @Test
+    void jwtStepUsesBuildTypeExternalIdAsSubject() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyProject_MyBuild");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", "buildType:MyProject_MyBuild"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("MyProject_MyBuild");
+        assertThat(result.getAsString("message")).contains("sub: MyProject_MyBuild");
+    }
+
+    @Test
+    void jwtStepAcceptsBuildTypeIdWithoutPrefix() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", "MyBuildType"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("MyBuildType");
+    }
+
+    @Test
+    void jwtStepFailsWhenBuildTypeIdMissing() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10", "audience", "aud"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("buildTypeId");
+    }
+
+    @Test
+    void jwtStepFailsWhenBuildTypeNotFound() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        when(buildServer.getProjectManager()).thenReturn(projectManager);
+        when(projectManager.findBuildTypeByExternalId("Unknown")).thenReturn(null);
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", "Unknown"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Build type not found");
     }
 
     @Test
@@ -176,9 +244,11 @@ public class JwtTestControllerTest {
     @Test
     void jwksStepVerifiesValidRs256Token() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         // Issue a real RS256 token
         JSONObject jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         String token = jwtResult.getAsString("token");
 
@@ -203,8 +273,10 @@ public class JwtTestControllerTest {
     @Test
     void jwksStepVerifiesValidEs256Token() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "ES256", "ttl_minutes", "5", "audience", "aud"
+            "step", "jwt", "algorithm", "ES256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         String token = jwtResult.getAsString("token");
 
@@ -227,8 +299,10 @@ public class JwtTestControllerTest {
     @Test
     void jwksStepFailsWhenKidNotInJwks() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         String token = jwtResult.getAsString("token");
 
@@ -255,8 +329,10 @@ public class JwtTestControllerTest {
     void exchangeStepSucceedsWhenTokenEndpointReturns200() throws Exception {
         // Issue a JWT first (HTTPS rootUrl required for step=jwt)
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "my-ext-id"
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "my-ext-id", "buildTypeId", "buildType:MyBuildType"
         ));
         String token = jwtResult.getAsString("token");
 
@@ -290,8 +366,10 @@ public class JwtTestControllerTest {
     @Test
     void exchangeStepFailsWhenTokenEndpointReturns401() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         String token = jwtResult.getAsString("token");
 
@@ -316,10 +394,46 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void exchangeStepRewritesTokenEndpointHostnameToMatchServiceUrl() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ));
+        String token = jwtResult.getAsString("token");
+
+        // Service runs on localhost but its discovery doc returns an internal hostname
+        // in token_endpoint — controller must rewrite it to the serviceUrl origin.
+        com.sun.net.httpserver.HttpServer server =
+            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        int port = server.getAddress().getPort();
+        String serviceUrl = "http://localhost:" + port;
+        // token_endpoint advertises an unreachable internal hostname
+        addContext(server, "/.well-known/openid-configuration", 200,
+            "{\"issuer\":\"http://internal-host\",\"token_endpoint\":\"http://internal-host/token\"}");
+        addContext(server, "/token", 200,
+            "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
+        server.start();
+
+        try {
+            JSONObject result = callStep(Map.of(
+                "step", "exchange", "token", token, "serviceUrl", serviceUrl, "audience", "aud"
+            ));
+            assertThat((Boolean) result.get("ok")).isTrue();
+            assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void exchangeStepFailsWhenDiscoveryDocMissingTokenEndpoint() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
         JSONObject jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5", "audience", "aud"
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         String token = jwtResult.getAsString("token");
 

@@ -169,4 +169,45 @@ public class JwtBuildFeatureTest {
         assertThat(errors).hasSize(1);
         assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
     }
+
+    @Test
+    public void describeParametersIncludesAlgorithmAndTtl() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        String description = feature.describeParameters(Map.of("algorithm", "ES256", "ttl_minutes", "5"));
+
+        assertThat(description).contains("ES256").contains("5m");
+    }
+
+    @Test
+    public void describeParametersIncludesAudienceWhenPresent() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        String description = feature.describeParameters(
+                Map.of("algorithm", "RS256", "ttl_minutes", "10", "audience", "api://my-app"));
+
+        assertThat(description).contains("RS256").contains("10m").contains("api://my-app");
+    }
+
+    @Test
+    public void describeParametersOmitsAudienceWhenBlank() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        String description = feature.describeParameters(Map.of("algorithm", "RS256", "ttl_minutes", "10"));
+
+        assertThat(description).doesNotContain("aud:");
+    }
+
+    @Test
+    public void describeParametersDefaultsToRS256AndTenMinutesWhenParamsMissing() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+
+        String description = feature.describeParameters(Map.of());
+
+        assertThat(description).contains("RS256").contains("10m");
+    }
 }
