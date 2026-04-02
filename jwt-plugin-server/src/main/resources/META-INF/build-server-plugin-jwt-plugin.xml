@@ -3,14 +3,14 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd"
        default-autowire="constructor">
-    <bean id="jwtBuildFeature" class="de.ndr.teamcity.JwtBuildFeature" />
-    <bean id="jwtBuildStartContext" class="de.ndr.teamcity.JwtBuildStartContext" init-method="register" />
-    <bean id="jwtPasswordsProvider" class="de.ndr.teamcity.JwtPasswordsProvider" init-method="register" />
-    <bean id="jwtBuildParametersProvider" class="de.ndr.teamcity.JwtBuildParametersProvider" init-method="register" />
-    <bean id="jwtBuildFeatureAdminPage" class="de.ndr.teamcity.JwtBuildFeatureAdminPage"/>
-    <bean id="keyRotationController" class="de.ndr.teamcity.KeyRotationController"/>
-    <bean id="wellKnownPublicFilter" class="de.ndr.teamcity.WellKnownPublicFilter"/>
-    <bean id="jwtTestController" class="de.ndr.teamcity.JwtTestController"/>
+    <bean id="jwtBuildFeature" class="com.octopus.teamcity.oidc.JwtBuildFeature" />
+    <bean id="jwtBuildStartContext" class="com.octopus.teamcity.oidc.JwtBuildStartContext" init-method="register" />
+    <bean id="jwtPasswordsProvider" class="com.octopus.teamcity.oidc.JwtPasswordsProvider" init-method="register" />
+    <bean id="jwtBuildParametersProvider" class="com.octopus.teamcity.oidc.JwtBuildParametersProvider" init-method="register" />
+    <bean id="jwtBuildFeatureAdminPage" class="com.octopus.teamcity.oidc.JwtBuildFeatureAdminPage"/>
+    <bean id="keyRotationController" class="com.octopus.teamcity.oidc.KeyRotationController"/>
+    <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter"/>
+    <bean id="jwtTestController" class="com.octopus.teamcity.oidc.JwtTestController"/>
 
 </beans>
 

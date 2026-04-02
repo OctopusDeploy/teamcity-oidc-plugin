@@ -2,21 +2,21 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <artifactId>jwt-plugin</artifactId>
-    <groupId>de.ndr.teamcity</groupId>
+    <artifactId>teamcity-oidc-plugin</artifactId>
+    <groupId>com.octopus.teamcity.oidc</groupId>
     <version>1.0-SNAPSHOT</version>
   </parent>
   <artifactId>build</artifactId>
   <packaging>pom</packaging>
   <properties>
       <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
-      <teamcity.jwt-plugin.plugin.version>${project.parent.version}</teamcity.jwt-plugin.plugin.version>
-      <teamcity.jwt-plugin.plugin.vendorName>NDR</teamcity.jwt-plugin.plugin.vendorName>
-      <teamcity.jwt-plugin.plugin.vendorUrl>https://www.ndr.de</teamcity.jwt-plugin.plugin.vendorUrl>
+      <teamcity.oidc-plugin.plugin.version>${project.parent.version}</teamcity.oidc-plugin.plugin.version>
+      <teamcity.oidc-plugin.plugin.vendorName>Octopus Deploy</teamcity.oidc-plugin.plugin.vendorName>
+      <teamcity.oidc-plugin.plugin.vendorUrl>https://octopus.com</teamcity.oidc-plugin.plugin.vendorUrl>
   </properties>
   <dependencies>
       <dependency>
-           <groupId>de.ndr.teamcity</groupId>
+           <groupId>com.octopus.teamcity.oidc</groupId>
            <artifactId>jwt-plugin-server</artifactId>
            <version>1.0-SNAPSHOT</version>
       </dependency>
@@ -41,15 +41,15 @@
                 <replacements>
                     <replacement>
                         <token>@Version@</token>
-                        <value>${teamcity.jwt-plugin.plugin.version}</value>
+                        <value>${teamcity.oidc-plugin.plugin.version}</value>
                     </replacement>
                     <replacement>
                         <token>@VendorName@</token>
-                        <value>${teamcity.jwt-plugin.plugin.vendorName}</value>
+                        <value>${teamcity.oidc-plugin.plugin.vendorName}</value>
                     </replacement>
                     <replacement>
                         <token>@VendorURL@</token>
-                        <value>${teamcity.jwt-plugin.plugin.vendorUrl}</value>
+                        <value>${teamcity.oidc-plugin.plugin.vendorUrl}</value>
                     </replacement>
                 </replacements>
             </configuration>
@@ -65,7 +65,7 @@
                   <goal>single</goal>
                 </goals>
                 <configuration>
-                  <finalName>jwt-plugin</finalName>
+                  <finalName>teamcity-oidc-plugin</finalName>
                   <outputDirectory>${project.parent.build.directory}</outputDirectory>
                   <appendAssemblyId>false</appendAssemblyId>
                   <descriptors>
