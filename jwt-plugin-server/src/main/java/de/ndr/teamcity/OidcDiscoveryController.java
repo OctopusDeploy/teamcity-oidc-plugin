@@ -10,8 +10,10 @@ import org.springframework.web.servlet.ModelAndView;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 public class OidcDiscoveryController extends BaseController {
+    private static final Logger LOG = Logger.getLogger(OidcDiscoveryController.class.getName());
 
     static final String PATH = "/.well-known/openid-configuration";
 
@@ -25,6 +27,7 @@ public class OidcDiscoveryController extends BaseController {
         this.buildServer = buildServer;
         authorizationInterceptor.addPathNotRequiringAuth(OidcDiscoveryController.class, PATH);
         controllerManager.registerController(PATH, this);
+        LOG.info("JWT plugin: OidcDiscoveryController registered at " + PATH);
     }
 
     @Override
@@ -34,6 +37,7 @@ public class OidcDiscoveryController extends BaseController {
         response.setHeader("Cache-Control", "max-age=300");
 
         String issuer = buildServer.getRootUrl();
+        LOG.info("JWT plugin: OidcDiscoveryController serving discovery, issuer=" + issuer);
         String body = "{"
                 + "\"issuer\":\"" + issuer + "\","
                 + "\"jwks_uri\":\"" + issuer + JwksController.PATH + "\","

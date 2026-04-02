@@ -9,6 +9,7 @@ import javax.servlet.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 /**
  * Handles {@code GET /.well-known/jwks.json} and {@code GET /.well-known/openid-configuration}
@@ -20,6 +21,7 @@ import java.io.IOException;
  * OIDC discovery document without credentials.</p>
  */
 public class WellKnownPublicFilter implements Filter {
+    private static final Logger LOG = Logger.getLogger(WellKnownPublicFilter.class.getName());
 
     private final JwtBuildFeature jwtBuildFeature;
     private final SBuildServer buildServer;
@@ -29,6 +31,7 @@ public class WellKnownPublicFilter implements Filter {
         this.jwtBuildFeature = jwtBuildFeature;
         this.buildServer = buildServer;
         DelegatingFilter.registerDelegate(this);
+        LOG.info("JWT plugin: WellKnownPublicFilter registered in DelegatingFilter chain");
     }
 
     @Override
@@ -47,6 +50,7 @@ public class WellKnownPublicFilter implements Filter {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=300");
             JWKSet jwks = new JWKSet(jwtBuildFeature.getPublicKeys());
+            LOG.info("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
             resp.getWriter().write(jwks.toString());
             return;
         }
@@ -55,6 +59,7 @@ public class WellKnownPublicFilter implements Filter {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=300");
             String issuer = buildServer.getRootUrl();
+            LOG.info("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
             resp.getWriter().write(
                     "{\"issuer\":\"" + issuer + "\","
                     + "\"jwks_uri\":\"" + issuer + JwksController.PATH + "\","

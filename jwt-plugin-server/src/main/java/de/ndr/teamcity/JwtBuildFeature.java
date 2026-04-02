@@ -4,7 +4,6 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.*;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
-import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.InvalidProperty;
 import jetbrains.buildServer.serverSide.PropertiesProcessor;
@@ -33,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 
 public class JwtBuildFeature extends BuildFeature {
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(JwtBuildFeature.class.getName());
 
     record KeyMaterial(
             RSAKey rsa,
@@ -160,11 +160,11 @@ public class JwtBuildFeature extends BuildFeature {
     private RSAKey loadOrGenerateRsaKey() throws IOException, NoSuchAlgorithmException, ParseException, JOSEException {
         File keyFile = new File(getKeyDirectory() + File.separator + "key.json");
         if (keyFile.exists()) {
-            Loggers.SERVER.info("Read existing RSA key from: " + keyFile);
+            LOG.info("Read existing RSA key from: " + keyFile);
             String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toRSAKey();
         } else {
-            Loggers.SERVER.info("Generate new RSA key to: " + keyFile);
+            LOG.info("Generate new RSA key to: " + keyFile);
             RSAKey newKey = generateFreshRsaKey();
             saveKeyToFile(newKey, "key.json");
             return newKey;
@@ -175,7 +175,7 @@ public class JwtBuildFeature extends BuildFeature {
     private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
         File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-key.json");
         if (retiredKeyFile.exists()) {
-            Loggers.SERVER.info("Read retired RSA key from: " + retiredKeyFile);
+            LOG.info("Read retired RSA key from: " + retiredKeyFile);
             String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toRSAKey();
         }
@@ -186,7 +186,7 @@ public class JwtBuildFeature extends BuildFeature {
     private ECKey loadRetiredEcKey() throws IOException, ParseException {
         File retiredKeyFile = new File(getKeyDirectory() + File.separator + "retired-ec-key.json");
         if (retiredKeyFile.exists()) {
-            Loggers.SERVER.info("Read retired EC key from: " + retiredKeyFile);
+            LOG.info("Read retired EC key from: " + retiredKeyFile);
             String encrypted = FileUtils.readFileToString(retiredKeyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toECKey();
         }
@@ -196,11 +196,11 @@ public class JwtBuildFeature extends BuildFeature {
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
         File keyFile = new File(getKeyDirectory() + File.separator + "ec-key.json");
         if (keyFile.exists()) {
-            Loggers.SERVER.info("Read existing EC key from: " + keyFile);
+            LOG.info("Read existing EC key from: " + keyFile);
             String encrypted = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
             return JWK.parse(EncryptUtil.unscramble(encrypted)).toECKey();
         } else {
-            Loggers.SERVER.info("Generate new EC key to: " + keyFile);
+            LOG.info("Generate new EC key to: " + keyFile);
             ECKey newKey = generateFreshEcKey();
             saveKeyToFile(newKey, "ec-key.json");
             return newKey;

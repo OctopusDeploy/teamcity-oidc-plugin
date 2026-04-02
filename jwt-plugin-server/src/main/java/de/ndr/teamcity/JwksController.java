@@ -10,8 +10,10 @@ import org.springframework.web.servlet.ModelAndView;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 public class JwksController extends BaseController {
+    private static final Logger LOG = Logger.getLogger(JwksController.class.getName());
 
     static final String PATH = "/.well-known/jwks.json";
 
@@ -24,6 +26,7 @@ public class JwksController extends BaseController {
         this.jwtBuildFeature = jwtBuildFeature;
         authorizationInterceptor.addPathNotRequiringAuth(JwksController.class, PATH);
         controllerManager.registerController(PATH, this);
+        LOG.info("JWT plugin: JwksController registered at " + PATH);
     }
 
     @Override
@@ -32,6 +35,7 @@ public class JwksController extends BaseController {
         response.setContentType("application/json;charset=UTF-8");
         response.setHeader("Cache-Control", "max-age=300");
         JWKSet jwks = new JWKSet(jwtBuildFeature.getPublicKeys());
+        LOG.info("JWT plugin: JwksController serving JWKS (" + jwks.getKeys().size() + " key(s))");
         response.getWriter().write(jwks.toString());
         return null;
     }

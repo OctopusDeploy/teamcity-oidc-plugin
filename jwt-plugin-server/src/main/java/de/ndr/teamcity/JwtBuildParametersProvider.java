@@ -1,7 +1,6 @@
 package de.ndr.teamcity;
 
 import jetbrains.buildServer.ExtensionHolder;
-import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.SBuild;
 import jetbrains.buildServer.serverSide.parameters.AbstractBuildParametersProvider;
 import org.jetbrains.annotations.NotNull;
@@ -9,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * Tells TC that {@code jwt.token} will be available for builds with the JWT feature:
@@ -22,6 +22,7 @@ import java.util.Map;
  * </ul>
  */
 public class JwtBuildParametersProvider extends AbstractBuildParametersProvider {
+    private static final Logger LOG = Logger.getLogger(JwtBuildParametersProvider.class.getName());
 
     private final ExtensionHolder extensionHolder;
 
@@ -34,7 +35,7 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
                 jetbrains.buildServer.serverSide.parameters.BuildParametersProvider.class,
                 this.getClass().getName(),
                 this);
-        Loggers.SERVER.info("JWT plugin: JwtBuildParametersProvider registered");
+        LOG.info("JWT plugin: JwtBuildParametersProvider registered");
     }
 
     @NotNull

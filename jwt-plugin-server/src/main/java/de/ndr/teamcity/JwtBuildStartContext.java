@@ -8,15 +8,18 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
-import jetbrains.buildServer.log.Loggers;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.users.SUser;
 import org.jetbrains.annotations.NotNull;
 import org.joda.time.DateTime;
 
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class JwtBuildStartContext implements BuildStartContextProcessor  {
+    private static final Logger LOG = Logger.getLogger(JwtBuildStartContext.class.getName());
+
     private final ExtensionHolder extensionHolder;
 
     private final SBuildServer buildServer;
@@ -32,7 +35,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
     public void register() {
         extensionHolder.registerExtension(BuildStartContextProcessor.class, this.getClass().getName(), this);
-        Loggers.SERVER.info("JWT plugin: JwtBuildStartContext registered as BuildStartContextProcessor");
+        LOG.info("JWT plugin: JwtBuildStartContext registered as BuildStartContextProcessor");
     }
 
     @Override
@@ -40,7 +43,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
         SRunningBuild build = buildStartContext.getBuild();
         Collection<SBuildFeatureDescriptor> jwtBuildFeatures = build.getBuildFeaturesOfType("JWT-Plugin");
 
-        Loggers.SERVER.debug("JWT plugin: updateParameters called for build " + build.getBuildId()
+        LOG.fine("JWT plugin: updateParameters called for build " + build.getBuildId()
                 + " (" + build.getBuildTypeExternalId() + "), JWT features: " + jwtBuildFeatures.size());
 
         if (!jwtBuildFeatures.isEmpty()) {
@@ -48,7 +51,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 SBuildFeatureDescriptor descriptor = jwtBuildFeatures.stream().findFirst().get();
                 JwtBuildFeature jwtBuildFeature = (JwtBuildFeature) descriptor.getBuildFeature();
                 if (jwtBuildFeature == null) {
-                    Loggers.SERVER.warn("JWT plugin: getBuildFeature() returned null for build " + build.getBuildId()
+                    LOG.warning("JWT plugin: getBuildFeature() returned null for build " + build.getBuildId()
                             + " — plugin may not be fully initialized");
                     return;
                 }
@@ -58,11 +61,11 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 String algorithmName = params.getOrDefault("algorithm", "RS256");
 
                 String buildServerRootUrl = buildServer.getRootUrl();
-                Loggers.SERVER.info("JWT plugin: issuing JWT for build " + build.getBuildId()
+                LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
                         + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
 
                 if (!buildServerRootUrl.startsWith("https://")) {
-                    Loggers.SERVER.warn("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
+                    LOG.warning("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
                     throw new IllegalStateException(
                             "TeamCity root URL must use HTTPS for OIDC token issuance, but was: " + buildServerRootUrl);
                 }
@@ -133,14 +136,14 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
 
                 String serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
-                Loggers.SERVER.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
+                LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                         + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
                         + ", token[0..50]=" + serialized.substring(0, Math.min(50, serialized.length())) + ")");
             } catch (JOSEException e) {
-                Loggers.SERVER.error("JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
+                LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
                 throw new RuntimeException(e);
             } catch (Exception e) {
-                Loggers.SERVER.error("JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
+                LOG.log(Level.SEVERE, "JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
                 throw e;
             }
         }
