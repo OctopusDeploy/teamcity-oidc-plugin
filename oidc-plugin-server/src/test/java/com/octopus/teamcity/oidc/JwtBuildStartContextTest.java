@@ -320,6 +320,28 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void issuerClaimHasTrailingSlashStripped() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111/");
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
+
+        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        String issuer = SignedJWT.parse(jwtCaptor.getValue()).getJWTClaimsSet().getIssuer();
+        assertThat(issuer).isEqualTo("https://localhost:8111");
+    }
+
+    @Test
     public void jtiClaimIsUniquePerToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");

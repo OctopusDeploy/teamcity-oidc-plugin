@@ -54,7 +54,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
                 String algorithmName = params.getOrDefault("algorithm", "RS256");
 
-                String buildServerRootUrl = buildServer.getRootUrl();
+                String buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
                         + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
 

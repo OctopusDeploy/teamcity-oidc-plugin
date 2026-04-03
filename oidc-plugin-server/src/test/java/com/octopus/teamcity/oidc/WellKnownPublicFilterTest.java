@@ -123,6 +123,28 @@ public class WellKnownPublicFilterTest {
     }
 
     @Test
+    public void issuerInDiscoveryDocHasTrailingSlashStripped() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com/");
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
+        StringWriter writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn("/.well-known/openid-configuration");
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
+        assertThat(json.get("issuer").getAsString()).isEqualTo("https://teamcity.example.com");
+        assertThat(json.get("jwks_uri").getAsString()).isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
+    }
+
+    @Test
     public void stripsContextPathBeforeMatching() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtKeyManager keyManager = new JwtKeyManager(serverPaths);

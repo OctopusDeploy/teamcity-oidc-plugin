@@ -54,7 +54,7 @@ public class WellKnownPublicFilter implements Filter {
         if (OIDC_DISCOVERY_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=300");
-            String issuer = buildServer.getRootUrl();
+            String issuer = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
             LOG.info("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
 
             JSONArray algs = new JSONArray();

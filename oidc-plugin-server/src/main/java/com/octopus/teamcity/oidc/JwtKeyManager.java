@@ -119,6 +119,12 @@ public class JwtKeyManager {
         return url != null && url.startsWith("https://");
     }
 
+    /** Strips trailing slashes from a root URL. Cloud providers compare issuer by exact string. */
+    static String normalizeRootUrl(@Nullable String url) {
+        if (url == null) return null;
+        return url.replaceAll("/+$", "");
+    }
+
     private RSAKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
         File keyFile = new File(keyDirectory, "key.json");
         if (keyFile.exists()) {

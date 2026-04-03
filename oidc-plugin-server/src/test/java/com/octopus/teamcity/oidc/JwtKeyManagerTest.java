@@ -129,4 +129,24 @@ public class JwtKeyManagerTest {
     public void isHttpsUrlReturnsFalseForNull() {
         assertThat(JwtKeyManager.isHttpsUrl(null)).isFalse();
     }
+
+    @Test
+    public void normalizeRootUrlStripsTrailingSlash() {
+        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com/")).isEqualTo("https://example.com");
+    }
+
+    @Test
+    public void normalizeRootUrlStripsMultipleTrailingSlashes() {
+        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com///")).isEqualTo("https://example.com");
+    }
+
+    @Test
+    public void normalizeRootUrlLeavesCleanUrlUnchanged() {
+        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com")).isEqualTo("https://example.com");
+    }
+
+    @Test
+    public void normalizeRootUrlReturnsNullForNull() {
+        assertThat(JwtKeyManager.normalizeRootUrl(null)).isNull();
+    }
 }
