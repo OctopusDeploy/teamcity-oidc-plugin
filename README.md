@@ -81,6 +81,12 @@ The build feature configuration page includes a **Test Connection** button that:
 3. Verifies the token signature against the JWKS endpoint
 4. Optionally attempts an OIDC token exchange against a target service URL
 
+## Octopus Deploy
+
+In Octopus Deploy, go to **Configuration → OpenID Connect** and create a new OIDC Identity. Set the issuer to your TeamCity root URL and the subject to the build type external ID. Copy the Service Account Id and use it as the audience in the build feature configuration.
+
+![Octopus Deploy OIDC configuration](screenshot-octopus-configuration-connection.png)
+
 ## Key Rotation
 
 To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `MANAGE_SERVER_INSTALLATION` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
