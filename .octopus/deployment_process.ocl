@@ -1,0 +1,87 @@
+step "publish-to-jetbrains-marketplace" {
+    name = "Publish to Jetbrains Marketplace"
+
+    action {
+        action_type = "Octopus.Script"
+        channels = ["release"]
+        environments = ["production"]
+        properties = {
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -eu
+                
+                authHeader="Authorization: Bearer $(get_octopusvariable "jbHubPermanentToken")"
+                pluginId="$(get_octopusvariable "jbPackageId")"
+                filePath="$(get_octopusvariable "Octopus.Action.Package[Octopus.TeamCity.OIDC].PackageFilePath")"
+                
+                echo "#{Octopus.Release.Notes | MarkdownToHTML}" >> notes.txt
+                
+                channel="$(get_octopusvariable "jbChannel")"
+                if [ -z $channel ]; then
+                	channel="Stable"
+                fi
+                curl -i -s --header "$authHeader" -F pluginId=$pluginId -F file=@$filePath -F channel=$channel -F "notes=<notes.txt" https://plugins.jetbrains.com/plugin/uploadPlugin
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        packages "Octopus.TeamCity.OIDC" {
+            acquisition_location = "Server"
+            feed = "octopus-server-built-in"
+            package_id = "Octopus.TeamCity.OIDC"
+            properties = {
+                Extract = "False"
+                SelectionMode = "immediate"
+            }
+        }
+    }
+}
+
+step "create-github-release" {
+    name = "Create GitHub Release"
+
+    action {
+        environments = ["production"]
+        properties = {
+            GHCR_CommitId = "#{Octopus.Deployment.PackageBuildInformation[0].VcsCommitNumber}"
+            GHCR_ContentType = "application/zip"
+            GHCR_Draft = "False"
+            GHCR_GitHubApiKey = "#{GitHubAccessToken}"
+            GHCR_GitHubRepository = "teamcity-oidc-plugin"
+            GHCR_GitHubUsername = "OctopusDeploy"
+            GHCR_PackageId = "{\"PackageId\":\"Octopus.TeamCity.OIDC\",\"FeedId\":\"octopus-server-built-in\"}"
+            GHCR_PreRelease = "#{IsPreRelease}"
+            GHCR_ReleaseNotes = "#{Octopus.Release.Notes}"
+            GHCR_VersionNumber = "#{Octopus.Release.Number}"
+            Octopus.Action.Template.Id = "ActionTemplates-1583"
+            Octopus.Action.Template.Version = "25"
+        }
+        worker_pool = "hosted-ubuntu"
+
+        packages "Asset" {
+            acquisition_location = "Server"
+            feed = "octopus-server-built-in"
+            package_id = "Octopus.TeamCity.OIDC"
+            properties = {
+                Extract = "False"
+                PackageParameterName = "GHCR_PackageId"
+                SelectionMode = "deferred"
+            }
+        }
+    }
+}
+
+step "dummy-step-to-allow-deployments-to-test" {
+    name = "Dummy step to allow deployments to test"
+
+    action {
+        action_type = "Octopus.Script"
+        properties = {
+            Octopus.Action.Script.ScriptBody = "echo \"this is just a dummy step... otherwise, it wont deploy a release to test with no active steps\""
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+        }
+        worker_pool = "hosted-ubuntu"
+    }
+}
