@@ -9,7 +9,7 @@
     <vendor>
       <name>@VendorName@</name>
       <url>@VendorURL@</url>
-      <logo>/plugins/teamcity-oidc-plugin/octopus-logo.png</logo>
+      <logo>https://raw.githubusercontent.com/OctopusDeploy/teamcity-oidc-plugin/main/jwt-plugin-server/src/main/resources/buildServerResources/octopus-logo.png</logo>
     </vendor>
   </info>
   <deployment use-separate-classloader="true"/>
