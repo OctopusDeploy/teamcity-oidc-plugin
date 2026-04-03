@@ -75,8 +75,8 @@
                 <version>3.2.5</version>
                 <configuration>
                     <systemPropertyVariables>
-                        <!-- Pass absolute module basedir so OidcFlowIT can locate ../target/jwt-plugin.zip -->
                         <project.basedir>${project.basedir}</project.basedir>
+                        <plugin.zip.name>Octopus.TeamCity.OIDC.${revision}</plugin.zip.name>
                     </systemPropertyVariables>
                 </configuration>
                 <executions>

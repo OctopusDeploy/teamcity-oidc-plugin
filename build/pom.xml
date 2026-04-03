@@ -10,7 +10,8 @@
   <packaging>pom</packaging>
   <properties>
       <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
-      <teamcity.oidc-plugin.plugin.version>${project.parent.version}</teamcity.oidc-plugin.plugin.version>
+      <revision>1.0-SNAPSHOT</revision>
+      <teamcity.oidc-plugin.plugin.version>${revision}</teamcity.oidc-plugin.plugin.version>
       <teamcity.oidc-plugin.plugin.vendorName>Octopus Deploy</teamcity.oidc-plugin.plugin.vendorName>
       <teamcity.oidc-plugin.plugin.vendorUrl>https://octopus.com</teamcity.oidc-plugin.plugin.vendorUrl>
   </properties>
@@ -65,7 +66,7 @@
                   <goal>single</goal>
                 </goals>
                 <configuration>
-                  <finalName>teamcity-oidc-plugin</finalName>
+                  <finalName>Octopus.TeamCity.OIDC.${revision}</finalName>
                   <outputDirectory>${project.parent.build.directory}</outputDirectory>
                   <appendAssemblyId>false</appendAssemblyId>
                   <descriptors>

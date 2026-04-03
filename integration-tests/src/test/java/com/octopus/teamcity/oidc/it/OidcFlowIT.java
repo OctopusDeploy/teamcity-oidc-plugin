@@ -55,7 +55,7 @@ public class OidcFlowIT {
 
     private static final Path PLUGIN_ZIP = Path.of(
             System.getProperty("project.basedir", "."),
-            "../target/teamcity-oidc-plugin.zip"
+            "../target/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
     ).normalize();
 
     /**
@@ -75,7 +75,7 @@ public class OidcFlowIT {
     static {
         try {
             TC_PLUGINS_DIR = Files.createTempDirectory("tc-plugins-");
-            Files.copy(PLUGIN_ZIP, TC_PLUGINS_DIR.resolve("teamcity-oidc-plugin.zip"),
+            Files.copy(PLUGIN_ZIP, TC_PLUGINS_DIR.resolve(System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"),
                     StandardCopyOption.REPLACE_EXISTING);
             TC_PLUGINS_DIR.toFile().setWritable(true, false);
 

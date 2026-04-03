@@ -50,7 +50,7 @@ public class JwtPluginIT {
     /** Path produced by the build module's maven-assembly-plugin. */
     private static final Path PLUGIN_ZIP = Path.of(
             System.getProperty("project.basedir", "."),
-            "../target/teamcity-oidc-plugin.zip"
+            "../target/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
     ).normalize();
 
     @Container
@@ -64,7 +64,7 @@ public class JwtPluginIT {
             .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
             .withCopyFileToContainer(
                     MountableFile.forHostPath(PLUGIN_ZIP),
-                    "/data/teamcity_server/datadir/plugins/teamcity-oidc-plugin.zip"
+                    "/data/teamcity_server/datadir/plugins/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
             )
             /*
              * Wait until TC's maintenance servlet is up (GET /mnt/ returns 200).
