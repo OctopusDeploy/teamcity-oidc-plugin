@@ -1,5 +1,11 @@
 package com.octopus.teamcity.oidc;
 
+import com.nimbusds.jose.crypto.ECDSAVerifier;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.controllers.BaseController;
@@ -169,18 +175,18 @@ public class JwtTestController extends BaseController {
         if (resp.statusCode() != 200) {
             throw new TestStepException("JWKS endpoint returned HTTP " + resp.statusCode());
         }
-        com.nimbusds.jose.jwk.JWKSet jwks = com.nimbusds.jose.jwk.JWKSet.parse(resp.body());
+        JWKSet jwks = JWKSet.parse(resp.body());
         SignedJWT jwt = SignedJWT.parse(token);
         String kid = jwt.getHeader().getKeyID();
-        com.nimbusds.jose.jwk.JWK jwk = jwks.getKeyByKeyId(kid);
+        JWK jwk = jwks.getKeyByKeyId(kid);
         if (jwk == null) {
             throw new TestStepException("Key ID not found in JWKS (kid: " + kid + ")");
         }
         boolean verified;
-        if (jwk instanceof com.nimbusds.jose.jwk.RSAKey rsaKey) {
-            verified = jwt.verify(new com.nimbusds.jose.crypto.RSASSAVerifier(rsaKey));
-        } else if (jwk instanceof com.nimbusds.jose.jwk.ECKey ecKey) {
-            verified = jwt.verify(new com.nimbusds.jose.crypto.ECDSAVerifier(ecKey));
+        if (jwk instanceof RSAKey rsaKey) {
+            verified = jwt.verify(new RSASSAVerifier(rsaKey));
+        } else if (jwk instanceof ECKey ecKey) {
+            verified = jwt.verify(new ECDSAVerifier(ecKey));
         } else {
             throw new TestStepException("Unsupported key type in JWKS: " + jwk.getKeyType());
         }

@@ -1,7 +1,6 @@
 package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.shaded.gson.*;
 import jetbrains.buildServer.controllers.admin.AdminPage;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.web.openapi.PagePlaces;
@@ -38,10 +37,9 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
         super.fillModel(model, request);
 
         JWKSet jwks = new JWKSet(keyManager.getPublicKeys());
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-        String formattedJwks = gson.toJson(JsonParser.parseString(jwks.toString()).getAsJsonObject());
-        model.put("jwks", formattedJwks);
-        model.put("jwksBase64", Base64.getEncoder().encodeToString(formattedJwks.getBytes(StandardCharsets.UTF_8)));
+        String jwksJson = jwks.toString();
+        model.put("jwks", jwksJson);
+        model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
     }
 
     @Override
