@@ -99,4 +99,4 @@ To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `MANAGE_SERVER_IN
 mvn package -pl oidc-plugin-server -am -DskipTests
 ```
 
-The plugin zip is written to `target/teamcity-oidc-plugin.zip`.
+The plugin zip is written to `target/Octopus.TeamCity.OIDC.1.0-SNAPSHOT.zip`.
