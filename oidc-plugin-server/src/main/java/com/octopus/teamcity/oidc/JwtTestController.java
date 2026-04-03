@@ -1,12 +1,5 @@
 package com.octopus.teamcity.oidc;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.JWSSigner;
-import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.controllers.BaseController;
@@ -39,22 +32,22 @@ public class JwtTestController extends BaseController {
     private static final Logger LOG = Logger.getLogger(JwtTestController.class.getName());
     static final String PATH = "/admin/jwtTest.html";
 
-    private final JwtBuildFeature jwtBuildFeature;
+    private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
     private final HttpClient httpClient;
 
     public JwtTestController(@NotNull WebControllerManager controllerManager,
-                              @NotNull JwtBuildFeature jwtBuildFeature,
+                              @NotNull JwtKeyManager keyManager,
                               @NotNull SBuildServer buildServer) {
-        this(controllerManager, jwtBuildFeature, buildServer,
+        this(controllerManager, keyManager, buildServer,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());
     }
 
     JwtTestController(@NotNull WebControllerManager controllerManager,
-                      @NotNull JwtBuildFeature jwtBuildFeature,
+                      @NotNull JwtKeyManager keyManager,
                       @NotNull SBuildServer buildServer,
                       @NotNull HttpClient httpClient) {
-        this.jwtBuildFeature = jwtBuildFeature;
+        this.keyManager = keyManager;
         this.buildServer = buildServer;
         this.httpClient = httpClient;
         controllerManager.registerController(PATH, this);
@@ -111,7 +104,7 @@ public class JwtTestController extends BaseController {
 
     private String[] stepJwt(HttpServletRequest request) throws Exception {
         String rootUrl = buildServer.getRootUrl();
-        if (rootUrl == null || !rootUrl.startsWith("https://")) {
+        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         String algorithm = request.getParameter("algorithm");
@@ -119,18 +112,6 @@ public class JwtTestController extends BaseController {
         int ttl = parseTtl(request.getParameter("ttl_minutes"));
         String audience = request.getParameter("audience");
         if (audience == null || audience.isBlank()) audience = rootUrl;
-
-        JWSHeader header;
-        JWSSigner signer;
-        if ("ES256".equals(algorithm)) {
-            ECKey ecKey = jwtBuildFeature.getEcKey();
-            header = new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(ecKey.getKeyID()).build();
-            signer = new ECDSASigner(ecKey);
-        } else {
-            RSAKey rsaKey = jwtBuildFeature.getRsaKey();
-            header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(rsaKey.getKeyID()).build();
-            signer = new RSASSASigner(rsaKey);
-        }
 
         String buildTypeId = request.getParameter("buildTypeId");
         if (buildTypeId == null || buildTypeId.isBlank()) {
@@ -155,8 +136,8 @@ public class JwtTestController extends BaseController {
                 .issueTime(now)
                 .expirationTime(new Date(now.getTime() + ttl * 60_000L))
                 .build();
-        SignedJWT jwt = new SignedJWT(header, claims);
-        jwt.sign(signer);
+
+        SignedJWT jwt = keyManager.sign(claims, algorithm);
         String serialized = jwt.serialize();
         String message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
         return new String[]{message, serialized};
@@ -232,9 +213,6 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("token_endpoint not found in service discovery document");
         }
 
-        // Rewrite the token endpoint's origin to match serviceUrl — the discovery doc
-        // may contain the service's own internal hostname (e.g. localhost) which is
-        // unreachable from TC's JVM.
         URI serviceUri = URI.create(serviceUrl);
         URI rawEndpointUri = URI.create(tokenEndpoint);
         URI resolvedEndpoint = new URI(serviceUri.getScheme(), serviceUri.getAuthority(),
@@ -251,8 +229,7 @@ public class JwtTestController extends BaseController {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
-        HttpResponse<String> exchangeResp = httpClient.send(exchangeReq,
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> exchangeResp = httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString());
         int status = exchangeResp.statusCode();
         String bodySnippet = exchangeResp.body().length() > 200
                 ? exchangeResp.body().substring(0, 200) : exchangeResp.body();
@@ -283,7 +260,7 @@ public class JwtTestController extends BaseController {
     private static int parseTtl(String value) {
         try {
             int ttl = (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
-            return Math.max(1, Math.min(ttl, 1440)); // clamp to [1, 1440] minutes
+            return Math.max(1, Math.min(ttl, 1440));
         } catch (NumberFormatException e) {
             return 10;
         }

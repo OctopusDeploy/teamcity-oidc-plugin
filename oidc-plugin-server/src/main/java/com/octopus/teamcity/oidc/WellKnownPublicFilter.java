@@ -13,27 +13,18 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.logging.Logger;
 
-/**
- * Handles {@code GET /.well-known/jwks.json} and {@code GET /.well-known/openid-configuration}
- * publicly (no authentication required) by registering directly into TC's {@link DelegatingFilter}
- * chain, which runs on {@code /*} before servlet dispatch.
- *
- * <p>TC's {@code buildServer} servlet is only mapped to specific URL patterns; it does not cover
- * {@code /.well-known/*} paths directly. Registering here lets cloud providers fetch the JWKS and
- * OIDC discovery document without credentials.</p>
- */
 public class WellKnownPublicFilter implements Filter {
     private static final Logger LOG = Logger.getLogger(WellKnownPublicFilter.class.getName());
 
     static final String JWKS_PATH = "/.well-known/jwks.json";
     static final String OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration";
 
-    private final JwtBuildFeature jwtBuildFeature;
+    private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
 
-    public WellKnownPublicFilter(@NotNull JwtBuildFeature jwtBuildFeature,
+    public WellKnownPublicFilter(@NotNull JwtKeyManager keyManager,
                                  @NotNull SBuildServer buildServer) {
-        this.jwtBuildFeature = jwtBuildFeature;
+        this.keyManager = keyManager;
         this.buildServer = buildServer;
         DelegatingFilter.registerDelegate(this);
         LOG.info("JWT plugin: WellKnownPublicFilter registered in DelegatingFilter chain");
@@ -54,7 +45,7 @@ public class WellKnownPublicFilter implements Filter {
         if (JWKS_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=300");
-            JWKSet jwks = new JWKSet(jwtBuildFeature.getPublicKeys());
+            JWKSet jwks = new JWKSet(keyManager.getPublicKeys());
             LOG.info("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
             resp.getWriter().write(jwks.toString());
             return;

@@ -21,11 +21,11 @@ public class KeyRotationController extends BaseController {
     static final String PATH = "/admin/jwtKeyRotate.html";
 
     @NotNull
-    private final JwtBuildFeature jwtBuildFeature;
+    private final JwtKeyManager keyManager;
 
     public KeyRotationController(@NotNull WebControllerManager controllerManager,
-                                 @NotNull JwtBuildFeature jwtBuildFeature) {
-        this.jwtBuildFeature = jwtBuildFeature;
+                                 @NotNull JwtKeyManager keyManager) {
+        this.keyManager = keyManager;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: KeyRotationController registered at " + PATH);
     }
@@ -46,7 +46,7 @@ public class KeyRotationController extends BaseController {
 
         try {
             LOG.info("JWT plugin: key rotation requested");
-            jwtBuildFeature.rotateKey();
+            keyManager.rotateKey();
             LOG.info("JWT plugin: key rotation completed successfully");
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write("{\"status\":\"rotated\"}");

@@ -4,7 +4,6 @@ import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
-import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +34,6 @@ import static org.mockito.Mockito.*;
 public class OidcDiscoveryComplianceTest {
 
     @Mock ServerPaths serverPaths;
-    @Mock PluginDescriptor pluginDescriptor;
     @Mock jetbrains.buildServer.serverSide.SBuildServer buildServer;
 
     @TempDir File tempDir;
@@ -46,8 +44,8 @@ public class OidcDiscoveryComplianceTest {
     void fetchDiscoveryDocument() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);

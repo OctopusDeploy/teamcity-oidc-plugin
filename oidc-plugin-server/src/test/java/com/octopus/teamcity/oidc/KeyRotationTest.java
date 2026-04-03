@@ -3,10 +3,8 @@ package com.octopus.teamcity.oidc;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.shaded.gson.JsonArray;
-import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
-import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,50 +19,40 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class KeyRotationTest {
 
-    @Mock
-    private ServerPaths serverPaths;
+    @Mock private ServerPaths serverPaths;
 
-    @Mock
-    private PluginDescriptor pluginDescriptor;
-
-    @Mock
-    private jetbrains.buildServer.serverSide.SBuildServer buildServer;
-
-    @TempDir
-    private File tempDir;
+    @TempDir private File tempDir;
 
     @Test
     public void rotationGeneratesNewRsaAndEcKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        RSAKey originalRsa = jwtBuildFeature.getRsaKey();
-        ECKey originalEc = jwtBuildFeature.getEcKey();
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        RSAKey originalRsa = keyManager.getRsaKey();
+        ECKey originalEc = keyManager.getEcKey();
 
-        jwtBuildFeature.rotateKey();
+        keyManager.rotateKey();
 
-        assertThat(jwtBuildFeature.getRsaKey().getKeyID()).isNotEqualTo(originalRsa.getKeyID());
-        assertThat(jwtBuildFeature.getEcKey().getKeyID()).isNotEqualTo(originalEc.getKeyID());
+        assertThat(keyManager.getRsaKey().getKeyID()).isNotEqualTo(originalRsa.getKeyID());
+        assertThat(keyManager.getEcKey().getKeyID()).isNotEqualTo(originalEc.getKeyID());
     }
 
     @Test
     public void jwksContainsCurrentAndRetiredKeysAfterRotation() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        RSAKey originalRsa = jwtBuildFeature.getRsaKey();
-        ECKey originalEc = jwtBuildFeature.getEcKey();
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        RSAKey originalRsa = keyManager.getRsaKey();
+        ECKey originalEc = keyManager.getEcKey();
 
-        jwtBuildFeature.rotateKey();
-        RSAKey newRsa = jwtBuildFeature.getRsaKey();
-        ECKey newEc = jwtBuildFeature.getEcKey();
+        keyManager.rotateKey();
+        RSAKey newRsa = keyManager.getRsaKey();
+        ECKey newEc = keyManager.getEcKey();
 
-        JsonArray keys = jwksKeys(jwtBuildFeature);
-        // current RSA + retired RSA + current EC + retired EC
+        JsonArray keys = jwksKeys(keyManager);
         assertThat(keys).hasSize(4);
 
         var kids = kidsInArray(keys);
@@ -75,20 +63,19 @@ public class KeyRotationTest {
     @Test
     public void rotatingAgainRetiresPreviousRetiredKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        RSAKey rsa1 = jwtBuildFeature.getRsaKey();
-        ECKey ec1 = jwtBuildFeature.getEcKey();
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        RSAKey rsa1 = keyManager.getRsaKey();
+        ECKey ec1 = keyManager.getEcKey();
 
-        jwtBuildFeature.rotateKey();
-        RSAKey rsa2 = jwtBuildFeature.getRsaKey();
-        ECKey ec2 = jwtBuildFeature.getEcKey();
+        keyManager.rotateKey();
+        RSAKey rsa2 = keyManager.getRsaKey();
+        ECKey ec2 = keyManager.getEcKey();
 
-        jwtBuildFeature.rotateKey();
-        RSAKey rsa3 = jwtBuildFeature.getRsaKey();
-        ECKey ec3 = jwtBuildFeature.getEcKey();
+        keyManager.rotateKey();
+        RSAKey rsa3 = keyManager.getRsaKey();
+        ECKey ec3 = keyManager.getEcKey();
 
-        JsonArray keys = jwksKeys(jwtBuildFeature);
-        // current RSA3 + retired RSA2 (rsa1 dropped) + current EC3 + retired EC2 (ec1 dropped)
+        JsonArray keys = jwksKeys(keyManager);
         assertThat(keys).hasSize(4);
 
         var kids = kidsInArray(keys);
@@ -98,8 +85,8 @@ public class KeyRotationTest {
 
     // --- helpers ---
 
-    private JsonArray jwksKeys(JwtBuildFeature feature) throws Exception {
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, mock(jetbrains.buildServer.serverSide.SBuildServer.class));
+    private JsonArray jwksKeys(JwtKeyManager keyManager) throws Exception {
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, mock(jetbrains.buildServer.serverSide.SBuildServer.class));
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         FilterChain chain = mock(FilterChain.class);

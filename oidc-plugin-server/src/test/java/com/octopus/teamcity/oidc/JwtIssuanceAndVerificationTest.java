@@ -11,7 +11,7 @@ import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.users.SUser;
-import jetbrains.buildServer.web.openapi.PluginDescriptor;
+import jetbrains.buildServer.serverSide.ServerPaths;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,41 +24,33 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-/**
- * Integration tests: verify that JWTs issued by JwtBuildStartContext can be
- * cryptographically validated using the public keys served by JwksController.
- * These tests exercise the full signing and verification chain across components.
- */
 @ExtendWith(MockitoExtension.class)
 public class JwtIssuanceAndVerificationTest {
 
     @Mock ServerPaths serverPaths;
-    @Mock PluginDescriptor pluginDescriptor;
     @Mock SBuildServer buildServer;
     @Mock ExtensionHolder extensionHolder;
     @Mock BuildStartContext buildStartContext;
     @Mock SRunningBuild runningBuild;
     @Mock SBuildFeatureDescriptor featureDescriptor;
 
-    @TempDir
-    File tempDir;
+    @TempDir File tempDir;
 
     @Test
     public void rs256JwtSignatureVerifiesAgainstJwksPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        String token = issueToken(feature, Map.of()); // RS256 by default
+        String token = issueToken(keyManager, Map.of());
 
-        JWKSet jwks = getJwks(feature);
+        JWKSet jwks = getJwks(keyManager);
         SignedJWT jwt = SignedJWT.parse(token);
 
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
@@ -75,11 +67,11 @@ public class JwtIssuanceAndVerificationTest {
     public void es256JwtSignatureVerifiesAgainstJwksPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        String token = issueToken(feature, Map.of("algorithm", "ES256"));
+        String token = issueToken(keyManager, Map.of("algorithm", "ES256"));
 
-        JWKSet jwks = getJwks(feature);
+        JWKSet jwks = getJwks(keyManager);
         SignedJWT jwt = SignedJWT.parse(token);
 
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.ES256);
@@ -96,22 +88,18 @@ public class JwtIssuanceAndVerificationTest {
     public void jwtIssuedBeforeKeyRotationRemainsVerifiableAfterRotation() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        // Issue a token before rotation
-        String tokenBeforeRotation = issueToken(feature, Map.of());
+        String tokenBeforeRotation = issueToken(keyManager, Map.of());
         SignedJWT jwtBefore = SignedJWT.parse(tokenBeforeRotation);
         String kidBefore = jwtBefore.getHeader().getKeyID();
 
-        // Rotate the keys
-        feature.rotateKey();
+        keyManager.rotateKey();
 
-        // The old key should still be in the JWKS (rotation overlap window)
-        JWKSet jwksAfterRotation = getJwks(feature);
+        JWKSet jwksAfterRotation = getJwks(keyManager);
         JWK oldKey = jwksAfterRotation.getKeyByKeyId(kidBefore);
         assertThat(oldKey).as("old key should still be in JWKS after rotation").isNotNull();
 
-        // The pre-rotation token must still verify
         assertThat(jwtBefore.verify(new RSASSAVerifier((RSAKey) oldKey))).isTrue();
     }
 
@@ -119,9 +107,9 @@ public class JwtIssuanceAndVerificationTest {
     public void jwtClaimsMatchBuildContextAndConfiguration() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        setupBuildContext(feature, Map.of("audience", "my-cloud-audience", "ttl_minutes", "5"));
+        setupBuildContext(Map.of("audience", "my-cloud-audience", "ttl_minutes", "5"));
 
         Branch branch = mock(Branch.class);
         when(branch.getName()).thenReturn("refs/heads/main");
@@ -129,7 +117,7 @@ public class JwtIssuanceAndVerificationTest {
         when(runningBuild.getBuildTypeExternalId()).thenReturn("My_BuildType");
 
         ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-        new JwtBuildStartContext(extensionHolder, buildServer).updateParameters(buildStartContext);
+        new JwtBuildStartContext(extensionHolder, buildServer, keyManager).updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
 
         SignedJWT jwt = SignedJWT.parse(tokenCaptor.getValue());
@@ -149,9 +137,9 @@ public class JwtIssuanceAndVerificationTest {
     @Test
     public void jwksContainsOnlyPublicKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        JWKSet jwks = getJwks(feature);
+        JWKSet jwks = getJwks(keyManager);
 
         for (JWK key : jwks.getKeys()) {
             assertThat(key.isPrivate()).as("JWKS must not expose private key material for " + key.getKeyID()).isFalse();
@@ -162,13 +150,13 @@ public class JwtIssuanceAndVerificationTest {
     public void jwtSignedWithNewKeyVerifiesAfterRotation() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        feature.rotateKey();
+        keyManager.rotateKey();
 
-        String token = issueToken(feature, Map.of());
+        String token = issueToken(keyManager, Map.of());
         SignedJWT jwt = SignedJWT.parse(token);
-        JWKSet jwks = getJwks(feature);
+        JWKSet jwks = getJwks(keyManager);
 
         JWK signingKey = jwks.getKeyByKeyId(jwt.getHeader().getKeyID());
         assertThat(signingKey).as("new key must be in JWKS after rotation").isNotNull();
@@ -177,25 +165,24 @@ public class JwtIssuanceAndVerificationTest {
 
     // --- helpers ---
 
-    private String issueToken(JwtBuildFeature feature, Map<String, String> params) throws Exception {
-        setupBuildContext(feature, params);
+    private String issueToken(JwtKeyManager keyManager, Map<String, String> params) throws Exception {
+        setupBuildContext(params);
         ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-        new JwtBuildStartContext(extensionHolder, buildServer).updateParameters(buildStartContext);
+        new JwtBuildStartContext(extensionHolder, buildServer, keyManager).updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
         return tokenCaptor.getValue();
     }
 
-    private void setupBuildContext(JwtBuildFeature feature, Map<String, String> params) {
+    private void setupBuildContext(Map<String, String> params) {
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
-        when(featureDescriptor.getBuildFeature()).thenReturn(feature);
         when(featureDescriptor.getParameters()).thenReturn(params);
         TriggeredBy triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
     }
 
-    private JWKSet getJwks(JwtBuildFeature feature) throws Exception {
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, mock(SBuildServer.class));
+    private JWKSet getJwks(JwtKeyManager keyManager) throws Exception {
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, mock(SBuildServer.class));
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         StringWriter writer = new StringWriter();

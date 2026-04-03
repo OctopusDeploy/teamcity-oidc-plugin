@@ -4,7 +4,6 @@ import com.nimbusds.jose.shaded.gson.JsonObject;
 import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
-import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,16 +25,14 @@ public class WellKnownPublicFilterTest {
 
     @Mock private ServerPaths serverPaths;
     @Mock private SBuildServer buildServer;
-    @Mock private PluginDescriptor pluginDescriptor;
 
-    @TempDir
-    private File tempDir;
+    @TempDir private File tempDir;
 
     @Test
     public void servesJwksWithoutCallingChain() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -57,8 +54,8 @@ public class WellKnownPublicFilterTest {
     public void servesOidcDiscoveryWithoutCallingChain() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -79,8 +76,8 @@ public class WellKnownPublicFilterTest {
     @Test
     public void delegatesToChainForOtherPaths() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -97,8 +94,8 @@ public class WellKnownPublicFilterTest {
     @Test
     public void jwksContainsBothRsaAndEcPublicKeys() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
@@ -117,7 +114,7 @@ public class WellKnownPublicFilterTest {
         boolean hasRsa = false, hasEc = false;
         for (int i = 0; i < keys.size(); i++) {
             var key = keys.get(i).getAsJsonObject();
-            assertThat(key.has("d")).isFalse(); // no private key material
+            assertThat(key.has("d")).isFalse();
             if ("RSA".equals(key.get("kty").getAsString())) hasRsa = true;
             if ("EC".equals(key.get("kty").getAsString())) hasEc = true;
         }
@@ -128,8 +125,8 @@ public class WellKnownPublicFilterTest {
     @Test
     public void stripsContextPathBeforeMatching() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(feature, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);

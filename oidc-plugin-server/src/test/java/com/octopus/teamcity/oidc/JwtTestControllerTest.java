@@ -8,7 +8,6 @@ import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
-import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
@@ -39,19 +38,18 @@ public class JwtTestControllerTest {
     @Mock SBuildServer buildServer;
     @Mock ProjectManager projectManager;
     @Mock ServerPaths serverPaths;
-    @Mock PluginDescriptor pluginDescriptor;
 
     @TempDir File tempDir;
 
-    JwtBuildFeature feature;
+    JwtKeyManager keyManager;
     JwtTestController controller;
     HttpClient httpClient = HttpClient.newHttpClient();
 
     @BeforeEach
     void setup() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        feature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        controller = new JwtTestController(controllerManager, feature, buildServer, httpClient);
+        keyManager = new JwtKeyManager(serverPaths);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient);
     }
 
     // ---- auth ----
@@ -281,7 +279,7 @@ public class JwtTestControllerTest {
         String token = jwtResult.getAsString("token");
 
         // Serve our JWKS on a local HTTP server
-        String jwksJson = new com.nimbusds.jose.jwk.JWKSet(feature.getPublicKeys()).toString();
+        String jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
         com.sun.net.httpserver.HttpServer server =
             com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
         addContext(server, "/.well-known/jwks.json", 200, jwksJson);
@@ -308,7 +306,7 @@ public class JwtTestControllerTest {
         ));
         String token = jwtResult.getAsString("token");
 
-        String jwksJson = new com.nimbusds.jose.jwk.JWKSet(feature.getPublicKeys()).toString();
+        String jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
         com.sun.net.httpserver.HttpServer server =
             com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
         addContext(server, "/.well-known/jwks.json", 200, jwksJson);

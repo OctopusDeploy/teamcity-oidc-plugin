@@ -1,10 +1,6 @@
 package com.octopus.teamcity.oidc;
 
-import com.nimbusds.jose.*;
-import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
@@ -17,21 +13,24 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class JwtBuildStartContext implements BuildStartContextProcessor  {
+public class JwtBuildStartContext implements BuildStartContextProcessor {
     private static final Logger LOG = Logger.getLogger(JwtBuildStartContext.class.getName());
 
     private final ExtensionHolder extensionHolder;
-
     private final SBuildServer buildServer;
+    private final JwtKeyManager keyManager;
 
     private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of(
             "branch", "build_type_external_id", "project_external_id",
             "triggered_by", "triggered_by_id", "build_number");
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
-    public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder, @NotNull SBuildServer buildServer) {
+    public JwtBuildStartContext(@NotNull ExtensionHolder extensionHolder,
+                                @NotNull SBuildServer buildServer,
+                                @NotNull JwtKeyManager keyManager) {
         this.extensionHolder = extensionHolder;
         this.buildServer = buildServer;
+        this.keyManager = keyManager;
     }
 
     public void register() {
@@ -42,7 +41,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
         SRunningBuild build = buildStartContext.getBuild();
-        Collection<SBuildFeatureDescriptor> jwtBuildFeatures = build.getBuildFeaturesOfType("oidc-plugin");
+        Collection<SBuildFeatureDescriptor> jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
 
         LOG.fine("JWT plugin: updateParameters called for build " + build.getBuildId()
                 + " (" + build.getBuildTypeExternalId() + "), JWT features: " + jwtBuildFeatures.size());
@@ -50,12 +49,6 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
         if (!jwtBuildFeatures.isEmpty()) {
             try {
                 SBuildFeatureDescriptor descriptor = jwtBuildFeatures.stream().findFirst().get();
-                JwtBuildFeature jwtBuildFeature = (JwtBuildFeature) descriptor.getBuildFeature();
-                if (jwtBuildFeature == null) {
-                    LOG.warning("JWT plugin: getBuildFeature() returned null for build " + build.getBuildId()
-                            + " — plugin may not be fully initialized");
-                    return;
-                }
                 Map<String, String> params = descriptor.getParameters();
 
                 int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
@@ -65,7 +58,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
                         + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
 
-                if (!buildServerRootUrl.startsWith("https://")) {
+                if (!JwtKeyManager.isHttpsUrl(buildServerRootUrl)) {
                     LOG.warning("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
                     return;
                 }
@@ -76,24 +69,6 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                 Set<String> enabledClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
                         : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
-
-                JWSHeader jwsHeader;
-                JWSSigner signer;
-                if ("ES256".equals(algorithmName)) {
-                    ECKey ecKey = jwtBuildFeature.getEcKey();
-                    jwsHeader = new JWSHeader.Builder(JWSAlgorithm.ES256)
-                            .type(JOSEObjectType.JWT)
-                            .keyID(ecKey.getKeyID())
-                            .build();
-                    signer = new ECDSASigner(ecKey);
-                } else {
-                    RSAKey rsaKey = jwtBuildFeature.getRsaKey();
-                    jwsHeader = new JWSHeader.Builder(JWSAlgorithm.RS256)
-                            .type(JOSEObjectType.JWT)
-                            .keyID(rsaKey.getKeyID())
-                            .build();
-                    signer = new RSASSASigner(rsaKey);
-                }
 
                 Branch branch = build.getBranch();
                 String branchName = branch != null ? branch.getName() : "";
@@ -130,16 +105,12 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
                     claimsBuilder.claim("build_number", build.getBuildNumber());
                 }
 
-                JWTClaimsSet jwtClaimsSet = claimsBuilder.build();
-
-                SignedJWT signedJWT = new SignedJWT(jwsHeader, jwtClaimsSet);
-                signedJWT.sign(signer);
-
+                SignedJWT signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);
                 String serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                         + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
-                        + ", kid=" + jwsHeader.getKeyID() + ")");
+                        + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
             } catch (JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
                 throw new RuntimeException(e);
@@ -149,5 +120,4 @@ public class JwtBuildStartContext implements BuildStartContextProcessor  {
             }
         }
     }
-
 }

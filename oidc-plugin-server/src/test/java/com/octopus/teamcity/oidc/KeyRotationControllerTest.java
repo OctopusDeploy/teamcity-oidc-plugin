@@ -3,7 +3,6 @@ package com.octopus.teamcity.oidc;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
-import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
 import org.junit.jupiter.api.Test;
@@ -26,27 +25,17 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 public class KeyRotationControllerTest {
 
-    @Mock
-    private WebControllerManager controllerManager;
+    @Mock private WebControllerManager controllerManager;
+    @Mock private ServerPaths serverPaths;
 
-    @Mock
-    private ServerPaths serverPaths;
-
-    @Mock
-    private PluginDescriptor pluginDescriptor;
-
-    @Mock
-    private jetbrains.buildServer.serverSide.SBuildServer buildServer;
-
-    @TempDir
-    private File tempDir;
+    @TempDir private File tempDir;
 
     @Test
     public void registersAtAdminPath() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        new KeyRotationController(controllerManager, jwtBuildFeature);
+        new KeyRotationController(controllerManager, keyManager);
 
         verify(controllerManager).registerController(eq(KeyRotationController.PATH), any(KeyRotationController.class));
     }
@@ -54,11 +43,11 @@ public class KeyRotationControllerTest {
     @Test
     public void postRequestRotatesKeyAndReturnsJson() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        String originalRsaKid = jwtBuildFeature.getRsaKey().getKeyID();
-        String originalEcKid = jwtBuildFeature.getEcKey().getKeyID();
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        String originalRsaKid = keyManager.getRsaKey().getKeyID();
+        String originalEcKid = keyManager.getEcKey().getKeyID();
 
-        KeyRotationController controller = new KeyRotationController(controllerManager, jwtBuildFeature);
+        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
@@ -75,8 +64,8 @@ public class KeyRotationControllerTest {
             ModelAndView result = controller.doHandle(request, response);
 
             assertThat(result).isNull();
-            assertThat(jwtBuildFeature.getRsaKey().getKeyID()).isNotEqualTo(originalRsaKid);
-            assertThat(jwtBuildFeature.getEcKey().getKeyID()).isNotEqualTo(originalEcKid);
+            assertThat(keyManager.getRsaKey().getKeyID()).isNotEqualTo(originalRsaKid);
+            assertThat(keyManager.getEcKey().getKeyID()).isNotEqualTo(originalEcKid);
             verify(response).setContentType("application/json;charset=UTF-8");
             assertThat(writer.toString()).contains("rotated");
         }
@@ -85,9 +74,8 @@ public class KeyRotationControllerTest {
     @Test
     public void getRequestReturns405MethodNotAllowed() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-
-        KeyRotationController controller = new KeyRotationController(controllerManager, jwtBuildFeature);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("GET");
@@ -101,8 +89,8 @@ public class KeyRotationControllerTest {
     @Test
     public void postWithNoSessionUserReturns403() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        KeyRotationController controller = new KeyRotationController(controllerManager, jwtBuildFeature);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
@@ -110,9 +98,7 @@ public class KeyRotationControllerTest {
 
         try (MockedStatic<SessionUser> sessionUser = mockStatic(SessionUser.class)) {
             sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(null);
-
             controller.doHandle(request, response);
-
             verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
         }
     }
@@ -120,8 +106,8 @@ public class KeyRotationControllerTest {
     @Test
     public void postWithNonAdminUserReturns403() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtBuildFeature jwtBuildFeature = new JwtBuildFeature(serverPaths, pluginDescriptor, buildServer);
-        KeyRotationController controller = new KeyRotationController(controllerManager, jwtBuildFeature);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
@@ -132,9 +118,7 @@ public class KeyRotationControllerTest {
 
         try (MockedStatic<SessionUser> sessionUser = mockStatic(SessionUser.class)) {
             sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(nonAdminUser);
-
             controller.doHandle(request, response);
-
             verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
         }
     }
