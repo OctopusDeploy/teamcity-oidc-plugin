@@ -19,6 +19,8 @@ Copy the plugin zip to `<TeamCity data directory>/plugins/` and restart TeamCity
 2. Configure the audience (`aud`) to match what your cloud provider expects.
 3. In your cloud provider, create an OIDC identity that trusts your TeamCity server as the issuer and configure conditions based on the token claims.
 
+![OIDC Identity Token build feature](screenshot-build-features.png)
+
 ## OIDC Endpoints
 
 The plugin serves two public endpoints (no authentication required):
@@ -59,6 +61,8 @@ Configurable per build feature instance:
 
 ## Build Feature Configuration
 
+![Build feature configuration](screenshot-build-feature.png)
+
 | Field | Description |
 |---|---|
 | Token lifetime | How long the JWT is valid (default: 10 minutes) |
@@ -67,6 +71,8 @@ Configurable per build feature instance:
 | Claims to include | Select which optional claims to include in the token |
 
 ## Test Connection
+
+![Test Connection](screenshot-test-connection.png)
 
 The build feature configuration page includes a **Test Connection** button that:
 
