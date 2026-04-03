@@ -3,7 +3,7 @@ step "publish-to-jetbrains-marketplace" {
 
     action {
         action_type = "Octopus.Script"
-        channels = []
+        channels = ["release"]
         environments = ["production"]
         properties = {
             Octopus.Action.Script.ScriptBody = <<-EOT
