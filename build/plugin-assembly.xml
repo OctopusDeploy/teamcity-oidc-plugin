@@ -15,7 +15,7 @@
     <moduleSet>
        <useAllReactorProjects>true</useAllReactorProjects>
        <includes>
-           <include>com.octopus.teamcity.oidc:jwt-plugin-server</include>
+           <include>com.octopus.teamcity.oidc:oidc-plugin-server</include>
        </includes>
        <binaries>
            <outputDirectory>server</outputDirectory>
