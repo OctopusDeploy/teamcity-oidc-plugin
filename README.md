@@ -46,7 +46,7 @@ The token is injected as the masked build parameter `jwt.token`. Reference it in
 
 ### Optional claims
 
-Configurable per build feature instance via checkboxes:
+Configurable per build feature instance:
 
 | Claim | Description |
 |---|---|
@@ -73,11 +73,9 @@ The build feature configuration page includes a **Test Connection** button that:
 1. Issues a test JWT using the current configuration
 2. Verifies the OIDC discovery endpoint is reachable
 3. Verifies the token signature against the JWKS endpoint
-4. Optionally attempts an RFC 8693 token exchange against a target service URL
+4. Optionally attempts an OIDC token exchange against a target service URL
 
 ## Key Rotation
-
-Keys are stored in `<TeamCity data directory>/plugins/data/JwtBuildFeature/`. Both RSA and EC key pairs are generated on first run.
 
 To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `MANAGE_SERVER_INSTALLATION` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
 
