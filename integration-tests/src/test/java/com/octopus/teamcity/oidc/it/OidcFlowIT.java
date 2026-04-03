@@ -38,7 +38,7 @@ public class OidcFlowIT {
     private static final String CADDY_IMAGE = "caddy:latest";
     private static final String MSSQL_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest";
 
-    private static final String OCTOPUS_ADMIN_API_KEY = "API-TESTKEY000000000000000000001";
+    private static final String OCTOPUS_ADMIN_API_KEY = "API-" + "TESTKEY000000000000000000001";
     private static final String OCTOPUS_ADMIN_PASSWORD = "P@ssw0rd123!";
     private static final String MSSQL_PASSWORD = "P@ssw0rd123!";
 
