@@ -73,8 +73,8 @@ public class JwtBuildFeature extends BuildFeature {
             String ttl = params.getOrDefault("ttl_minutes", "10");
             try {
                 int ttlValue = Integer.parseInt(ttl);
-                if (ttlValue <= 0) {
-                    errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a positive integer."));
+                if (ttlValue <= 0 || ttlValue > 1440) {
+                    errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be between 1 and 1440 minutes."));
                 }
             } catch (NumberFormatException e) {
                 errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));

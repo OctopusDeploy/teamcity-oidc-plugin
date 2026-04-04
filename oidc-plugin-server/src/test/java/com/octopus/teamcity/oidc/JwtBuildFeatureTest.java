@@ -72,6 +72,29 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
+    public void validationRejectsTtlAboveMaximum() {
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+
+        JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
+        PropertiesProcessor processor = feature.getParametersProcessor();
+        Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "1441"));
+
+        assertThat(errors).hasSize(1);
+        assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
+    }
+
+    @Test
+    public void validationAcceptsMaximumTtl() {
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+
+        JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
+        PropertiesProcessor processor = feature.getParametersProcessor();
+        Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "1440"));
+
+        assertThat(errors).isEmpty();
+    }
+
+    @Test
     public void describeParametersIncludesAlgorithmAndTtl() {
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         String description = feature.describeParameters(Map.of("algorithm", "ES256", "ttl_minutes", "5"));
