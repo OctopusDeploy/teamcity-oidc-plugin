@@ -91,6 +91,8 @@ public class JwtKeyManager {
     /**
      * Signs the given claims using the key for the requested algorithm.
      * Includes {@code typ: JWT} in the header per RFC 7519.
+     *
+     * @throws IllegalArgumentException if {@code algorithm} is not {@code "RS256"} or {@code "ES256"}
      */
     public SignedJWT sign(@NotNull JWTClaimsSet claims, @NotNull String algorithm) throws JOSEException {
         JWSHeader header;
@@ -102,13 +104,16 @@ public class JwtKeyManager {
                     .keyID(ecKey.getKeyID())
                     .build();
             signer = new ECDSASigner(ecKey);
-        } else {
+        } else if ("RS256".equals(algorithm)) {
             RSAKey rsaKey = getRsaKey();
             header = new JWSHeader.Builder(JWSAlgorithm.RS256)
                     .type(JOSEObjectType.JWT)
                     .keyID(rsaKey.getKeyID())
                     .build();
             signer = new RSASSASigner(rsaKey);
+        } else {
+            throw new IllegalArgumentException(
+                    "Unsupported signing algorithm: \"" + algorithm + "\". Supported values: RS256, ES256");
         }
         SignedJWT jwt = new SignedJWT(header, claims);
         jwt.sign(signer);

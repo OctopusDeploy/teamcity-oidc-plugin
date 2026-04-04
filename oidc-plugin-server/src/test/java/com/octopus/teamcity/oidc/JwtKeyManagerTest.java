@@ -149,4 +149,20 @@ public class JwtKeyManagerTest {
     public void normalizeRootUrlReturnsNullForNull() {
         assertThat(JwtKeyManager.normalizeRootUrl(null)).isNull();
     }
+
+    @Test
+    public void signThrowsForUnsupportedAlgorithm() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        com.nimbusds.jwt.JWTClaimsSet claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()
+                .subject("test").build();
+
+        assertThatThrownBy(() -> keyManager.sign(claims, "HS256"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("HS256");
+
+        assertThatThrownBy(() -> keyManager.sign(claims, "none"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("none");
+    }
 }
