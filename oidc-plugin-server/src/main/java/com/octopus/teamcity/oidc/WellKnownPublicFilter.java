@@ -76,6 +76,9 @@ public class WellKnownPublicFilter implements Filter {
 
             JSONObject doc = new JSONObject();
             doc.put("issuer", issuer);
+            // authorization_endpoint is required by the OIDC Discovery spec even for non-interactive
+            // providers. This provider does not support interactive flows; the endpoint returns 404.
+            doc.put("authorization_endpoint", issuer + "/oidc/authorize");
             doc.put("jwks_uri", issuer + JWKS_PATH);
             doc.put("id_token_signing_alg_values_supported", algs);
             doc.put("response_types_supported", responseTypes);

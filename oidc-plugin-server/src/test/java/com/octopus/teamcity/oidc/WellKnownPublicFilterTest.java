@@ -145,6 +145,29 @@ public class WellKnownPublicFilterTest {
     }
 
     @Test
+    public void discoveryDocIncludesAuthorizationEndpoint() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
+        StringWriter writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn("/.well-known/openid-configuration");
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        JsonObject json = JsonParser.parseString(writer.toString()).getAsJsonObject();
+        assertThat(json.has("authorization_endpoint")).isTrue();
+        assertThat(json.get("authorization_endpoint").getAsString())
+                .startsWith("https://teamcity.example.com");
+    }
+
+    @Test
     public void stripsContextPathBeforeMatching() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
