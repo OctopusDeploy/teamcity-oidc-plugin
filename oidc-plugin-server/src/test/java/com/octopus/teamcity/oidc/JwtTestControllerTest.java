@@ -534,6 +534,22 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void jwtStepIncludesNbfEqualToIat() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        mockBuildType("MyBuildType");
+        JSONObject result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        SignedJWT jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(jwt.getJWTClaimsSet().getNotBeforeTime()).isNotNull();
+        assertThat(jwt.getJWTClaimsSet().getNotBeforeTime())
+                .isEqualTo(jwt.getJWTClaimsSet().getIssueTime());
+    }
+
+    @Test
     void jwtStepDefaultsAudienceToRootUrl() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");

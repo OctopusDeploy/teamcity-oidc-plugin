@@ -151,6 +151,7 @@ public class JwtTestController extends BaseController {
                 .issuer(rootUrl)
                 .audience(List.of(audience))
                 .issueTime(now)
+                .notBeforeTime(now)
                 .expirationTime(new Date(now.getTime() + ttl * 60_000L))
                 .build();
 
