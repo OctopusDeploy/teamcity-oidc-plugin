@@ -45,7 +45,7 @@ public class WellKnownPublicFilterTest {
         filter.doFilter(request, response, chain);
 
         verify(response).setContentType("application/json;charset=UTF-8");
-        verify(response).setHeader("Cache-Control", "max-age=300");
+        verify(response).setHeader("Cache-Control", "max-age=60, stale-while-revalidate=60");
         assertThat(writer.toString()).contains("\"keys\"");
         verifyNoInteractions(chain);
     }

@@ -44,7 +44,7 @@ public class WellKnownPublicFilter implements Filter {
 
         if (JWKS_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
-            resp.setHeader("Cache-Control", "max-age=300");
+            resp.setHeader("Cache-Control", "max-age=60, stale-while-revalidate=60");
             JWKSet jwks = new JWKSet(keyManager.getPublicKeys());
             LOG.info("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
             resp.getWriter().write(jwks.toString());
@@ -53,7 +53,7 @@ public class WellKnownPublicFilter implements Filter {
 
         if (OIDC_DISCOVERY_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
-            resp.setHeader("Cache-Control", "max-age=300");
+            resp.setHeader("Cache-Control", "max-age=60, stale-while-revalidate=60");
             String issuer = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
             LOG.info("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
 
