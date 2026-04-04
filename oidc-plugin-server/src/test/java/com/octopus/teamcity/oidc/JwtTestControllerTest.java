@@ -623,6 +623,18 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void exchangeStepFailsWhenServiceUrlIsHttp() throws Exception {
+        JSONObject result = callStep(Map.of(
+            "step", "exchange",
+            "token", "some.jwt.token",
+            "serviceUrl", "http://external.example.com",
+            "audience", "aud"
+        ));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("HTTPS");
+    }
+
+    @Test
     void exchangeStepFailsWhenServiceDiscoveryReturnsNon200() throws Exception {
         com.sun.net.httpserver.HttpServer server =
             com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);

@@ -218,6 +218,9 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Missing required parameter: serviceUrl");
         }
         serviceUrl = serviceUrl.stripTrailing().replaceAll("/+$", "");
+        if (!JwtKeyManager.isHttpsUrl(serviceUrl) && !isLocalhostUrl(serviceUrl)) {
+            throw new TestStepException("serviceUrl must use HTTPS");
+        }
 
         String discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
         HttpResponse<String> discoveryResp = httpGet(discoveryUrl);
@@ -254,6 +257,16 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Exchange failed (HTTP " + status + "): " + bodySnippet);
         }
         return "Exchange succeeded (HTTP " + status + ")";
+    }
+
+    /** Allows HTTP for localhost/127.0.0.1 to support local development and testing. */
+    private static boolean isLocalhostUrl(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String encode(String value) {
