@@ -106,7 +106,7 @@ public class JwtTestController extends BaseController {
                     case "discovery" -> stepDiscovery();
                     case "jwks" -> stepJwks(request);
                     case "exchange" -> stepExchange(request);
-                    default -> throw new IllegalArgumentException("Unknown step: " + step);
+                    default -> throw new TestStepException("Unknown step: " + step);
                 };
                 writeJson(response, true, message);
             }
