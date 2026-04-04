@@ -3,8 +3,10 @@ package com.octopus.teamcity.oidc;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
+import jetbrains.buildServer.web.CSRFFilter;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,15 +29,26 @@ public class KeyRotationControllerTest {
 
     @Mock private WebControllerManager controllerManager;
     @Mock private ServerPaths serverPaths;
+    @Mock private CSRFFilter csrfFilter;
 
     @TempDir private File tempDir;
+
+    @BeforeEach
+    void setUp() {
+        // Default: CSRF check passes. lenient() because some tests never reach doHandle.
+        lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
+    }
+
+    private KeyRotationController controller(JwtKeyManager keyManager) {
+        return new KeyRotationController(controllerManager, keyManager, csrfFilter);
+    }
 
     @Test
     public void registersAtAdminPath() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
-        new KeyRotationController(controllerManager, keyManager);
+        new KeyRotationController(controllerManager, keyManager, csrfFilter);
 
         verify(controllerManager).registerController(eq(KeyRotationController.PATH), any(KeyRotationController.class));
     }
@@ -47,7 +60,7 @@ public class KeyRotationControllerTest {
         String originalRsaKid = keyManager.getRsaKey().getKeyID();
         String originalEcKid = keyManager.getEcKey().getKeyID();
 
-        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
+        KeyRotationController controller = controller(keyManager);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
@@ -74,8 +87,7 @@ public class KeyRotationControllerTest {
     @Test
     public void getRequestReturns405MethodNotAllowed() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
+        KeyRotationController controller = controller(new JwtKeyManager(serverPaths));
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("GET");
@@ -84,13 +96,34 @@ public class KeyRotationControllerTest {
         controller.doHandle(request, response);
 
         verify(response).setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        verify(csrfFilter, never()).validateRequest(any(), any());
+    }
+
+    @Test
+    public void postWithFailedCsrfCheckReturnsWithoutProcessing() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        String originalRsaKid = keyManager.getRsaKey().getKeyID();
+        KeyRotationController controller = controller(keyManager);
+
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getMethod()).thenReturn("POST");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(csrfFilter.validateRequest(request, response)).thenReturn(false);
+
+        controller.doHandle(request, response);
+
+        // Key must not have rotated
+        assertThat(keyManager.getRsaKey().getKeyID()).isEqualTo(originalRsaKid);
+        // No 403/200 status set by our code (CSRFFilter owns the response in this case)
+        verify(response, never()).setStatus(anyInt());
+        verify(response, never()).setContentType(anyString());
     }
 
     @Test
     public void postWithNoSessionUserReturns403() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
+        KeyRotationController controller = controller(new JwtKeyManager(serverPaths));
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
@@ -106,8 +139,7 @@ public class KeyRotationControllerTest {
     @Test
     public void postWithNonAdminUserReturns403() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        KeyRotationController controller = new KeyRotationController(controllerManager, keyManager);
+        KeyRotationController controller = controller(new JwtKeyManager(serverPaths));
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");

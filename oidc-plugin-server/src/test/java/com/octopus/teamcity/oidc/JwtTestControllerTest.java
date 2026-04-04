@@ -8,6 +8,7 @@ import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
+import jetbrains.buildServer.web.CSRFFilter;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
@@ -38,6 +39,7 @@ public class JwtTestControllerTest {
     @Mock SBuildServer buildServer;
     @Mock ProjectManager projectManager;
     @Mock ServerPaths serverPaths;
+    @Mock CSRFFilter csrfFilter;
 
     @TempDir File tempDir;
 
@@ -49,7 +51,9 @@ public class JwtTestControllerTest {
     void setup() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         keyManager = new JwtKeyManager(serverPaths);
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient);
+        // Default: CSRF check passes. lenient() because some tests use GET (CSRF never reached).
+        lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
     }
 
     // ---- auth ----
@@ -81,6 +85,22 @@ public class JwtTestControllerTest {
         controller.doHandle(req, resp);
 
         verify(resp).setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        verify(csrfFilter, never()).validateRequest(any(), any());
+    }
+
+    @Test
+    void postWithFailedCsrfCheckReturnsWithoutProcessing() throws Exception {
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getMethod()).thenReturn("POST");
+        HttpServletResponse resp = mock(HttpServletResponse.class);
+        when(csrfFilter.validateRequest(req, resp)).thenReturn(false);
+
+        controller.doHandle(req, resp);
+
+        // CSRFFilter owns the response; our code must not write anything
+        verify(resp, never()).setStatus(anyInt());
+        verify(resp, never()).setContentType(anyString());
+        verify(resp, never()).getWriter();
     }
 
     // ---- step=jwt ----

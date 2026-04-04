@@ -8,11 +8,13 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.SBuildType;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
+import jetbrains.buildServer.web.CSRFFilter;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
@@ -41,21 +43,26 @@ public class JwtTestController extends BaseController {
     private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
     private final HttpClient httpClient;
+    private final CSRFFilter csrfFilter;
 
     public JwtTestController(@NotNull WebControllerManager controllerManager,
                               @NotNull JwtKeyManager keyManager,
-                              @NotNull SBuildServer buildServer) {
+                              @NotNull SBuildServer buildServer,
+                              @NotNull ExtensionHolder extensionHolder) {
         this(controllerManager, keyManager, buildServer,
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
+                new CSRFFilter(extensionHolder));
     }
 
     JwtTestController(@NotNull WebControllerManager controllerManager,
                       @NotNull JwtKeyManager keyManager,
                       @NotNull SBuildServer buildServer,
-                      @NotNull HttpClient httpClient) {
+                      @NotNull HttpClient httpClient,
+                      @NotNull CSRFFilter csrfFilter) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
         this.httpClient = httpClient;
+        this.csrfFilter = csrfFilter;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: JwtTestController registered at " + PATH);
     }
@@ -65,6 +72,10 @@ public class JwtTestController extends BaseController {
                                     @NotNull HttpServletResponse response) throws IOException {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            return null;
+        }
+
+        if (!csrfFilter.validateRequest(request, response)) {
             return null;
         }
 

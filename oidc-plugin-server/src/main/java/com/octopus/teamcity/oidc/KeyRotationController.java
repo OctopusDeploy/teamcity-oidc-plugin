@@ -1,11 +1,13 @@
 package com.octopus.teamcity.oidc;
 
+import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.auth.Permission;
-import net.minidev.json.JSONObject;
 import jetbrains.buildServer.users.SUser;
+import jetbrains.buildServer.web.CSRFFilter;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
+import net.minidev.json.JSONObject;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.web.servlet.ModelAndView;
 
@@ -20,12 +22,20 @@ public class KeyRotationController extends BaseController {
 
     static final String PATH = "/admin/jwtKeyRotate.html";
 
-    @NotNull
-    private final JwtKeyManager keyManager;
+    @NotNull private final JwtKeyManager keyManager;
+    @NotNull private final CSRFFilter csrfFilter;
 
     public KeyRotationController(@NotNull WebControllerManager controllerManager,
-                                 @NotNull JwtKeyManager keyManager) {
+                                 @NotNull JwtKeyManager keyManager,
+                                 @NotNull ExtensionHolder extensionHolder) {
+        this(controllerManager, keyManager, new CSRFFilter(extensionHolder));
+    }
+
+    KeyRotationController(@NotNull WebControllerManager controllerManager,
+                          @NotNull JwtKeyManager keyManager,
+                          @NotNull CSRFFilter csrfFilter) {
         this.keyManager = keyManager;
+        this.csrfFilter = csrfFilter;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: KeyRotationController registered at " + PATH);
     }
@@ -35,6 +45,10 @@ public class KeyRotationController extends BaseController {
                                     @NotNull HttpServletResponse response) throws IOException {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            return null;
+        }
+
+        if (!csrfFilter.validateRequest(request, response)) {
             return null;
         }
 
