@@ -57,6 +57,14 @@ public class JwtKeyManager {
         }
     }
 
+    public File getKeyDirectory() {
+        return keyDirectory;
+    }
+
+    public RotationSettingsManager createRotationSettingsManager() {
+        return new RotationSettingsManager(keyDirectory);
+    }
+
     public RSAKey getRsaKey() {
         return keys.get().rsa();
     }
