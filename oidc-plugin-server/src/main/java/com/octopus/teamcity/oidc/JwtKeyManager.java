@@ -57,11 +57,7 @@ public class JwtKeyManager {
         }
     }
 
-    public File getKeyDirectory() {
-        return keyDirectory;
-    }
-
-    public RotationSettingsManager createRotationSettingsManager() {
+    public @NotNull RotationSettingsManager createRotationSettingsManager() {
         return new RotationSettingsManager(keyDirectory);
     }
 
