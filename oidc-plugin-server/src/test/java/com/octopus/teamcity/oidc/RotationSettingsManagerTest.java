@@ -16,7 +16,7 @@ public class RotationSettingsManagerTest {
     void returnsDefaultsWhenFileAbsent() {
         RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
         RotationSettings settings = mgr.load();
-        assertThat(settings.enabled()).isFalse();
+        assertThat(settings.enabled()).isTrue();
         assertThat(settings.cronSchedule()).isEqualTo(RotationSettings.DEFAULT_SCHEDULE);
         assertThat(settings.lastRotatedAt()).isNull();
     }

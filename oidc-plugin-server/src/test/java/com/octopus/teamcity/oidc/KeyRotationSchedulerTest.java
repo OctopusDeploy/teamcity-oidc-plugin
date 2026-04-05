@@ -40,7 +40,7 @@ public class KeyRotationSchedulerTest {
         JwtKeyManager km = keyManager();
         File keyDir = new File(tempDir, "JwtBuildFeature");
         RotationSettingsManager mgr = new RotationSettingsManager(keyDir);
-        // disabled by default
+        mgr.save(new RotationSettings(false, RotationSettings.DEFAULT_SCHEDULE, null));
         String originalKid = km.getRsaKey().getKeyID();
 
         KeyRotationScheduler scheduler = new KeyRotationScheduler(buildServer, km, mgr);

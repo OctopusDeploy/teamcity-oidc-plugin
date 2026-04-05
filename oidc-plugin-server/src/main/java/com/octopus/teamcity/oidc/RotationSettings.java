@@ -15,6 +15,6 @@ record RotationSettings(
     static final String DEFAULT_SCHEDULE = "0 0 3 1 */3 *";
 
     static RotationSettings defaults() {
-        return new RotationSettings(false, DEFAULT_SCHEDULE, null);
+        return new RotationSettings(true, DEFAULT_SCHEDULE, null);
     }
 }
