@@ -558,6 +558,7 @@ public class OidcFlowIT {
                         java.net.http.HttpResponse.BodyHandlers.ofString()
                 );
                 if (jwksResponse.statusCode() != 200) {
+                    log("JWKS returned " + jwksResponse.statusCode() + ", retrying...");
                     java.util.concurrent.TimeUnit.SECONDS.sleep(5);
                     continue;
                 }
@@ -584,9 +585,11 @@ public class OidcFlowIT {
                         return;
                     }
                     log("JWKS ready but issuer not yet updated (got: " + issuer + "), retrying...");
+                } else {
+                    log("Discovery returned " + discoveryResponse.statusCode() + ", retrying...");
                 }
-            } catch (Exception ignored) {
-                // Caddy or TC not ready yet — keep polling
+            } catch (Exception e) {
+                log("waitForPluginReady poll failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             }
             java.util.concurrent.TimeUnit.SECONDS.sleep(5);
         }
