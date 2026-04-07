@@ -9,6 +9,7 @@ import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.servlet.ModelAndView;
 
 import javax.servlet.http.HttpServletRequest;
@@ -25,6 +26,7 @@ public class KeyRotationController extends BaseController {
     @NotNull private final JwtKeyManager keyManager;
     @NotNull private final CSRFFilter csrfFilter;
 
+    @Autowired
     public KeyRotationController(@NotNull WebControllerManager controllerManager,
                                  @NotNull JwtKeyManager keyManager,
                                  @NotNull ExtensionHolder extensionHolder) {

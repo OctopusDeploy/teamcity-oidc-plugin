@@ -9,6 +9,7 @@ import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.web.servlet.ModelAndView;
 
@@ -24,6 +25,7 @@ public class RotationSettingsController extends BaseController {
     private final RotationSettingsManager settingsManager;
     private final CSRFFilter csrfFilter;
 
+    @Autowired
     public RotationSettingsController(@NotNull WebControllerManager controllerManager,
                                       @NotNull RotationSettingsManager settingsManager,
                                       @NotNull ExtensionHolder extensionHolder) {

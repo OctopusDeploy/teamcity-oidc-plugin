@@ -20,6 +20,7 @@ import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.servlet.ModelAndView;
 
 import javax.servlet.http.HttpServletRequest;
@@ -45,6 +46,7 @@ public class JwtTestController extends BaseController {
     private final HttpClient httpClient;
     private final CSRFFilter csrfFilter;
 
+    @Autowired
     public JwtTestController(@NotNull WebControllerManager controllerManager,
                               @NotNull JwtKeyManager keyManager,
                               @NotNull SBuildServer buildServer,
