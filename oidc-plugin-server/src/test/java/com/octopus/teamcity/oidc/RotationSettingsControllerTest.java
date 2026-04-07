@@ -74,6 +74,7 @@ public class RotationSettingsControllerTest {
         assertThat(saved.enabled()).isTrue();
         assertThat(saved.cronSchedule()).isEqualTo("0 0 2 * * *");
         assertThat(writer.toString()).contains("\"ok\":true");
+        verify(response).setContentType("application/json;charset=UTF-8");
     }
 
     @Test
@@ -166,6 +167,7 @@ public class RotationSettingsControllerTest {
         }
 
         verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        verify(response).setContentType("application/json;charset=UTF-8");
     }
 
     @Test

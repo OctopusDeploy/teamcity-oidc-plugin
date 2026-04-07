@@ -15,7 +15,6 @@ import org.springframework.web.servlet.ModelAndView;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class RotationSettingsController extends BaseController {
@@ -52,14 +51,14 @@ public class RotationSettingsController extends BaseController {
             return null;
         }
 
+        response.setContentType("application/json;charset=UTF-8");
+
         SUser user = SessionUser.getUser(request);
         if (user == null || !user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             writeJson(response, false, "Access denied");
             return null;
         }
-
-        response.setContentType("application/json;charset=UTF-8");
 
         String cronSchedule = request.getParameter("cronSchedule");
         if (cronSchedule == null || cronSchedule.isBlank()) {
