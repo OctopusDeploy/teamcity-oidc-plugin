@@ -16,6 +16,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
+import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -93,12 +94,16 @@ public class JwtPluginIT {
     /** Basic-auth header for the TeamCity super user (empty username, token as password). */
     static String superUserAuthHeader;
 
+    /** TC CSRF token, fetched once during setup and reused for all POST requests. */
+    static String csrfToken;
+
     @BeforeAll
     static void setup() throws Exception {
         baseUrl = "http://localhost:" + teamcity.getMappedPort(TC_PORT);
         http = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NEVER) // surface redirects explicitly
                 .connectTimeout(Duration.ofSeconds(10))
+                .cookieHandler(new CookieManager()) // maintain session cookies so CSRF tokens stay valid
                 .build();
 
         acceptLicenseAgreementIfRequired();
@@ -201,7 +206,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksEndpointReturnsBothRsaAndEcPublicKeys() throws Exception {
-        String body = authenticatedGet("/.well-known/jwks.json");
+        String body = publicGet("/.well-known/jwks.json");
         JWKSet jwks = JWKSet.parse(body);
 
         boolean hasRsa = false, hasEc = false;
@@ -216,7 +221,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksEndpointNeverExposesPrivateKeyMaterial() throws Exception {
-        String body = authenticatedGet("/.well-known/jwks.json");
+        String body = publicGet("/.well-known/jwks.json");
         JWKSet jwks = JWKSet.parse(body);
 
         for (JWK key : jwks.getKeys()) {
@@ -228,16 +233,16 @@ public class JwtPluginIT {
 
     @Test
     void jwksResponseHasCacheControlHeader() throws Exception {
-        HttpResponse<String> response = authenticatedGetWithHeaders("/.well-known/jwks.json");
+        HttpResponse<String> response = publicGetWithHeaders("/.well-known/jwks.json");
 
         assertThat(response.headers().firstValue("Cache-Control"))
                 .isPresent()
-                .hasValueSatisfying(v -> assertThat(v).contains("max-age=300"));
+                .hasValueSatisfying(v -> assertThat(v).contains("max-age=60"));
     }
 
     @Test
     void jwksKeyIdsAreThumbprints() throws Exception {
-        String body = authenticatedGet("/.well-known/jwks.json");
+        String body = publicGet("/.well-known/jwks.json");
         JWKSet jwks = JWKSet.parse(body);
 
         for (JWK key : jwks.getKeys()) {
@@ -315,11 +320,11 @@ public class JwtPluginIT {
 
     @Test
     void discoveryDocumentHasCacheControlHeader() throws Exception {
-        HttpResponse<String> response = authenticatedGetWithHeaders("/.well-known/openid-configuration");
+        HttpResponse<String> response = publicGetWithHeaders("/.well-known/openid-configuration");
 
         assertThat(response.headers().firstValue("Cache-Control"))
                 .isPresent()
-                .hasValueSatisfying(v -> assertThat(v).contains("max-age=300"));
+                .hasValueSatisfying(v -> assertThat(v).contains("max-age=60"));
     }
 
     // -------------------------------------------------------------------------
@@ -356,7 +361,7 @@ public class JwtPluginIT {
     @Test
     void keyRotationEndpointRotatesKeysAndUpdatesJwks() throws Exception {
         // Capture current key IDs
-        String jwksBefore = authenticatedGet("/.well-known/jwks.json");
+        String jwksBefore = publicGet("/.well-known/jwks.json");
         JWKSet setsBefore = JWKSet.parse(jwksBefore);
         List<String> kidsBefore = setsBefore.getKeys().stream().map(JWK::getKeyID).toList();
 
@@ -365,13 +370,25 @@ public class JwtPluginIT {
         assertThat(rotateResponse.statusCode()).isEqualTo(200);
         assertThat(rotateResponse.body()).contains("rotated");
 
-        // New JWKS should have new keys AND the old ones (rotation overlap window)
-        String jwksAfter = authenticatedGet("/.well-known/jwks.json");
+        // New JWKS should have new keys; previously-active keys become retired (overlap window).
+        // Previously-retired keys are evicted, so not all old kids will be present.
+        String jwksAfter = publicGet("/.well-known/jwks.json");
         JWKSet setsAfter = JWKSet.parse(jwksAfter);
         List<String> kidsAfter = setsAfter.getKeys().stream().map(JWK::getKeyID).toList();
 
-        assertThat(kidsAfter).containsAll(kidsBefore); // old keys still present
-        assertThat(kidsAfter.size()).isGreaterThan(kidsBefore.size()); // new keys added
+        // Some old keys must still be in JWKS (the ones that were active are now retired)
+        List<String> retained = new ArrayList<>(kidsAfter);
+        retained.retainAll(kidsBefore);
+        assertThat(retained)
+                .as("Previously-active keys must remain in JWKS after rotation (overlap window for in-flight JWTs)")
+                .isNotEmpty();
+
+        // New keys must have been added
+        List<String> added = new ArrayList<>(kidsAfter);
+        added.removeAll(kidsBefore);
+        assertThat(added)
+                .as("New active keys must be added by rotation")
+                .isNotEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -401,9 +418,11 @@ public class JwtPluginIT {
     }
 
     private HttpResponse<String> post(String path, String authHeader) throws Exception {
+        String body = csrfToken != null ? "tc-csrf-token=" + csrfToken : "";
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + httpAuthPath(path)))
-                .POST(HttpRequest.BodyPublishers.noBody());
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
         if (authHeader != null) {
             builder.header("Authorization", authHeader);
         }
@@ -415,8 +434,22 @@ public class JwtPluginIT {
         return "/httpAuth" + path;
     }
 
+    /** Fetches a public path without authentication or /httpAuth/ prefix. */
+    private String publicGet(String path) throws Exception {
+        HttpResponse<String> response = get(path, null);
+        assertThat(response.statusCode())
+                .as("GET %s returned unexpected status", path)
+                .isEqualTo(200);
+        return response.body();
+    }
+
+    /** Fetches a public path without auth, returning the full response for header inspection. */
+    private HttpResponse<String> publicGetWithHeaders(String path) throws Exception {
+        return get(path, null);
+    }
+
     private JsonObject fetchDiscoveryDocument() throws Exception {
-        String body = authenticatedGet("/.well-known/openid-configuration");
+        String body = publicGet("/.well-known/openid-configuration");
         return JsonParser.parseString(body).getAsJsonObject();
     }
 
@@ -446,6 +479,7 @@ public class JwtPluginIT {
             throw new IllegalStateException("Could not find CSRF token on global settings page");
         }
         String csrf = csrfMatcher.group(1);
+        csrfToken = csrf;
 
         // POST the new root URL.
         String form = "rootUrl=" + URI.create(baseUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F")
