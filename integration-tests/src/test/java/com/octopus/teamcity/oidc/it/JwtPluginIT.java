@@ -103,6 +103,7 @@ public class JwtPluginIT {
 
         acceptLicenseAgreementIfRequired();
         waitForTcReady();
+        dumpTcPluginLog();
 
         String token = extractSuperUserTokenWithRetry();
         String encoded = Base64.getEncoder().encodeToString((":" + token).getBytes());
@@ -159,6 +160,20 @@ public class JwtPluginIT {
             TimeUnit.SECONDS.sleep(3);
         }
         throw new IllegalStateException("TeamCity did not become ready within 3 minutes");
+    }
+
+    private static void dumpTcPluginLog() throws Exception {
+        var result = teamcity.execInContainer(
+                "sh", "-c",
+                "grep -i 'jwt\\|oidc\\|error\\|exception\\|WellKnown\\|DelegatingFilter' " +
+                "/opt/teamcity/logs/teamcity-server.log 2>/dev/null || echo '(no matching lines)'"
+        );
+        System.out.println("=== TC server log (jwt/oidc/error lines) ===");
+        System.out.println(result.getStdout());
+        if (!result.getStderr().isEmpty()) {
+            System.out.println("STDERR: " + result.getStderr());
+        }
+        System.out.println("=== end TC server log ===");
     }
 
     // -------------------------------------------------------------------------
