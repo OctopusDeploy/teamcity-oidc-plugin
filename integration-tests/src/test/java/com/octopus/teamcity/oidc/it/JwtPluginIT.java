@@ -48,10 +48,20 @@ public class JwtPluginIT {
     private static final String TC_IMAGE = "jetbrains/teamcity-server:2025.11";
 
     /** Path produced by the build module's maven-assembly-plugin. */
-    private static final Path PLUGIN_ZIP = Path.of(
-            System.getProperty("project.basedir", "."),
-            "../target/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
-    ).normalize();
+    private static final Path PLUGIN_ZIP = requirePluginZip();
+
+    private static Path requirePluginZip() {
+        Path zip = Path.of(
+                System.getProperty("project.basedir", "."),
+                "../target/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
+        ).normalize();
+        if (!zip.toFile().exists()) {
+            throw new IllegalStateException(
+                    "Plugin zip not found: " + zip.toAbsolutePath() +
+                    "\nRun 'mvn package -DskipTests' from the project root first.");
+        }
+        return zip;
+    }
 
     @Container
     static final GenericContainer<?> teamcity = new GenericContainer<>(TC_IMAGE)
