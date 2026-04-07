@@ -35,7 +35,7 @@
   <tr>
     <td>
       <span id="jwtLastRotated" style="color:#555;font-size:0.9em">
-        Last rotated: <c:out value="${lastRotatedAt}"/>
+        Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span>
         <c:if test="${not empty nextDue}">
           &nbsp;|&nbsp; Next due: <c:out value="${nextDue}"/>
         </c:if>
@@ -75,7 +75,7 @@
             String(now.getUTCDate()).padStart(2, '0') + ' ' +
             String(now.getUTCHours()).padStart(2, '0') + ':' +
             String(now.getUTCMinutes()).padStart(2, '0') + ' UTC';
-          document.querySelector('#jwtLastRotated').textContent = 'Last rotated: ' + formatted;
+          document.getElementById('jwtLastRotatedDate').textContent = formatted;
         }
       },
       function() { jwtShowResult('jwtRotateResult', false, 'Request failed'); }
@@ -91,7 +91,7 @@
       },
       body: body
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
     .then(onSuccess)
     .catch(onError);
   }
