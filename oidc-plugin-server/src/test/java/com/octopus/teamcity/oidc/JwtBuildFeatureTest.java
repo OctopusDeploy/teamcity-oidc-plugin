@@ -1,4 +1,4 @@
-package de.ndr.teamcity;
+package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.serverSide.ServerPaths;
 import org.apache.commons.io.FileUtils;

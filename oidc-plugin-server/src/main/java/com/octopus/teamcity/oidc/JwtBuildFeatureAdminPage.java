@@ -1,4 +1,4 @@
-package de.ndr.teamcity;
+package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.shaded.gson.*;
