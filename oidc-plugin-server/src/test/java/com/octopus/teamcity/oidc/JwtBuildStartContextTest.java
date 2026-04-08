@@ -1,4 +1,4 @@
-package de.ndr.teamcity;
+package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;

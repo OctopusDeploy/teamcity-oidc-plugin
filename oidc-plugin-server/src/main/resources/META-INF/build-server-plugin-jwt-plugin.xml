@@ -3,9 +3,9 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd"
        default-autowire="constructor">
-    <bean id="jwtBuildFeature" class="de.ndr.teamcity.JwtBuildFeature" />
-    <bean id="jwtBuildStartContext" class="de.ndr.teamcity.JwtBuildStartContext" init-method="register" />
-    <bean id="jwtBuildFeatureAdminPage" class="de.ndr.teamcity.JwtBuildFeatureAdminPage"/>
+    <bean id="jwtBuildFeature" class="com.octopus.teamcity.oidc.JwtBuildFeature" />
+    <bean id="jwtBuildStartContext" class="com.octopus.teamcity.oidc.JwtBuildStartContext" init-method="register" />
+    <bean id="jwtBuildFeatureAdminPage" class="com.octopus.teamcity.oidc.JwtBuildFeatureAdminPage"/>
 
 </beans>
 

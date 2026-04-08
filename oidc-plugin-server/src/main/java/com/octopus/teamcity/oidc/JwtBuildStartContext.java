@@ -1,4 +1,4 @@
-package de.ndr.teamcity;
+package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
