@@ -121,7 +121,7 @@ public class JwtIssuanceAndVerificationTest {
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
 
         SignedJWT jwt = SignedJWT.parse(tokenCaptor.getValue());
-        var claims = jwt.getJWTClaimsSet();
+        final var claims = jwt.getJWTClaimsSet();
 
         assertThat(claims.getIssuer()).isEqualTo("https://teamcity.example.com");
         assertThat(claims.getAudience()).containsExactly("my-cloud-audience");

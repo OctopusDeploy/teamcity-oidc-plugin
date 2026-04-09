@@ -44,12 +44,12 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     public void fillModel(@NotNull Map<String, Object> model, @NotNull HttpServletRequest request) {
         super.fillModel(model, request);
 
-        JWKSet jwks = new JWKSet(keyManager.getPublicKeys());
-        String jwksJson = jwks.toString();
+        final var  jwks = new JWKSet(keyManager.getPublicKeys());
+        final var  jwksJson = jwks.toString();
         model.put("jwks", jwksJson);
         model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
 
-        RotationSettings settings = settingsManager.load();
+        final var  settings = settingsManager.load();
         model.put("rotationEnabled", settings.enabled());
         model.put("cronSchedule", settings.cronSchedule());
 
@@ -61,9 +61,9 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
 
         if (settings.enabled() && settings.lastRotatedAt() != null) {
             try {
-                CronExpression cron = CronExpression.parse(settings.cronSchedule());
-                LocalDateTime last = settings.lastRotatedAt().atZone(ZoneOffset.UTC).toLocalDateTime();
-                LocalDateTime next = cron.next(last);
+                final var  cron = CronExpression.parse(settings.cronSchedule());
+                final var  last = settings.lastRotatedAt().atZone(ZoneOffset.UTC).toLocalDateTime();
+                final var  next = cron.next(last);
                 model.put("nextDue", next != null
                         ? FMT.format(next.atZone(ZoneOffset.UTC).toInstant()) + " UTC"
                         : null);

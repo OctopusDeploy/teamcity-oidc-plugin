@@ -109,11 +109,11 @@ public class WellKnownPublicFilterTest {
 
         com.nimbusds.jose.shaded.gson.JsonObject json =
                 com.nimbusds.jose.shaded.gson.JsonParser.parseString(writer.toString()).getAsJsonObject();
-        var keys = json.get("keys").getAsJsonArray();
+        final var keys = json.get("keys").getAsJsonArray();
         assertThat(keys).hasSize(2);
         boolean hasRsa = false, hasEc = false;
         for (int i = 0; i < keys.size(); i++) {
-            var key = keys.get(i).getAsJsonObject();
+            final var key = keys.get(i).getAsJsonObject();
             assertThat(key.has("d")).isFalse();
             if ("RSA".equals(key.get("kty").getAsString())) hasRsa = true;
             if ("EC".equals(key.get("kty").getAsString())) hasEc = true;

@@ -16,7 +16,7 @@ class TlsTrustManager {
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
         try (InputStream in = TlsTrustManager.class.getResourceAsStream("/tls/ca.crt")) {
             if (in == null) throw new IllegalStateException("ca.crt not found on classpath");
-            var ca = cf.generateCertificate(in);
+            final var ca = cf.generateCertificate(in);
 
             KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
             ks.load(null, null);

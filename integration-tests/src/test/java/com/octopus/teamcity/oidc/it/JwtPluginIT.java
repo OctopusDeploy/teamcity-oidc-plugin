@@ -132,7 +132,7 @@ public class JwtPluginIT {
         // now blocked and ready to process the acceptance.
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var result = teamcity.execInContainer(
+            final var result = teamcity.execInContainer(
                     "grep", "-q", "Review and accept TeamCity license agreement",
                     "/opt/teamcity/logs/teamcity-server.log"
             );
@@ -168,7 +168,7 @@ public class JwtPluginIT {
     }
 
     private static void dumpTcPluginLog() throws Exception {
-        var result = teamcity.execInContainer(
+        final var result = teamcity.execInContainer(
                 "sh", "-c",
                 "grep -i 'jwt\\|oidc\\|error\\|exception\\|WellKnown\\|DelegatingFilter' " +
                 "/opt/teamcity/logs/teamcity-server.log 2>/dev/null || echo '(no matching lines)'"
@@ -504,7 +504,7 @@ public class JwtPluginIT {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
         String lastError = "";
         while (System.currentTimeMillis() < deadline) {
-            var result = teamcity.execInContainer(
+            final var result = teamcity.execInContainer(
                     "grep", "-o", "Super user authentication token: [0-9]*",
                     "/opt/teamcity/logs/teamcity-server.log"
             );

@@ -4,7 +4,7 @@
 <%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
 <%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
 <%
-    var currentUser = SessionUser.getUser(request);
+    final var currentUser = SessionUser.getUser(request);
     if (currentUser == null || !currentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
         response.sendError(javax.servlet.http.HttpServletResponse.SC_FORBIDDEN);
         return;
@@ -53,8 +53,8 @@
 
 <script>
   function jwtSaveRotationSettings() {
-    var enabled = document.getElementById('rotationEnabled').checked;
-    var schedule = document.getElementById('cronSchedule').value;
+    final var enabled = document.getElementById('rotationEnabled').checked;
+    final var schedule = document.getElementById('cronSchedule').value;
     jwtAdminPost('/admin/jwtRotationSettings.html',
       'enabled=' + enabled + '&cronSchedule=' + encodeURIComponent(schedule),
       function(data) { jwtShowResult('jwtSaveResult', data.ok, data.message); },
@@ -65,12 +65,12 @@
   function jwtRotateNow() {
     jwtAdminPost('/admin/jwtKeyRotate.html', '',
       function(data) {
-        var ok = data.status === 'rotated';
-        var msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');
+        final var ok = data.status === 'rotated';
+        final var msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');
         jwtShowResult('jwtRotateResult', ok, msg);
         if (ok) {
-          var now = new Date();
-          var formatted = now.getUTCFullYear() + '-' +
+          final var now = new Date();
+          final var formatted = now.getUTCFullYear() + '-' +
             String(now.getUTCMonth() + 1).padStart(2, '0') + '-' +
             String(now.getUTCDate()).padStart(2, '0') + ' ' +
             String(now.getUTCHours()).padStart(2, '0') + ':' +
@@ -97,7 +97,7 @@
   }
 
   function jwtShowResult(elementId, ok, message) {
-    var el = document.getElementById(elementId);
+    final var el = document.getElementById(elementId);
     el.textContent = message;
     el.style.color = ok ? 'green' : 'red';
     el.style.display = 'inline';

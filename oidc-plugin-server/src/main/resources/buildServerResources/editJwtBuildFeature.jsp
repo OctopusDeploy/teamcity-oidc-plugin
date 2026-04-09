@@ -100,13 +100,13 @@
 </div>
 
 <script type="text/javascript">
-    var _jwtToken = null;
-    var _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
+    final var _jwtToken = null;
+    final var _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
 
     window.jwtTestOpen = function() {
         _jwtToken = null;
         ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(function(id) {
-            var el = document.getElementById(id);
+            final var el = document.getElementById(id);
             el.textContent = id === 'jwtRow3' ? '' : '\u25CB Pending';
             el.style.color = '#888';
         });
@@ -122,17 +122,17 @@
     }
 
     window.jwtSetRow = function(id, ok, message) {
-        var el = document.getElementById(id);
+        final var el = document.getElementById(id);
         el.textContent = (ok ? '\u2713 ' : '\u2717 ') + message;
         el.style.color = ok ? '#7ec87e' : '#e06c75';
     }
 
     window.jwtPost = function(params) {
-        var body = Object.entries(params)
+        final var body = Object.entries(params)
             .map(function(e) { return encodeURIComponent(e[0]) + '=' + encodeURIComponent(e[1]); })
             .join('&');
-        var csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
-        var csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+        final var csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
+        final var csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
         return fetch(_jwtTestUrl, {
             method: 'POST',
             headers: {
@@ -144,24 +144,24 @@
     }
 
     window.jwtTestRunChecks = async function() {
-        var algorithm = document.getElementById('algorithm').value;
-        var ttl = document.getElementById('ttl_minutes').value || '10';
-        var audience = document.getElementById('audience').value;
-        var buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
+        final var algorithm = document.getElementById('algorithm').value;
+        final var ttl = document.getElementById('ttl_minutes').value || '10';
+        final var audience = document.getElementById('audience').value;
+        final var buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
 
         document.getElementById('jwtRow0').textContent = '\u23F3 Issuing JWT...';
-        var r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+        final var r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
         jwtSetRow('jwtRow0', r1.ok, r1.message);
         if (!r1.ok) return;
         _jwtToken = r1.token;
 
         document.getElementById('jwtRow1').textContent = '\u23F3 Checking discovery endpoint...';
-        var r2 = await jwtPost({step:'discovery'});
+        final var r2 = await jwtPost({step:'discovery'});
         jwtSetRow('jwtRow1', r2.ok, r2.message);
         if (!r2.ok) return;
 
         document.getElementById('jwtRow2').textContent = '\u23F3 Verifying JWKS signature...';
-        var r3 = await jwtPost({step:'jwks', token:_jwtToken});
+        final var r3 = await jwtPost({step:'jwks', token:_jwtToken});
         jwtSetRow('jwtRow2', r3.ok, r3.message);
         if (!r3.ok) return;
 
@@ -170,19 +170,19 @@
     }
 
     window.jwtTestExchange = async function() {
-        var serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
+        final var serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
         if (!serviceUrl) return;
-        var audience = document.getElementById('audience').value;
+        final var audience = document.getElementById('audience').value;
         document.getElementById('jwtExchangeBtn').disabled = true;
         document.getElementById('jwtRow3').textContent = '\u23F3 Trying exchange...';
         document.getElementById('jwtRow3').style.color = '#888';
-        var r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
+        final var r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
         jwtSetRow('jwtRow3', r.ok, r.message);
         document.getElementById('jwtExchangeBtn').disabled = false;
     }
 
     $j(document).ready(function() {
-        var placeholder = $j('span#editBuildFeatureAdditionalButtons');
+        final var placeholder = $j('span#editBuildFeatureAdditionalButtons');
         if (placeholder.length) {
             placeholder.empty();
             placeholder.append($j('span#jwtTestConnectionBtnHolder').children());
@@ -190,10 +190,10 @@
 
         // Initialise claim checkboxes from stored comma-separated value.
         // Blank = all claims enabled, so tick all boxes when the field is empty.
-        var ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
+        final var ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
                           'triggered_by','triggered_by_id','build_number'];
-        var stored = $j('#claims').val().trim();
-        var enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
+        final var stored = $j('#claims').val().trim();
+        final var enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
         $j('.jwt-claim-cb').each(function() {
             $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
         });
@@ -201,7 +201,7 @@
         // Sync hidden field on every checkbox change.
         // All checked → store blank (= "all"); partial → store comma-separated list.
         $j('.jwt-claim-cb').on('change', function() {
-            var checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
+            final var checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
             $j('#claims').val(checked.length === ALL_CLAIMS.length ? '' : checked.join(','));
         });
     });

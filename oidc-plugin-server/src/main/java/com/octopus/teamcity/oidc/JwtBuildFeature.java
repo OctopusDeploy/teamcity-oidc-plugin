@@ -34,10 +34,10 @@ public class JwtBuildFeature extends BuildFeature {
 
     @Override
     public String describeParameters(@NotNull java.util.Map<String, String> params) {
-        String algorithm = params.getOrDefault("algorithm", "RS256");
-        String ttl = params.getOrDefault("ttl_minutes", "10");
-        String audience = params.get("audience");
-        StringBuilder sb = new StringBuilder();
+        final var algorithm = params.getOrDefault("algorithm", "RS256");
+        final var ttl = params.getOrDefault("ttl_minutes", "10");
+        final var audience = params.get("audience");
+        final var sb = new StringBuilder();
         sb.append("alg: ").append(algorithm).append(", ttl: ").append(ttl).append("m");
         if (audience != null && !audience.isBlank()) {
             sb.append(", aud: ").append(audience);
@@ -70,9 +70,9 @@ public class JwtBuildFeature extends BuildFeature {
                         "The TeamCity server root URL must use HTTPS for OIDC token issuance. " +
                         "Update it in Administration → Global Settings."));
             }
-            String ttl = params.getOrDefault("ttl_minutes", "10");
+            final var ttl = params.getOrDefault("ttl_minutes", "10");
             try {
-                int ttlValue = Integer.parseInt(ttl);
+                final var ttlValue = Integer.parseInt(ttl);
                 if (ttlValue <= 0 || ttlValue > 1440) {
                     errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be between 1 and 1440 minutes."));
                 }

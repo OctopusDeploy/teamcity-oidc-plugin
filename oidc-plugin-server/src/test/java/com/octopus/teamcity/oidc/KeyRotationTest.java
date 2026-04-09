@@ -55,7 +55,7 @@ public class KeyRotationTest {
         JsonArray keys = jwksKeys(keyManager);
         assertThat(keys).hasSize(4);
 
-        var kids = kidsInArray(keys);
+        final var kids = kidsInArray(keys);
         assertThat(kids).contains(originalRsa.getKeyID(), newRsa.getKeyID(),
                                    originalEc.getKeyID(), newEc.getKeyID());
     }
@@ -78,7 +78,7 @@ public class KeyRotationTest {
         JsonArray keys = jwksKeys(keyManager);
         assertThat(keys).hasSize(4);
 
-        var kids = kidsInArray(keys);
+        final var kids = kidsInArray(keys);
         assertThat(kids).doesNotContain(rsa1.getKeyID(), ec1.getKeyID());
         assertThat(kids).contains(rsa2.getKeyID(), rsa3.getKeyID(), ec2.getKeyID(), ec3.getKeyID());
     }
@@ -99,7 +99,7 @@ public class KeyRotationTest {
     }
 
     private java.util.List<String> kidsInArray(JsonArray keys) {
-        var kids = new java.util.ArrayList<String>();
+        final var kids = new java.util.ArrayList<String>();
         for (int i = 0; i < keys.size(); i++) {
             kids.add(keys.get(i).getAsJsonObject().get("kid").getAsString());
         }

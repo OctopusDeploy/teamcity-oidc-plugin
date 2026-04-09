@@ -111,7 +111,7 @@ public class JwtKeyManagerTest {
     public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        var ecKey = keyManager.getEcKey();
+        final var ecKey = keyManager.getEcKey();
         assertThat(ecKey.getKeyID()).isEqualTo(ecKey.computeThumbprint().toString());
     }
 

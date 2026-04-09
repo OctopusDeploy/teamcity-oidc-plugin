@@ -283,7 +283,7 @@ public class OidcFlowIT {
 
         // TC server log — full file for thorough post-mortem
         try {
-            var result = teamcity.execInContainer(
+            final var result = teamcity.execInContainer(
                     "cat", "/opt/teamcity/logs/teamcity-server.log");
             Files.writeString(logDir.resolve("teamcity-server.log"),
                     result.getStdout() + result.getStderr());
@@ -292,7 +292,7 @@ public class OidcFlowIT {
         }
 
         // Container stdout/stderr
-        for (var entry : java.util.Map.of(
+        for (final var entry : java.util.Map.of(
                 "teamcity", teamcity,
                 "agent", agent,
                 "caddy", caddy,
@@ -311,7 +311,7 @@ public class OidcFlowIT {
     private static void acceptTcLicenseAgreementIfRequired() throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var result = teamcity.execInContainer(
+            final var result = teamcity.execInContainer(
                     "grep", "-q", "Review and accept TeamCity license agreement",
                     "/opt/teamcity/logs/teamcity-server.log"
             );
@@ -329,7 +329,7 @@ public class OidcFlowIT {
     private static void waitForTcReady() throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var r = tcHttp.send(
+            final var r = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create(tcBaseUrl + "/"))
                             .GET().build(),
@@ -344,11 +344,11 @@ public class OidcFlowIT {
     private static String extractTcSuperUserTokenWithRetry() throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var result = teamcity.execInContainer(
+            final var result = teamcity.execInContainer(
                     "grep", "-o", "Super user authentication token: [0-9]*",
                     "/opt/teamcity/logs/teamcity-server.log"
             );
-            var matcher = java.util.regex.Pattern.compile(
+            final var matcher = java.util.regex.Pattern.compile(
                     "Super user authentication token: (\\d+)"
             ).matcher(result.getStdout().trim());
             if (matcher.find()) return matcher.group(1);
@@ -358,14 +358,14 @@ public class OidcFlowIT {
     }
 
     private static void configureTcServerRootUrl() throws Exception {
-        var page = tcHttp.send(
+        final var page = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/admin.html?item=serverConfigGeneral"))
                         .header("Authorization", superUserAuthHeader)
                         .GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString()
         );
-        var csrfMatcher = java.util.regex.Pattern.compile(
+        final var csrfMatcher = java.util.regex.Pattern.compile(
                 "tc-csrf-token\" content=\"([^\"]+)\""
         ).matcher(page.body());
         if (!csrfMatcher.find()) throw new IllegalStateException("CSRF token not found");
@@ -373,7 +373,7 @@ public class OidcFlowIT {
 
         String encodedUrl = TC_HTTPS_BASE.replace(":", "%3A").replace("/", "%2F");
         String form = "rootUrl=" + encodedUrl + "&submitSettings=store&tc-csrf-token=" + csrf;
-        var postResponse = tcHttp.send(
+        final var postResponse = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/serverConfigGeneral.html"))
                         .header("Authorization", superUserAuthHeader)
@@ -390,7 +390,7 @@ public class OidcFlowIT {
     private static void verifyTcRootUrl() throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var response = tcHttp.send(
+            final var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/server"))
                             .header("Authorization", superUserAuthHeader)
@@ -458,7 +458,7 @@ public class OidcFlowIT {
     }
 
     private static void tcPut(String path, String textBody) throws Exception {
-        var response = tcHttp.send(
+        final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + path))
                         .header("Authorization", superUserAuthHeader)
@@ -473,7 +473,7 @@ public class OidcFlowIT {
     }
 
     private static void tcPost(String path, String json) throws Exception {
-        var response = tcHttp.send(
+        final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + path))
                         .header("Authorization", superUserAuthHeader)
@@ -491,7 +491,7 @@ public class OidcFlowIT {
     private static void authorizeAgent() throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var response = tcHttp.send(
+            final var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create(
                                     tcBaseUrl + "/httpAuth/app/rest/agents?locator=authorized:false"))
@@ -551,7 +551,7 @@ public class OidcFlowIT {
         String httpsBase = "https://localhost:" + caddy.getMappedPort(443);
         while (System.currentTimeMillis() < deadline) {
             try {
-                var jwksResponse = tcHttp.send(
+                final var jwksResponse = tcHttp.send(
                         java.net.http.HttpRequest.newBuilder()
                                 .uri(java.net.URI.create(httpsBase + "/.well-known/jwks.json"))
                                 .GET().build(),
@@ -572,7 +572,7 @@ public class OidcFlowIT {
 
                 // Also verify the issuer — exercises buildServer.getRootUrl() through the
                 // plugin's own code path (WellKnownPublicFilter), same as updateParameters()
-                var discoveryResponse = tcHttp.send(
+                final var discoveryResponse = tcHttp.send(
                         java.net.http.HttpRequest.newBuilder()
                                 .uri(java.net.URI.create(httpsBase + "/.well-known/openid-configuration"))
                                 .GET().build(),
@@ -600,7 +600,7 @@ public class OidcFlowIT {
         log("Waiting for agent to become idle...");
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            var response = tcHttp.send(
+            final var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create(
                                     tcBaseUrl + "/httpAuth/app/rest/agents"
@@ -627,7 +627,7 @@ public class OidcFlowIT {
     }
 
     private static String octopusGet(String path) throws Exception {
-        var response = octopusHttp.send(
+        final var response = octopusHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(octopusBaseUrl + path))
                         .header("X-Octopus-ApiKey", OCTOPUS_ADMIN_API_KEY)
@@ -643,7 +643,7 @@ public class OidcFlowIT {
     }
 
     private static String octopusPost(String path, String json) throws Exception {
-        var response = octopusHttp.send(
+        final var response = octopusHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(octopusBaseUrl + path))
                         .header("X-Octopus-ApiKey", OCTOPUS_ADMIN_API_KEY)
@@ -733,7 +733,7 @@ public class OidcFlowIT {
 
         // 6. Verify the access token works — call /api/users/me with it
         log("Verifying access token against /api/users/me...");
-        var meResponse = octopusHttp.send(
+        final var meResponse = octopusHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(octopusBaseUrl + "/api/users/me"))
                         .header("Authorization", "Bearer " + accessToken)
@@ -751,7 +751,7 @@ public class OidcFlowIT {
         String body = """
                 {"buildType":{"id":"OidcTest_Build"}}
                 """;
-        var response = tcHttp.send(
+        final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/buildQueue"))
                         .header("Authorization", superUserAuthHeader)
@@ -771,7 +771,7 @@ public class OidcFlowIT {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
         String lastState = null;
         while (System.currentTimeMillis() < deadline) {
-            var response = tcHttp.send(
+            final var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create(
                                     tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId))
@@ -802,7 +802,7 @@ public class OidcFlowIT {
 
     private static void saveBuildLog(String buildId) {
         try {
-            var response = tcHttp.send(
+            final var response = tcHttp.send(
                     java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create(
                                     tcBaseUrl + "/httpAuth/downloadBuildLog.html?buildId=" + buildId))
@@ -824,7 +824,7 @@ public class OidcFlowIT {
     private static String extractJwtFromBuild(String buildId) throws Exception {
         // jwt.token is a password parameter — masked in resulting-properties.
         // The build step writes it to jwt.txt; we download that artifact instead.
-        var response = tcHttp.send(
+        final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(
                                 tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId
@@ -854,7 +854,7 @@ public class OidcFlowIT {
 
         // Verify signature against the JWKS served by TC (via Caddy TLS)
         // tcHttp trusts the self-signed cert via TlsTrustManager
-        var jwksResponse = tcHttp.send(
+        final var jwksResponse = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(
                                 "https://localhost:" + caddy.getMappedPort(443) + "/.well-known/jwks.json"))
@@ -875,7 +875,7 @@ public class OidcFlowIT {
 
     private static String exchangeJwtWithOctopus(String jwt) throws Exception {
         // Discover token endpoint from Octopus's own OIDC discovery doc
-        var discoveryResponse = octopusHttp.send(
+        final var discoveryResponse = octopusHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(octopusBaseUrl + "/.well-known/openid-configuration"))
                         .GET().build(),
@@ -899,7 +899,7 @@ public class OidcFlowIT {
                  "subject_token_type":"urn:ietf:params:oauth:token-type:jwt"}
                 """.formatted(octopusExternalId, jwt);
 
-        var exchangeResponse = octopusHttp.send(
+        final var exchangeResponse = octopusHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(tokenEndpoint)
                         .header("Content-Type", "application/json")

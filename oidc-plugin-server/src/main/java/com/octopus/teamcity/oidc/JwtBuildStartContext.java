@@ -2,10 +2,8 @@ package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
-import jetbrains.buildServer.users.SUser;
 import org.jetbrains.annotations.NotNull;
 import org.joda.time.DateTime;
 
@@ -40,15 +38,15 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
-        SRunningBuild build = buildStartContext.getBuild();
-        Collection<SBuildFeatureDescriptor> jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
+        final var  build = buildStartContext.getBuild();
+        final var  jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
 
         LOG.fine("JWT plugin: updateParameters called for build " + build.getBuildId()
                 + " (" + build.getBuildTypeExternalId() + "), JWT features: " + jwtBuildFeatures.size());
 
         if (!jwtBuildFeatures.isEmpty()) {
             try {
-                SBuildFeatureDescriptor descriptor = jwtBuildFeatures.stream().findFirst().get();
+                final var  descriptor = jwtBuildFeatures.stream().findFirst().get();
                 Map<String, String> params = descriptor.getParameters();
 
                 int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
@@ -63,21 +61,21 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                     return;
                 }
 
-                String audience = params.getOrDefault("audience", buildServerRootUrl);
+                final var  audience = params.getOrDefault("audience", buildServerRootUrl);
 
-                String claimsParam = params.get("claims");
-                Set<String> enabledClaims = (claimsParam == null || claimsParam.isBlank())
+                final var  claimsParam = params.get("claims");
+                final var  enabledClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
                         : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
 
-                Branch branch = build.getBranch();
-                String branchName = branch != null ? branch.getName() : "";
+                final var  branch = build.getBranch();
+                final var  branchName = branch != null ? branch.getName() : "";
 
-                TriggeredBy triggeredBy = build.getTriggeredBy();
-                SUser user = triggeredBy.getUser();
+                final var  triggeredBy = build.getTriggeredBy();
+                final var  user = triggeredBy.getUser();
 
-                DateTime now = new DateTime();
-                JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
+                final var  now = new DateTime();
+                final var  claimsBuilder = new JWTClaimsSet.Builder()
                         .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
                         .subject(build.getBuildTypeExternalId())
                         .audience(List.of(audience))
@@ -105,8 +103,8 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                     claimsBuilder.claim("build_number", build.getBuildNumber());
                 }
 
-                SignedJWT signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);
-                String serialized = signedJWT.serialize();
+                final var  signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);
+                final var  serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                         + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName

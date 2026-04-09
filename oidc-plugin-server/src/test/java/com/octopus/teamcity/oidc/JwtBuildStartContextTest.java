@@ -36,8 +36,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void testRegister() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var  keyManager = new JwtKeyManager(serverPaths);
+        final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
         jwtBuildStartContext.register();
         verify(extensionHolder, times(1)).registerExtension(any(), any(), any());
     }
@@ -45,8 +45,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void doNotUpdateParametersWhenBuildFeatureDisabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var  keyManager = new JwtKeyManager(serverPaths);
+        final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(Collections.emptyList());
         jwtBuildStartContext.updateParameters(buildStartContext);
@@ -57,14 +57,14 @@ public class JwtBuildStartContextTest {
     public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var  keyManager = new JwtKeyManager(serverPaths);
+        final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var  triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(null);
         when(triggeredBy.getAsString()).thenReturn("Schedule Trigger");
@@ -78,27 +78,27 @@ public class JwtBuildStartContextTest {
     public void branchClaimIsTheBranchNameNotAnObjectReference() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        Branch branch = mock(Branch.class);
+        final var branch = mock(Branch.class);
         when(branch.getName()).thenReturn("refs/heads/main");
         when(runningBuild.getBranch()).thenReturn(branch);
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
-        SUser user = mock(SUser.class);
+        final var  triggeredBy = mock(TriggeredBy.class);
+        final var  user = mock(SUser.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(user);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
     }
 
@@ -106,24 +106,24 @@ public class JwtBuildStartContextTest {
     public void tokenTtlIsReadFromBuildFeatureParameters() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("ttl_minutes", "5"));
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var  triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
-        long expirySeconds = jwt.getJWTClaimsSet().getExpirationTime().getTime() / 1000;
-        long issuedAtSeconds = jwt.getJWTClaimsSet().getIssueTime().getTime() / 1000;
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var expirySeconds = jwt.getJWTClaimsSet().getExpirationTime().getTime() / 1000;
+        final var issuedAtSeconds = jwt.getJWTClaimsSet().getIssueTime().getTime() / 1000;
         assertThat(expirySeconds - issuedAtSeconds).isEqualTo(5 * 60);
     }
 
@@ -131,24 +131,24 @@ public class JwtBuildStartContextTest {
     public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
-        long expirySeconds = jwt.getJWTClaimsSet().getExpirationTime().getTime() / 1000;
-        long issuedAtSeconds = jwt.getJWTClaimsSet().getIssueTime().getTime() / 1000;
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var expirySeconds = jwt.getJWTClaimsSet().getExpirationTime().getTime() / 1000;
+        final var issuedAtSeconds = jwt.getJWTClaimsSet().getIssueTime().getTime() / 1000;
         assertThat(expirySeconds - issuedAtSeconds).isEqualTo(10 * 60);
     }
 
@@ -156,8 +156,8 @@ public class JwtBuildStartContextTest {
     public void doesNotInjectTokenWhenRootUrlIsNotHttps() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -172,15 +172,15 @@ public class JwtBuildStartContextTest {
     public void updateParametersWhenBuildFeatureEnabled() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        TriggeredBy triggeredByMock = mock(TriggeredBy.class);
-        SUser userMock = mock(SUser.class);
+        final var triggeredByMock = mock(TriggeredBy.class);
+        final var userMock = mock(SUser.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredByMock);
         when(triggeredByMock.getUser()).thenReturn(userMock);
 
@@ -192,21 +192,21 @@ public class JwtBuildStartContextTest {
     public void audienceIsConfigurablePerBuildFeature() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("audience", "my-cloud-audience"));
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("my-cloud-audience");
     }
 
@@ -214,21 +214,21 @@ public class JwtBuildStartContextTest {
     public void audienceDefaultsToServerRootUrlWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("https://localhost:8111");
     }
 
@@ -236,25 +236,25 @@ public class JwtBuildStartContextTest {
     public void onlyConfiguredClaimsAreIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("claims", "branch"));
 
-        Branch branch = mock(Branch.class);
+        final var branch = mock(Branch.class);
         when(branch.getName()).thenReturn("refs/heads/main");
         when(runningBuild.getBranch()).thenReturn(branch);
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
         assertThat(jwt.getJWTClaimsSet().getClaim("project_external_id")).isNull();
         assertThat(jwt.getJWTClaimsSet().getClaim("triggered_by")).isNull();
@@ -265,26 +265,26 @@ public class JwtBuildStartContextTest {
     public void claimsWithWhitespaceAroundCommasAreAllIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("claims", "branch, build_number"));
 
-        Branch branch = mock(Branch.class);
+        final var branch = mock(Branch.class);
         when(branch.getName()).thenReturn("refs/heads/main");
         when(runningBuild.getBranch()).thenReturn(branch);
         when(runningBuild.getBuildNumber()).thenReturn("42");
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
         assertThat(jwt.getJWTClaimsSet().getStringClaim("build_number")).isEqualTo("42");
         assertThat(jwt.getJWTClaimsSet().getClaim("project_external_id")).isNull();
@@ -294,8 +294,8 @@ public class JwtBuildStartContextTest {
     public void allClaimsIncludedWhenClaimsParamAbsent() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -305,15 +305,15 @@ public class JwtBuildStartContextTest {
         when(runningBuild.getProjectExternalId()).thenReturn("Project_1");
         when(runningBuild.getBuildNumber()).thenReturn("42");
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getAsString()).thenReturn("User Trigger");
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getClaims()).containsKeys(
                 "branch", "build_type_external_id", "project_external_id",
                 "triggered_by", "build_number");
@@ -323,21 +323,21 @@ public class JwtBuildStartContextTest {
     public void issuerClaimHasTrailingSlashStripped() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111/");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        String issuer = SignedJWT.parse(jwtCaptor.getValue()).getJWTClaimsSet().getIssuer();
+        final var issuer = SignedJWT.parse(jwtCaptor.getValue()).getJWTClaimsSet().getIssuer();
         assertThat(issuer).isEqualTo("https://localhost:8111");
     }
 
@@ -345,26 +345,26 @@ public class JwtBuildStartContextTest {
     public void jtiClaimIsUniquePerToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
         when(runningBuild.getBuildId()).thenReturn(42L);
 
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
 
         jwtBuildStartContext.updateParameters(buildStartContext);
         jwtBuildStartContext.updateParameters(buildStartContext);
         verify(buildStartContext, times(2)).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        List<String> tokens = jwtCaptor.getAllValues();
-        String jti1 = SignedJWT.parse(tokens.get(0)).getJWTClaimsSet().getJWTID();
-        String jti2 = SignedJWT.parse(tokens.get(1)).getJWTClaimsSet().getJWTID();
+        final var tokens = jwtCaptor.getAllValues();
+        final var jti1 = SignedJWT.parse(tokens.get(0)).getJWTClaimsSet().getJWTID();
+        final var jti2 = SignedJWT.parse(tokens.get(1)).getJWTClaimsSet().getJWTID();
 
         assertThat(jti1).startsWith("42-");
         assertThat(jti2).startsWith("42-");
