@@ -69,7 +69,7 @@ public class JwtBuildFeature extends BuildFeature {
             if (!JwtKeyManager.isHttpsUrl(buildServer.getRootUrl())) {
                 errors.add(new InvalidProperty("root_url",
                         "The TeamCity server root URL must use HTTPS for OIDC token issuance. " +
-                        "Update it in Administration → Global Settings."));
+                                "Update it in Administration → Global Settings."));
             }
             final var ttl = params.getOrDefault("ttl_minutes", "10");
             try {
