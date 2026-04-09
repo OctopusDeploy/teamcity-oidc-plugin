@@ -56,6 +56,36 @@
             <version>3.27.7</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.jetbrains.teamcity</groupId>
+            <artifactId>tests-support</artifactId>
+            <version>${teamcity-version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <!--
+                    tests-support transitively pulls in TestNG 6.14.3. When TestNG is on
+                    the classpath alongside JUnit, IntelliJ auto-detects it and runs all
+                    tests with RemoteTestNGStarter, which finds zero JUnit @Test methods
+                    and reports "No tests found". Excluding it forces IntelliJ (and Maven
+                    Surefire) to use JUnit 5 exclusively.
+                -->
+                <exclusion>
+                    <groupId>org.testng</groupId>
+                    <artifactId>testng</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!--
+            TC 2025.11's server-web-api transitively pulls in commons-codec:1.2, but
+            EncryptUtil.scramble() calls Base64.encodeBase64String() which was added in 1.4.
+            Force a modern version on the test classpath to satisfy this.
+        -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.17.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
