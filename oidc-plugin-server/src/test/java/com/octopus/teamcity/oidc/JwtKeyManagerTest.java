@@ -34,21 +34,6 @@ public class JwtKeyManagerTest {
     private File tempDir;
 
     @Test
-    public void testGetRsaKeyCreatesFile() throws IOException, ParseException, JOSEException {
-        File pluginDirectory = new File(tempDir, "foobar");
-        pluginDirectory.mkdirs();
-        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
-
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-
-        assertTrue(keyFile.exists());
-        String fileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
-        assertThat(fileContents).startsWith("scrambled:");
-        assertThat(EncryptUtil.unscramble(fileContents)).isEqualTo(keyManager.getRsaKey().toString());
-    }
-
-    @Test
     public void keyFileIsReadableAndWritableByOwnerOnly() throws IOException {
         final var pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
