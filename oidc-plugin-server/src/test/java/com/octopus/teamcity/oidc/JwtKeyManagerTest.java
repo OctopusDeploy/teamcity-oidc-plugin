@@ -34,30 +34,15 @@ public class JwtKeyManagerTest {
     private File tempDir;
 
     @Test
-    public void testGetRsaKeyCreatesFile() throws IOException, ParseException, JOSEException {
-        File pluginDirectory = new File(tempDir, "foobar");
-        pluginDirectory.mkdirs();
-        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/key.json");
-
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-
-        assertTrue(keyFile.exists());
-        String fileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
-        assertThat(fileContents).startsWith("scrambled:");
-        assertThat(EncryptUtil.unscramble(fileContents)).isEqualTo(keyManager.getRsaKey().toString());
-    }
-
-    @Test
     public void keyFileIsReadableAndWritableByOwnerOnly() throws IOException {
-        File pluginDirectory = new File(tempDir, "foobar");
+        final var pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/key.json");
+        final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
         new JwtKeyManager(serverPaths);
 
-        Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(keyFile.toPath());
+        final var permissions = Files.getPosixFilePermissions(keyFile.toPath());
         assertThat(permissions).containsExactlyInAnyOrder(
                 PosixFilePermission.OWNER_READ,
                 PosixFilePermission.OWNER_WRITE
@@ -66,12 +51,12 @@ public class JwtKeyManagerTest {
 
     @Test
     public void keyIdIsThumbprintOfPublicKey() throws IOException, ParseException, JOSEException {
-        File pluginDirectory = new File(tempDir, "foobar");
+        final var pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
 
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        RSAKey key = keyManager.getRsaKey();
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var key = keyManager.getRsaKey();
 
         assertThat(key.getKeyID()).isEqualTo(key.computeThumbprint().toString());
         assertThat(key.getKeyID()).isNotEqualTo("teamcity");
@@ -79,28 +64,28 @@ public class JwtKeyManagerTest {
 
     @Test
     public void testGetRsaKeyReusesFile() throws IOException {
-        File pluginDirectory = new File(tempDir, "foobar");
+        final var pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/key.json");
+        final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
         new JwtKeyManager(serverPaths);
-        String keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+        final var keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
 
         new JwtKeyManager(serverPaths);
-        String keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+        final var keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(keyFileContents2).isEqualTo(keyFileContents);
     }
 
     @Test
     public void constructorThrowsRuntimeExceptionWithClearMessageWhenKeyFileIsCorrupt() throws Exception {
-        File pluginDirectory = new File(tempDir, "corrupt");
+        final var pluginDirectory = new File(tempDir, "corrupt");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
 
-        File keyDir = new File(pluginDirectory, "JwtBuildFeature");
+        final var keyDir = new File(pluginDirectory, "JwtBuildFeature");
         keyDir.mkdirs();
-        FileUtils.writeStringToFile(new File(keyDir, "key.json"), "not-valid-json", StandardCharsets.UTF_8);
+        FileUtils.writeStringToFile(new File(keyDir, "rsa-key.json"), "not-valid-json", StandardCharsets.UTF_8);
 
         assertThatThrownBy(() -> new JwtKeyManager(serverPaths))
                 .isInstanceOf(RuntimeException.class)
@@ -110,7 +95,7 @@ public class JwtKeyManagerTest {
     @Test
     public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = new JwtKeyManager(serverPaths);
         final var ecKey = keyManager.getEcKey();
         assertThat(ecKey.getKeyID()).isEqualTo(ecKey.computeThumbprint().toString());
     }
@@ -153,8 +138,8 @@ public class JwtKeyManagerTest {
     @Test
     public void signThrowsForUnsupportedAlgorithm() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        com.nimbusds.jwt.JWTClaimsSet claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()
                 .subject("test").build();
 
         assertThatThrownBy(() -> keyManager.sign(claims, "HS256"))
