@@ -66,7 +66,7 @@ public class JwtKeyManager {
     }
 
     public List<JWK> getPublicKeys() {
-        KeyMaterial snapshot = keys.get();
+        final var snapshot = keys.get();
         List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());
         if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
@@ -76,9 +76,9 @@ public class JwtKeyManager {
     }
 
     public void rotateKey() throws JOSEException, IOException {
-        KeyMaterial current = keys.get();
-        RSAKey newRsa = generateFreshRsaKey();
-        ECKey newEc = generateFreshEcKey();
+        final var current = keys.get();
+        final var newRsa = generateFreshRsaKey();
+        final var newEc = generateFreshEcKey();
 
         saveKeyToFile(current.rsa(), "retired-rsa-key.json");
         saveKeyToFile(current.ec(), "retired-ec-key.json");
@@ -98,14 +98,14 @@ public class JwtKeyManager {
         JWSHeader header;
         JWSSigner signer;
         if ("ES256".equals(algorithm)) {
-            ECKey ecKey = getEcKey();
+            final var ecKey = getEcKey();
             header = new JWSHeader.Builder(JWSAlgorithm.ES256)
                     .type(JOSEObjectType.JWT)
                     .keyID(ecKey.getKeyID())
                     .build();
             signer = new ECDSASigner(ecKey);
         } else if ("RS256".equals(algorithm)) {
-            RSAKey rsaKey = getRsaKey();
+            final var rsaKey = getRsaKey();
             header = new JWSHeader.Builder(JWSAlgorithm.RS256)
                     .type(JOSEObjectType.JWT)
                     .keyID(rsaKey.getKeyID())
@@ -115,7 +115,7 @@ public class JwtKeyManager {
             throw new IllegalArgumentException(
                     "Unsupported signing algorithm: \"" + algorithm + "\". Supported values: RS256, ES256");
         }
-        SignedJWT jwt = new SignedJWT(header, claims);
+        final var jwt = new SignedJWT(header, claims);
         jwt.sign(signer);
         return jwt;
     }
@@ -131,40 +131,40 @@ public class JwtKeyManager {
     }
 
     private RSAKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
-        File keyFile = new File(keyDirectory, "rsa-key.json");
+        final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing RSA key from: " + keyFile);
             return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
         }
         LOG.info("Generate new RSA key to: " + keyFile);
-        RSAKey newKey = generateFreshRsaKey();
+        final var newKey = generateFreshRsaKey();
         saveKeyToFile(newKey, "rsa-key.json");
         return newKey;
     }
 
     @Nullable
     private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
-        File f = new File(keyDirectory, "retired-rsa-key.json");
+        final var f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
         LOG.info("Read retired RSA key from: " + f);
         return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
     }
 
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
-        File keyFile = new File(keyDirectory, "ec-key.json");
+        final var keyFile = new File(keyDirectory, "ec-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing EC key from: " + keyFile);
             return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toECKey();
         }
         LOG.info("Generate new EC key to: " + keyFile);
-        ECKey newKey = generateFreshEcKey();
+        final var newKey = generateFreshEcKey();
         saveKeyToFile(newKey, "ec-key.json");
         return newKey;
     }
 
     @Nullable
     private ECKey loadRetiredEcKey() throws IOException, ParseException {
-        File f = new File(keyDirectory, "retired-ec-key.json");
+        final var f = new File(keyDirectory, "retired-ec-key.json");
         if (!f.exists()) return null;
         LOG.info("Read retired EC key from: " + f);
         return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toECKey();
@@ -187,7 +187,7 @@ public class JwtKeyManager {
     }
 
     private void saveKeyToFile(@NotNull JWK key, @NotNull String fileName) throws IOException {
-        File keyFile = new File(keyDirectory, fileName);
+        final var keyFile = new File(keyDirectory, fileName);
         FileUtils.writeStringToFile(keyFile, EncryptUtil.scramble(key.toString()), StandardCharsets.UTF_8);
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             Files.setPosixFilePermissions(keyFile.toPath(), Set.of(
