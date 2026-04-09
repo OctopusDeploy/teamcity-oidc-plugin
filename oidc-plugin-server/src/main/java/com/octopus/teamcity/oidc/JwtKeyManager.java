@@ -80,9 +80,9 @@ public class JwtKeyManager {
         RSAKey newRsa = generateFreshRsaKey();
         ECKey newEc = generateFreshEcKey();
 
-        saveKeyToFile(current.rsa(), "retired-key.json");
+        saveKeyToFile(current.rsa(), "retired-rsa-key.json");
         saveKeyToFile(current.ec(), "retired-ec-key.json");
-        saveKeyToFile(newRsa, "key.json");
+        saveKeyToFile(newRsa, "rsa-key.json");
         saveKeyToFile(newEc, "ec-key.json");
 
         keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec()));
@@ -131,20 +131,20 @@ public class JwtKeyManager {
     }
 
     private RSAKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
-        File keyFile = new File(keyDirectory, "key.json");
+        File keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing RSA key from: " + keyFile);
             return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
         }
         LOG.info("Generate new RSA key to: " + keyFile);
         RSAKey newKey = generateFreshRsaKey();
-        saveKeyToFile(newKey, "key.json");
+        saveKeyToFile(newKey, "rsa-key.json");
         return newKey;
     }
 
     @Nullable
     private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
-        File f = new File(keyDirectory, "retired-key.json");
+        File f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
         LOG.info("Read retired RSA key from: " + f);
         return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();

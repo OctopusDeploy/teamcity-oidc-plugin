@@ -38,7 +38,7 @@ public class JwtKeyManagerTest {
         File pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/key.json");
+        File keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
         JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
 
@@ -53,7 +53,7 @@ public class JwtKeyManagerTest {
         File pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/key.json");
+        File keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
         new JwtKeyManager(serverPaths);
 
@@ -82,7 +82,7 @@ public class JwtKeyManagerTest {
         File pluginDirectory = new File(tempDir, "foobar");
         pluginDirectory.mkdirs();
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
-        File keyFile = new File(pluginDirectory, "JwtBuildFeature/key.json");
+        File keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
         new JwtKeyManager(serverPaths);
         String keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
@@ -100,7 +100,7 @@ public class JwtKeyManagerTest {
 
         File keyDir = new File(pluginDirectory, "JwtBuildFeature");
         keyDir.mkdirs();
-        FileUtils.writeStringToFile(new File(keyDir, "key.json"), "not-valid-json", StandardCharsets.UTF_8);
+        FileUtils.writeStringToFile(new File(keyDir, "rsa-key.json"), "not-valid-json", StandardCharsets.UTF_8);
 
         assertThatThrownBy(() -> new JwtKeyManager(serverPaths))
                 .isInstanceOf(RuntimeException.class)
