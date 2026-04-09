@@ -4,13 +4,12 @@
     <name>teamcity-oidc-plugin</name>
     <display-name>OIDC Identity Token</display-name>
     <version>@Version@</version>
-    <description>Plugin description</description>
-    <download-url>Plugin download URL</download-url>
-    <email>Plugin author e-mail</email>
+    <description>OIDC identity token provider — enables workload identity federation for TeamCity builds with AWS, Azure, GCP, Octopus Deploy, etc</description>
+    <download-url>https://github.com/OctopusDeploy/teamcity-oidc-plugin/releases</download-url>
     <vendor>
       <name>@VendorName@</name>
       <url>@VendorURL@</url>
-      <logo>Plugin vendor logo URL</logo>
+      <logo>https://raw.githubusercontent.com/OctopusDeploy/teamcity-oidc-plugin/main/octopus-logo.png</logo>
     </vendor>
   </info>
   <deployment use-separate-classloader="true"/>
