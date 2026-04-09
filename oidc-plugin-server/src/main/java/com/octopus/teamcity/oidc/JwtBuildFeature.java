@@ -32,6 +32,7 @@ public class JwtBuildFeature extends BuildFeature {
         return "OIDC Identity Token";
     }
 
+    @NotNull
     @Override
     public String describeParameters(@NotNull java.util.Map<String, String> params) {
         final var algorithm = params.getOrDefault("algorithm", "RS256");
@@ -62,7 +63,7 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     @Override
-    public PropertiesProcessor getParametersProcessor() {
+    public PropertiesProcessor getParametersProcessor(@NotNull BuildTypeIdentity buildTypeOrTemplate) {
         return params -> {
             Collection<InvalidProperty> errors = new ArrayList<>();
             if (!JwtKeyManager.isHttpsUrl(buildServer.getRootUrl())) {

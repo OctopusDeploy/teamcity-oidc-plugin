@@ -1,5 +1,6 @@
 package com.octopus.teamcity.oidc;
 
+import jetbrains.buildServer.serverSide.BuildTypeIdentity;
 import jetbrains.buildServer.serverSide.InvalidProperty;
 import jetbrains.buildServer.serverSide.PropertiesProcessor;
 import jetbrains.buildServer.serverSide.SBuildServer;
@@ -24,12 +25,15 @@ public class JwtBuildFeatureTest {
     @Mock
     private SBuildServer buildServer;
 
+    @Mock
+    private BuildTypeIdentity buildTypeOrTemplate;
+
     @Test
     public void validationRejectsHttpRootUrl() {
         when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
 
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        PropertiesProcessor processor = feature.getParametersProcessor();
+        PropertiesProcessor processor = feature.getParametersProcessor(buildTypeOrTemplate);
         Collection<InvalidProperty> errors = processor.process(Map.of());
 
         assertThat(errors).hasSize(1);
@@ -41,7 +45,7 @@ public class JwtBuildFeatureTest {
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
 
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        PropertiesProcessor processor = feature.getParametersProcessor();
+        PropertiesProcessor processor = feature.getParametersProcessor(buildTypeOrTemplate);
         Collection<InvalidProperty> errors = processor.process(Map.of());
 
         assertThat(errors).isEmpty();
@@ -52,7 +56,7 @@ public class JwtBuildFeatureTest {
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
 
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        PropertiesProcessor processor = feature.getParametersProcessor();
+        PropertiesProcessor processor = feature.getParametersProcessor(buildTypeOrTemplate);
         Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "notanumber"));
 
         assertThat(errors).hasSize(1);
@@ -64,7 +68,7 @@ public class JwtBuildFeatureTest {
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
 
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        PropertiesProcessor processor = feature.getParametersProcessor();
+        PropertiesProcessor processor = feature.getParametersProcessor(buildTypeOrTemplate);
         Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "0"));
 
         assertThat(errors).hasSize(1);
@@ -76,7 +80,7 @@ public class JwtBuildFeatureTest {
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
 
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        PropertiesProcessor processor = feature.getParametersProcessor();
+        PropertiesProcessor processor = feature.getParametersProcessor(buildTypeOrTemplate);
         Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "1441"));
 
         assertThat(errors).hasSize(1);
@@ -88,7 +92,7 @@ public class JwtBuildFeatureTest {
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
 
         JwtBuildFeature feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        PropertiesProcessor processor = feature.getParametersProcessor();
+        PropertiesProcessor processor = feature.getParametersProcessor(buildTypeOrTemplate);
         Collection<InvalidProperty> errors = processor.process(Map.of("ttl_minutes", "1440"));
 
         assertThat(errors).isEmpty();
