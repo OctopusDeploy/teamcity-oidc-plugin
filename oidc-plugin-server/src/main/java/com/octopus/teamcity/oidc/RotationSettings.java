@@ -7,7 +7,7 @@ import java.time.Instant;
  * Immutable snapshot of auto-rotation configuration.
  * Persisted to rotation-settings.json in the key directory.
  */
-record RotationSettings(
+public record RotationSettings(
         boolean enabled,
         String cronSchedule,
         @Nullable Instant lastRotatedAt

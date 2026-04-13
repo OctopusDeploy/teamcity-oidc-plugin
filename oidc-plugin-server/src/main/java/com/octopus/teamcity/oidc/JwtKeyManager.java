@@ -41,7 +41,7 @@ public class JwtKeyManager {
     private final File keyDirectory;
     private final AtomicReference<KeyMaterial> keys;
 
-    public JwtKeyManager(@NotNull final ServerPaths serverPaths) {
+    public JwtKeyManager(@NotNull final ServerPaths serverPaths) throws RuntimeException {
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
         if (!createDirectoryResult)

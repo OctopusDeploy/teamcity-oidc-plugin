@@ -66,7 +66,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
                 model.put("nextDue", next != null
                         ? FMT.format(next.atZone(ZoneOffset.UTC).toInstant()) + " UTC"
                         : null);
-            } catch (IllegalArgumentException e) {
+            } catch (final IllegalArgumentException e) {
                 model.put("nextDue", null);
             }
         } else {
