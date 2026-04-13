@@ -167,6 +167,27 @@ public class WellKnownPublicFilterTest {
     }
 
     @Test
+    public void authorizeEndpointReturnsUnsupportedResponseType() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
+
+        final var request = mock(HttpServletRequest.class);
+        final var response = mock(HttpServletResponse.class);
+        final var chain = mock(FilterChain.class);
+        final var writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.AUTHORIZE_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        assertThat(writer.toString()).contains("unsupported_response_type");
+        verifyNoInteractions(chain);
+    }
+
+    @Test
     public void stripsContextPathBeforeMatching() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = new JwtKeyManager(serverPaths);

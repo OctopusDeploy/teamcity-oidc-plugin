@@ -19,6 +19,7 @@ public class WellKnownPublicFilter implements Filter {
 
     static final String JWKS_PATH = "/.well-known/jwks.json";
     static final String OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration";
+    static final String AUTHORIZE_PATH = "/oidc/authorize";
 
     private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
@@ -64,6 +65,14 @@ public class WellKnownPublicFilter implements Filter {
             return;
         }
 
+        if (AUTHORIZE_PATH.equals(path)) {
+            resp.setContentType("application/json;charset=UTF-8");
+            resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            resp.getWriter().write("{\"error\":\"unsupported_response_type\"," +
+                    "\"error_description\":\"This TeamCity OIDC provider issues tokens for workload identity only and does not support interactive authorisation flows.\"}");
+            return;
+        }
+
         chain.doFilter(request, response);
     }
 
@@ -86,8 +95,8 @@ public class WellKnownPublicFilter implements Filter {
         final var doc = new JSONObject();
         doc.put("issuer", issuer);
         // authorization_endpoint is required by the OIDC Discovery spec even for non-interactive
-        // providers. This provider does not support interactive flows; the endpoint returns 404.
-        doc.put("authorization_endpoint", issuer + "/oidc/authorize");
+        // providers. The endpoint returns unsupported_response_type for all requests.
+        doc.put("authorization_endpoint", issuer + AUTHORIZE_PATH);
         doc.put("jwks_uri", issuer + JWKS_PATH);
         doc.put("id_token_signing_alg_values_supported", algs);
         doc.put("response_types_supported", responseTypes);
