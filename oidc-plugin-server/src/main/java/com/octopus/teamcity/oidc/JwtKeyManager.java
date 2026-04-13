@@ -43,7 +43,7 @@ public class JwtKeyManager {
 
     public JwtKeyManager(@NotNull final ServerPaths serverPaths) {
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
-        final var createDirectoryResult = this.keyDirectory.mkdirs();
+        final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
         if (!createDirectoryResult)
             throw new RuntimeException("Failed to create key directory");
 
