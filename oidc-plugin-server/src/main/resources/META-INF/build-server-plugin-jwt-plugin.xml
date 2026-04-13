@@ -9,6 +9,6 @@
     <bean id="jwtPasswordsProvider" class="com.octopus.teamcity.oidc.JwtPasswordsProvider" init-method="register" />
     <bean id="jwtBuildParametersProvider" class="com.octopus.teamcity.oidc.JwtBuildParametersProvider" init-method="register" />
     <bean id="jwtBuildFeatureAdminPage" class="com.octopus.teamcity.oidc.JwtBuildFeatureAdminPage"/>
-
+    <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter"/>
 </beans>
 
