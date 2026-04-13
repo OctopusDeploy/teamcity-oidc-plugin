@@ -18,7 +18,7 @@ public class JwtPasswordsProvider implements PasswordsProvider {
     private final ExtensionHolder extensionHolder;
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
-    public JwtPasswordsProvider(@NotNull ExtensionHolder extensionHolder) {
+    public JwtPasswordsProvider(@NotNull final ExtensionHolder extensionHolder) {
         this.extensionHolder = extensionHolder;
     }
 
@@ -28,8 +28,8 @@ public class JwtPasswordsProvider implements PasswordsProvider {
 
     @NotNull
     @Override
-    public Collection<Parameter> getPasswordParameters(@NotNull SBuild build) {
-        String value = build.getParametersProvider().get(JWT_PARAMETER_NAME);
+    public Collection<Parameter> getPasswordParameters(@NotNull final SBuild build) {
+        final var value = build.getParametersProvider().get(JWT_PARAMETER_NAME);
         if (value == null) return Collections.emptyList();
         return List.of(new SimpleParameter(JWT_PARAMETER_NAME, value));
     }

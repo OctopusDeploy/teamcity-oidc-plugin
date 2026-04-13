@@ -23,9 +23,9 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
             "triggered_by", "triggered_by_id", "build_number");
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
-    public JwtBuildStartContext(@NotNull ExtensionHolder extensionHolder,
-                                @NotNull SBuildServer buildServer,
-                                @NotNull JwtKeyManager keyManager) {
+    public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder,
+                                @NotNull final SBuildServer buildServer,
+                                @NotNull final JwtKeyManager keyManager) {
         this.extensionHolder = extensionHolder;
         this.buildServer = buildServer;
         this.keyManager = keyManager;
@@ -110,10 +110,10 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                         + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
-            } catch (JOSEException e) {
+            } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
                 throw new RuntimeException(e);
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
                 throw e;
             }

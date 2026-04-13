@@ -15,7 +15,8 @@ public class JwtBuildFeature extends BuildFeature {
     private final PluginDescriptor pluginDescriptor;
     private final SBuildServer buildServer;
 
-    public JwtBuildFeature(@NotNull PluginDescriptor pluginDescriptor, @NotNull SBuildServer buildServer) {
+    public JwtBuildFeature(@NotNull final PluginDescriptor pluginDescriptor,
+                           @NotNull final SBuildServer buildServer) {
         this.pluginDescriptor = pluginDescriptor;
         this.buildServer = buildServer;
     }
@@ -34,7 +35,7 @@ public class JwtBuildFeature extends BuildFeature {
 
     @NotNull
     @Override
-    public String describeParameters(@NotNull java.util.Map<String, String> params) {
+    public String describeParameters(@NotNull final java.util.Map<String, String> params) {
         final var algorithm = params.getOrDefault("algorithm", "RS256");
         final var ttl = params.getOrDefault("ttl_minutes", "10");
         final var audience = params.get("audience");
@@ -63,9 +64,9 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     @Override
-    public PropertiesProcessor getParametersProcessor(@NotNull BuildTypeIdentity buildTypeOrTemplate) {
+    public PropertiesProcessor getParametersProcessor(@NotNull final BuildTypeIdentity buildTypeOrTemplate) {
         return params -> {
-            Collection<InvalidProperty> errors = new ArrayList<>();
+            final Collection<InvalidProperty> errors = new ArrayList<>();
             if (!JwtKeyManager.isHttpsUrl(buildServer.getRootUrl())) {
                 errors.add(new InvalidProperty("root_url",
                         "The TeamCity server root URL must use HTTPS for OIDC token issuance. " +
@@ -77,7 +78,7 @@ public class JwtBuildFeature extends BuildFeature {
                 if (ttlValue <= 0 || ttlValue > 1440) {
                     errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be between 1 and 1440 minutes."));
                 }
-            } catch (NumberFormatException e) {
+            } catch (final NumberFormatException e) {
                 errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));
             }
             return errors;

@@ -54,7 +54,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws Exception {
+    public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var  keyManager = new JwtKeyManager(serverPaths);
@@ -153,7 +153,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void doesNotInjectTokenWhenRootUrlIsNotHttps() throws Exception {
+    public void doesNotInjectTokenWhenRootUrlIsNotHttps() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
         final var keyManager = new JwtKeyManager(serverPaths);
@@ -169,7 +169,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void updateParametersWhenBuildFeatureEnabled() throws Exception {
+    public void updateParametersWhenBuildFeatureEnabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = new JwtKeyManager(serverPaths);
