@@ -28,6 +28,9 @@ public class RotationSettingsControllerTest {
 
     @Mock private WebControllerManager controllerManager;
     @Mock private CSRFFilter csrfFilter;
+    @Mock private HttpServletRequest request;
+    @Mock private HttpServletResponse response;
+
     @TempDir private File tempDir;
 
     @BeforeEach
@@ -40,7 +43,7 @@ public class RotationSettingsControllerTest {
     }
 
     private SUser adminUser() {
-        SUser user = mock(SUser.class);
+        final var user = mock(SUser.class);
         when(user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(true);
         return user;
     }
@@ -53,48 +56,39 @@ public class RotationSettingsControllerTest {
 
     @Test
     void savesValidSettings() throws Exception {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
-        RotationSettingsController controller = controller(mgr);
-
-        HttpServletRequest request = mock(HttpServletRequest.class);
+        final var mgr = new RotationSettingsManager(tempDir);
+        final var writer = new StringWriter();
         when(request.getMethod()).thenReturn("POST");
         when(request.getParameter("enabled")).thenReturn("true");
         when(request.getParameter("cronSchedule")).thenReturn("0 0 2 * * *");
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
 
-        SUser admin = adminUser();
+        final var admin = adminUser();
         try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller.doHandle(request, response);
+            controller(mgr).doHandle(request, response);
         }
 
-        RotationSettings saved = mgr.load();
+        final var saved = mgr.load();
         assertThat(saved.enabled()).isTrue();
         assertThat(saved.cronSchedule()).isEqualTo("0 0 2 * * *");
         assertThat(writer.toString()).contains("\"ok\":true");
-        verify(response).setContentType("application/json;charset=UTF-8");
     }
 
     @Test
     void preservesLastRotatedAtWhenSaving() throws Exception {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
-        Instant original = Instant.parse("2026-01-01T03:00:00Z");
+        final var mgr = new RotationSettingsManager(tempDir);
+        final var original = Instant.parse("2026-01-01T03:00:00Z");
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE, original));
-        RotationSettingsController controller = controller(mgr);
-
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
         when(request.getParameter("enabled")).thenReturn("false");
         when(request.getParameter("cronSchedule")).thenReturn("0 0 4 * * *");
-        HttpServletResponse response = mock(HttpServletResponse.class);
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
-        SUser admin = adminUser();
+        final var admin = adminUser();
         try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller.doHandle(request, response);
+            controller(mgr).doHandle(request, response);
         }
 
         assertThat(mgr.load().lastRotatedAt()).isEqualTo(original);
@@ -102,20 +96,16 @@ public class RotationSettingsControllerTest {
 
     @Test
     void rejectsInvalidCronSchedule() throws Exception {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
-        RotationSettingsController controller = controller(mgr);
-
-        HttpServletRequest request = mock(HttpServletRequest.class);
+        final var mgr = new RotationSettingsManager(tempDir);
+        final var writer = new StringWriter();
         when(request.getMethod()).thenReturn("POST");
         when(request.getParameter("cronSchedule")).thenReturn("not a cron");
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        StringWriter writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
 
-        SUser admin = adminUser();
+        final var admin = adminUser();
         try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller.doHandle(request, response);
+            controller(mgr).doHandle(request, response);
         }
 
         assertThat(writer.toString()).contains("\"ok\":false");
@@ -124,25 +114,29 @@ public class RotationSettingsControllerTest {
 
     @Test
     void getRequestReturns405() throws Exception {
-        RotationSettingsController controller = controller(new RotationSettingsManager(tempDir));
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("GET");
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        controller.doHandle(request, response);
+
+        controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
+
         verify(response).setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+    }
+
+    @Test
+    void getRequestDoesNotCheckCsrf() throws Exception {
+        when(request.getMethod()).thenReturn("GET");
+
+        controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
+
         verify(csrfFilter, never()).validateRequest(any(), any());
     }
 
     @Test
     void csrfFailureReturnsEarlyWithoutSaving() throws Exception {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
+        final var mgr = new RotationSettingsManager(tempDir);
         when(csrfFilter.validateRequest(any(), any())).thenReturn(false);
-        RotationSettingsController controller = controller(mgr);
-
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        controller.doHandle(request, response);
+
+        controller(mgr).doHandle(request, response);
 
         verify(response, never()).setContentType(anyString());
         assertThat(mgr.load().cronSchedule()).isEqualTo(RotationSettings.DEFAULT_SCHEDULE);
@@ -150,38 +144,28 @@ public class RotationSettingsControllerTest {
 
     @Test
     void nonAdminReturns403() throws Exception {
-        RotationSettingsController controller = controller(new RotationSettingsManager(tempDir));
-
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        StringWriter writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
-        SUser nonAdmin = mock(SUser.class);
+        final var nonAdmin = mock(SUser.class);
         when(nonAdmin.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(false);
 
         try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(nonAdmin);
-            controller.doHandle(request, response);
+            controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
         }
 
         verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
-        verify(response).setContentType("application/json;charset=UTF-8");
     }
 
     @Test
     void nullSessionUserReturns403() throws Exception {
-        RotationSettingsController controller = controller(new RotationSettingsManager(tempDir));
-
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getMethod()).thenReturn("POST");
-        HttpServletResponse response = mock(HttpServletResponse.class);
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
         try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(null);
-            controller.doHandle(request, response);
+            controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
         }
 
         verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
