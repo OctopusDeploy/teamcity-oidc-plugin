@@ -3,7 +3,6 @@ package com.octopus.teamcity.oidc;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
-import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
@@ -38,52 +37,52 @@ public class AlgorithmChoiceTest {
     private JwtKeyManager keyManager;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         keyManager = new JwtKeyManager(serverPaths);
     }
 
     private JwtBuildStartContext buildContext() {
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtBuildStartContext context = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var context = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         return context;
     }
 
     @Test
     public void usesRS256ByDefault() throws Exception {
-        JwtBuildStartContext context = buildContext();
+        final var context = buildContext();
         when(featureDescriptor.getParameters()).thenReturn(Map.of());
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         context.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
         assertThat(jwt.verify(new RSASSAVerifier(keyManager.getRsaKey().toPublicJWK()))).isTrue();
     }
 
     @Test
     public void usesES256WhenConfigured() throws Exception {
-        JwtBuildStartContext context = buildContext();
+        final var context = buildContext();
         when(featureDescriptor.getParameters()).thenReturn(Map.of("algorithm", "ES256"));
 
-        ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
         context.updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
 
-        SignedJWT jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.ES256);
         assertThat(jwt.verify(new ECDSAVerifier(keyManager.getEcKey().toPublicJWK()))).isTrue();
     }
 
     @Test
-    public void jwksIncludesBothRsaAndEcPublicKeys() throws Exception {
-        List<JWK> keys = keyManager.getPublicKeys();
+    public void jwksIncludesBothRsaAndEcPublicKeys() {
+        final var keys = keyManager.getPublicKeys();
         assertThat(keys).hasSize(2);
         assertThat(keys.stream().anyMatch(k -> k.getAlgorithm() != null && k.getAlgorithm().getName().equals("RS256"))).isTrue();
         assertThat(keys.stream().anyMatch(k -> k.getAlgorithm() != null && k.getAlgorithm().getName().equals("ES256"))).isTrue();

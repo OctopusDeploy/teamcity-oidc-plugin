@@ -4,13 +4,11 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
-import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +40,7 @@ public class JwtIssuanceAndVerificationTest {
     private JwtKeyManager keyManager;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         keyManager = new JwtKeyManager(serverPaths);
     }
@@ -132,7 +130,7 @@ public class JwtIssuanceAndVerificationTest {
     }
 
     @Test
-    public void jwksContainsOnlyPublicKeys() throws Exception {
+    public void jwksContainsOnlyPublicKeys() {
         final var jwks = getJwks();
 
         for (final var key : jwks.getKeys()) {
@@ -157,7 +155,7 @@ public class JwtIssuanceAndVerificationTest {
 
     // --- helpers ---
 
-    private String issueToken(final Map<String, String> params) throws Exception {
+    private String issueToken(final Map<String, String> params) {
         setupBuildContext(params);
         final var tokenCaptor = ArgumentCaptor.forClass(String.class);
         new JwtBuildStartContext(extensionHolder, buildServer, keyManager).updateParameters(buildStartContext);

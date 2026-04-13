@@ -2,7 +2,6 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.serverSide.BuildTypeIdentity;
 import jetbrains.buildServer.serverSide.InvalidProperty;
-import jetbrains.buildServer.serverSide.PropertiesProcessor;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.junit.jupiter.api.Test;
@@ -33,6 +32,7 @@ public class JwtBuildFeatureTest {
 
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of());
 
         assertThat(errors)
@@ -46,6 +46,7 @@ public class JwtBuildFeatureTest {
 
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of());
 
         assertThat(errors).isEmpty();
@@ -57,6 +58,7 @@ public class JwtBuildFeatureTest {
 
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of("ttl_minutes", "notanumber"));
 
         assertThat(errors)
@@ -71,6 +73,7 @@ public class JwtBuildFeatureTest {
 
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of("ttl_minutes", "0"));
 
         assertThat(errors)
@@ -85,6 +88,7 @@ public class JwtBuildFeatureTest {
 
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of("ttl_minutes", "1441"));
 
         assertThat(errors)
@@ -99,6 +103,7 @@ public class JwtBuildFeatureTest {
 
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of("ttl_minutes", "1440"));
 
         assertThat(errors).isEmpty();

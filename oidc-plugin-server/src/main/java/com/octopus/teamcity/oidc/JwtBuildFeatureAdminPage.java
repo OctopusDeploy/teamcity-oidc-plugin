@@ -19,9 +19,9 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
 
     @NotNull private final JwtKeyManager keyManager;
 
-    public JwtBuildFeatureAdminPage(@NotNull PagePlaces pagePlaces,
-                                    @NotNull PluginDescriptor descriptor,
-                                    @NotNull JwtKeyManager keyManager) {
+    public JwtBuildFeatureAdminPage(@NotNull final PagePlaces pagePlaces,
+                                    @NotNull final PluginDescriptor descriptor,
+                                    @NotNull final JwtKeyManager keyManager) {
         super(pagePlaces);
         this.keyManager = keyManager;
         setPluginName("jwtPlugin");
@@ -32,7 +32,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     }
 
     @Override
-    public void fillModel(@NotNull Map<String, Object> model, @NotNull HttpServletRequest request) {
+    public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
 
         final var jwks = new JWKSet(keyManager.getPublicKeys());
@@ -42,7 +42,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     }
 
     @Override
-    public boolean isAvailable(@NotNull HttpServletRequest request) {
+    public boolean isAvailable(@NotNull final HttpServletRequest request) {
         return super.isAvailable(request) && checkHasGlobalPermission(request, Permission.CHANGE_SERVER_SETTINGS);
     }
 

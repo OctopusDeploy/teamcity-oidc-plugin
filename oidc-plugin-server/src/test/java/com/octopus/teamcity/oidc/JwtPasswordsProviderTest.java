@@ -2,14 +2,11 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.parameters.ParametersProvider;
-import jetbrains.buildServer.serverSide.Parameter;
 import jetbrains.buildServer.serverSide.SBuild;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Collection;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -26,12 +23,12 @@ public class JwtPasswordsProviderTest {
 
     @Test
     public void returnsJwtTokenAsPasswordParameterWhenPresent() {
-        ParametersProvider parametersProvider = mock(ParametersProvider.class);
+        final var parametersProvider = mock(ParametersProvider.class);
         when(parametersProvider.get("jwt.token")).thenReturn("a.b.c");
         when(build.getParametersProvider()).thenReturn(parametersProvider);
 
-        JwtPasswordsProvider provider = new JwtPasswordsProvider(extensionHolder);
-        Collection<Parameter> passwords = provider.getPasswordParameters(build);
+        final var provider = new JwtPasswordsProvider(extensionHolder);
+        final var passwords = provider.getPasswordParameters(build);
 
         assertThat(passwords)
                 .singleElement()
@@ -43,12 +40,12 @@ public class JwtPasswordsProviderTest {
 
     @Test
     public void returnsEmptyWhenJwtTokenNotPresent() {
-        ParametersProvider parametersProvider = mock(ParametersProvider.class);
+        final var parametersProvider = mock(ParametersProvider.class);
         when(parametersProvider.get("jwt.token")).thenReturn(null);
         when(build.getParametersProvider()).thenReturn(parametersProvider);
 
-        JwtPasswordsProvider provider = new JwtPasswordsProvider(extensionHolder);
-        Collection<Parameter> passwords = provider.getPasswordParameters(build);
+        final var provider = new JwtPasswordsProvider(extensionHolder);
+        final var passwords = provider.getPasswordParameters(build);
 
         assertThat(passwords).isEmpty();
     }
