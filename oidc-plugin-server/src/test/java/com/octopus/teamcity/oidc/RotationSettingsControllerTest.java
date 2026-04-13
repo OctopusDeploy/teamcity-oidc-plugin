@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.servlet.http.HttpServletRequest;
@@ -38,7 +37,7 @@ public class RotationSettingsControllerTest {
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
     }
 
-    private RotationSettingsController controller(RotationSettingsManager mgr) {
+    private RotationSettingsController controller(final RotationSettingsManager mgr) {
         return new RotationSettingsController(controllerManager, mgr, csrfFilter);
     }
 
@@ -64,7 +63,7 @@ public class RotationSettingsControllerTest {
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
 
         final var admin = adminUser();
-        try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
+        try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
             controller(mgr).doHandle(request, response);
         }
@@ -86,7 +85,7 @@ public class RotationSettingsControllerTest {
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
         final var admin = adminUser();
-        try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
+        try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
             controller(mgr).doHandle(request, response);
         }
@@ -103,7 +102,7 @@ public class RotationSettingsControllerTest {
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
 
         final var admin = adminUser();
-        try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
+        try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
             controller(mgr).doHandle(request, response);
         }
@@ -150,7 +149,7 @@ public class RotationSettingsControllerTest {
         final var nonAdmin = mock(SUser.class);
         when(nonAdmin.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(false);
 
-        try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
+        try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(nonAdmin);
             controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
         }
@@ -163,7 +162,7 @@ public class RotationSettingsControllerTest {
         when(request.getMethod()).thenReturn("POST");
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
-        try (MockedStatic<SessionUser> su = mockStatic(SessionUser.class)) {
+        try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(null);
             controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
         }

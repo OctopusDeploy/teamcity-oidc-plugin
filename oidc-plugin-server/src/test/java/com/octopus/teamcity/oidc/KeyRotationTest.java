@@ -1,7 +1,5 @@
 package com.octopus.teamcity.oidc;
 
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.shaded.gson.JsonArray;
 import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
@@ -41,8 +39,8 @@ public class KeyRotationTest {
 
     @Test
     public void rotationGeneratesNewRsaAndEcKeys() throws Exception {
-        final RSAKey originalRsa = keyManager.getRsaKey();
-        final ECKey originalEc = keyManager.getEcKey();
+        final var originalRsa = keyManager.getRsaKey();
+        final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
 
@@ -52,12 +50,12 @@ public class KeyRotationTest {
 
     @Test
     public void jwksContainsCurrentAndRetiredKeysAfterRotation() throws Exception {
-        final RSAKey originalRsa = keyManager.getRsaKey();
-        final ECKey originalEc = keyManager.getEcKey();
+        final var originalRsa = keyManager.getRsaKey();
+        final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
-        final RSAKey newRsa = keyManager.getRsaKey();
-        final ECKey newEc = keyManager.getEcKey();
+        final var newRsa = keyManager.getRsaKey();
+        final var newEc = keyManager.getEcKey();
 
         final var keys = jwksKeys();
         assertThat(keys).hasSize(4);
@@ -67,16 +65,16 @@ public class KeyRotationTest {
 
     @Test
     public void rotatingAgainRetiresPreviousRetiredKeys() throws Exception {
-        final RSAKey rsa1 = keyManager.getRsaKey();
-        final ECKey ec1 = keyManager.getEcKey();
+        final var rsa1 = keyManager.getRsaKey();
+        final var ec1 = keyManager.getEcKey();
 
         keyManager.rotateKey();
-        final RSAKey rsa2 = keyManager.getRsaKey();
-        final ECKey ec2 = keyManager.getEcKey();
+        final var rsa2 = keyManager.getRsaKey();
+        final var ec2 = keyManager.getEcKey();
 
         keyManager.rotateKey();
-        final RSAKey rsa3 = keyManager.getRsaKey();
-        final ECKey ec3 = keyManager.getEcKey();
+        final var rsa3 = keyManager.getRsaKey();
+        final var ec3 = keyManager.getEcKey();
 
         final var keys = jwksKeys();
         assertThat(keys).hasSize(4);
@@ -98,9 +96,9 @@ public class KeyRotationTest {
         return JsonParser.parseString(writer.toString()).getAsJsonObject().get("keys").getAsJsonArray();
     }
 
-    private List<String> kidsIn(JsonArray keys) {
+    private List<String> kidsIn(final JsonArray keys) {
         final var kids = new ArrayList<String>();
-        for (int i = 0; i < keys.size(); i++) {
+        for (var i = 0; i < keys.size(); i++) {
             kids.add(keys.get(i).getAsJsonObject().get("kid").getAsString());
         }
         return kids;
