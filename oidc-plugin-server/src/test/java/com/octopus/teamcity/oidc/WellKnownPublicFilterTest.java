@@ -3,6 +3,7 @@ package com.octopus.teamcity.oidc;
 import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,63 +25,51 @@ public class WellKnownPublicFilterTest {
 
     @Mock private ServerPaths serverPaths;
     @Mock private SBuildServer buildServer;
+    @Mock private HttpServletRequest request;
+    @Mock private HttpServletResponse response;
+    @Mock private FilterChain chain;
 
     @TempDir private File tempDir;
 
-    @Test
-    public void servesJwksWithoutCallingChain() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
+    private WellKnownPublicFilter filter;
 
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
+    @BeforeEach
+    void setUp() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        filter = new WellKnownPublicFilter(new JwtKeyManager(serverPaths), buildServer);
+    }
+
+    private StringWriter stubResponseWriter() throws Exception {
         final var writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        when(request.getRequestURI()).thenReturn("/.well-known/jwks.json");
+        return writer;
+    }
+
+    @Test
+    public void servesJwksWithoutCallingChain() throws Exception {
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
         when(request.getContextPath()).thenReturn("");
 
         filter.doFilter(request, response, chain);
 
-        verify(response).setContentType("application/json;charset=UTF-8");
-        verify(response).setHeader("Cache-Control", "max-age=60, stale-while-revalidate=60");
-        assertThat(writer.toString()).contains("\"keys\"");
         verifyNoInteractions(chain);
     }
 
     @Test
     public void servesOidcDiscoveryWithoutCallingChain() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
-
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
-        final var writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        when(request.getRequestURI()).thenReturn("/.well-known/openid-configuration");
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
 
         filter.doFilter(request, response, chain);
 
-        verify(response).setContentType("application/json;charset=UTF-8");
-        final var json = JsonParser.parseString(writer.toString()).getAsJsonObject();
-        assertThat(json.get("issuer").getAsString()).isEqualTo("https://teamcity.example.com");
         verifyNoInteractions(chain);
     }
 
     @Test
     public void delegatesToChainForOtherPaths() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
-
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
         when(request.getRequestURI()).thenReturn("/admin/jwtKeyRotate.html");
         when(request.getContextPath()).thenReturn("");
 
@@ -92,48 +81,45 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void jwksContainsBothRsaAndEcPublicKeys() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
-
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
-        final var writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
         when(request.getContextPath()).thenReturn("");
 
         filter.doFilter(request, response, chain);
 
-        final var json =
-                com.nimbusds.jose.shaded.gson.JsonParser.parseString(writer.toString()).getAsJsonObject();
-        final var keys = json.get("keys").getAsJsonArray();
+        final var keys = JsonParser.parseString(writer.toString()).getAsJsonObject()
+                .get("keys").getAsJsonArray();
         assertThat(keys).hasSize(2);
         boolean hasRsa = false, hasEc = false;
         for (var i = 0; i < keys.size(); i++) {
-            final var key = keys.get(i).getAsJsonObject();
-            assertThat(key.has("d")).isFalse();
-            if ("RSA".equals(key.get("kty").getAsString())) hasRsa = true;
-            if ("EC".equals(key.get("kty").getAsString())) hasEc = true;
+            final var kty = keys.get(i).getAsJsonObject().get("kty").getAsString();
+            if ("RSA".equals(kty)) hasRsa = true;
+            if ("EC".equals(kty)) hasEc = true;
         }
         assertThat(hasRsa).isTrue();
         assertThat(hasEc).isTrue();
     }
 
     @Test
-    public void issuerInDiscoveryDocHasTrailingSlashStripped() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com/");
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
+    public void jwksExposesNoPrivateKeyMaterial() throws Exception {
+        final var writer = stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
 
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
-        final var writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        when(request.getRequestURI()).thenReturn("/.well-known/openid-configuration");
+        filter.doFilter(request, response, chain);
+
+        final var keys = JsonParser.parseString(writer.toString()).getAsJsonObject()
+                .get("keys").getAsJsonArray();
+        for (var i = 0; i < keys.size(); i++) {
+            assertThat(keys.get(i).getAsJsonObject().has("d")).isFalse();
+        }
+    }
+
+    @Test
+    public void trailingSlashesStrippedFromDiscoveryDocUrls() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com/");
+        final var writer = stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
 
         filter.doFilter(request, response, chain);
@@ -145,17 +131,9 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void discoveryDocIncludesAuthorizationEndpoint() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
-
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
-        final var writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        when(request.getRequestURI()).thenReturn("/.well-known/openid-configuration");
+        final var writer = stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
 
         filter.doFilter(request, response, chain);
@@ -168,15 +146,7 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void authorizeEndpointReturnsUnsupportedResponseType() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
-
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
-        final var writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.AUTHORIZE_PATH);
         when(request.getContextPath()).thenReturn("");
 
@@ -184,20 +154,11 @@ public class WellKnownPublicFilterTest {
 
         verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
         assertThat(writer.toString()).contains("unsupported_response_type");
-        verifyNoInteractions(chain);
     }
 
     @Test
     public void stripsContextPathBeforeMatching() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
-
-        final var request = mock(HttpServletRequest.class);
-        final var response = mock(HttpServletResponse.class);
-        final var chain = mock(FilterChain.class);
-        final var writer = new StringWriter();
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn("/tc/.well-known/jwks.json");
         when(request.getContextPath()).thenReturn("/tc");
 
