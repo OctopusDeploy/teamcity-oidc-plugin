@@ -8,6 +8,7 @@ import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.ServerPaths;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,19 +35,28 @@ public class AlgorithmChoiceTest {
 
     @TempDir File tempDir;
 
-    @Test
-    public void usesRS256ByDefault() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext context = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+    private JwtKeyManager keyManager;
 
+    @BeforeEach
+    void setUp() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        keyManager = new JwtKeyManager(serverPaths);
+    }
+
+    private JwtBuildStartContext buildContext() {
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        JwtBuildStartContext context = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
-        when(featureDescriptor.getParameters()).thenReturn(Map.of());
-
         TriggeredBy triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+        return context;
+    }
+
+    @Test
+    public void usesRS256ByDefault() throws Exception {
+        JwtBuildStartContext context = buildContext();
+        when(featureDescriptor.getParameters()).thenReturn(Map.of());
 
         ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
         context.updateParameters(buildStartContext);
@@ -59,17 +69,8 @@ public class AlgorithmChoiceTest {
 
     @Test
     public void usesES256WhenConfigured() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        JwtBuildStartContext context = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
-
-        when(buildStartContext.getBuild()).thenReturn(runningBuild);
-        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        JwtBuildStartContext context = buildContext();
         when(featureDescriptor.getParameters()).thenReturn(Map.of("algorithm", "ES256"));
-
-        TriggeredBy triggeredBy = mock(TriggeredBy.class);
-        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
 
         ArgumentCaptor<String> jwtCaptor = ArgumentCaptor.forClass(String.class);
         context.updateParameters(buildStartContext);
@@ -82,9 +83,6 @@ public class AlgorithmChoiceTest {
 
     @Test
     public void jwksIncludesBothRsaAndEcPublicKeys() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-
         List<JWK> keys = keyManager.getPublicKeys();
         assertThat(keys).hasSize(2);
         assertThat(keys.stream().anyMatch(k -> k.getAlgorithm() != null && k.getAlgorithm().getName().equals("RS256"))).isTrue();
@@ -93,8 +91,6 @@ public class AlgorithmChoiceTest {
 
     @Test
     public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
         final var ecKey = keyManager.getEcKey();
         assertThat(ecKey.getKeyID()).isEqualTo(ecKey.computeThumbprint().toString());
     }

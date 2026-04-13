@@ -7,6 +7,9 @@
 
 <l:settingsGroup title="">
     <tr>
+        <td colspan="2"><span class="error" id="error_root_url"></span></td>
+    </tr>
+    <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
             <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
