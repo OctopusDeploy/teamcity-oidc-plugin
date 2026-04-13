@@ -38,8 +38,8 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
-        final var  build = buildStartContext.getBuild();
-        final var  jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
+        final var build = buildStartContext.getBuild();
+        final var jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
 
         LOG.fine("JWT plugin: updateParameters called for build " + build.getBuildId()
                 + " (" + build.getBuildTypeExternalId() + "), JWT features: " + jwtBuildFeatures.size());
@@ -47,12 +47,12 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
         if (!jwtBuildFeatures.isEmpty()) {
             try {
                 final var descriptor = jwtBuildFeatures.stream().findFirst().orElseThrow();
-                Map<String, String> params = descriptor.getParameters();
+                final var params = descriptor.getParameters();
 
-                int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
-                String algorithmName = params.getOrDefault("algorithm", "RS256");
+                final var ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
+                final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
-                String buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
+                final var buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
                         + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
 

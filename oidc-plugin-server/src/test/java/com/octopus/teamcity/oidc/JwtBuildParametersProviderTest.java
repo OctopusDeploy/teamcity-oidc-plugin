@@ -22,21 +22,21 @@ public class JwtBuildParametersProviderTest {
 
     @Test
     public void returnsEmptyMapInRealBuildMode() {
-        var provider = new JwtBuildParametersProvider(extensionHolder);
+        final var provider = new JwtBuildParametersProvider(extensionHolder);
         assertThat(provider.getParameters(build, false)).isEmpty();
     }
 
     @Test
     public void returnsEmptyMapInEmulationModeWhenFeatureAbsent() {
         when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of());
-        var provider = new JwtBuildParametersProvider(extensionHolder);
+        final var provider = new JwtBuildParametersProvider(extensionHolder);
         assertThat(provider.getParameters(build, true)).isEmpty();
     }
 
     @Test
     public void returnsPlaceholderInEmulationModeWhenFeaturePresent() {
         when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of(featureDescriptor));
-        var provider = new JwtBuildParametersProvider(extensionHolder);
+        final var provider = new JwtBuildParametersProvider(extensionHolder);
         assertThat(provider.getParameters(build, true))
                 .containsEntry(JwtPasswordsProvider.JWT_PARAMETER_NAME, "");
     }
@@ -44,7 +44,7 @@ public class JwtBuildParametersProviderTest {
     @Test
     public void advertisesParameterAsAvailableOnAgentWhenFeaturePresent() {
         when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of(featureDescriptor));
-        var provider = new JwtBuildParametersProvider(extensionHolder);
+        final var provider = new JwtBuildParametersProvider(extensionHolder);
         assertThat(provider.getParametersAvailableOnAgent(build))
                 .containsExactly(JwtPasswordsProvider.JWT_PARAMETER_NAME);
     }
@@ -52,7 +52,7 @@ public class JwtBuildParametersProviderTest {
     @Test
     public void doesNotAdvertiseParameterOnAgentWhenFeatureAbsent() {
         when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of());
-        var provider = new JwtBuildParametersProvider(extensionHolder);
+        final var provider = new JwtBuildParametersProvider(extensionHolder);
         assertThat(provider.getParametersAvailableOnAgent(build)).isEmpty();
     }
 }
