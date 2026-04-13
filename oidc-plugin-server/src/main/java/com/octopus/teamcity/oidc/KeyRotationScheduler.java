@@ -84,11 +84,7 @@ public class KeyRotationScheduler extends BuildServerAdapter {
         LOG.info("JWT plugin: auto-rotating keys (next was due " + nextDue + " UTC)");
         try {
             keyManager.rotateKey();
-            settingsManager.save(new RotationSettings(
-                    settings.enabled(),
-                    settings.cronSchedule(),
-                    Instant.now()
-            ));
+            settingsManager.updateLastRotatedAt(Instant.now());
             LOG.info("JWT plugin: auto key rotation completed successfully");
         } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: auto key rotation failed", e);

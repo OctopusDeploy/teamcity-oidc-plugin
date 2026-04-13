@@ -34,22 +34,24 @@ public class KeyRotationControllerTest {
     @TempDir private File tempDir;
 
     private JwtKeyManager keyManager;
+    private RotationSettingsManager settingsManager;
 
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         keyManager = new JwtKeyManager(serverPaths);
+        settingsManager = new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
         // Default: CSRF check passes. lenient() because some tests never reach doHandle.
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
     }
 
     private KeyRotationController controller() {
-        return new KeyRotationController(controllerManager, keyManager, csrfFilter);
+        return new KeyRotationController(controllerManager, keyManager, settingsManager, csrfFilter);
     }
 
     @Test
     public void registersAtAdminPath() {
-        new KeyRotationController(controllerManager, keyManager, csrfFilter);
+        new KeyRotationController(controllerManager, keyManager, settingsManager, csrfFilter);
         verify(controllerManager).registerController(eq(KeyRotationController.PATH), any(KeyRotationController.class));
     }
 
@@ -62,7 +64,7 @@ public class KeyRotationControllerTest {
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
 
         final var adminUser = mock(SUser.class);
-        when(adminUser.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(true);
+        when(adminUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
 
         try (final var sessionUser = mockStatic(SessionUser.class)) {
             sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(adminUser);
@@ -72,6 +74,27 @@ public class KeyRotationControllerTest {
         assertThat(keyManager.getRsaKey().getKeyID()).isNotEqualTo(originalRsaKid);
         assertThat(keyManager.getEcKey().getKeyID()).isNotEqualTo(originalEcKid);
         assertThat(writer.toString()).contains("rotated");
+    }
+
+    @Test
+    public void postRequestPersistsLastRotatedAt() throws Exception {
+        final var writer = new StringWriter();
+        when(request.getMethod()).thenReturn("POST");
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+
+        final var adminUser = mock(SUser.class);
+        when(adminUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
+
+        final var before = java.time.Instant.now();
+        try (final var sessionUser = mockStatic(SessionUser.class)) {
+            sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(adminUser);
+            controller().doHandle(request, response);
+        }
+        final var after = java.time.Instant.now();
+
+        final var recorded = settingsManager.load().lastRotatedAt();
+        assertThat(recorded).isNotNull();
+        assertThat(recorded).isAfterOrEqualTo(before).isBeforeOrEqualTo(after);
     }
 
     @Test
@@ -122,7 +145,7 @@ public class KeyRotationControllerTest {
         when(request.getMethod()).thenReturn("POST");
 
         final var nonAdminUser = mock(SUser.class);
-        when(nonAdminUser.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(false);
+        when(nonAdminUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(false);
 
         try (final var sessionUser = mockStatic(SessionUser.class)) {
             sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(nonAdminUser);

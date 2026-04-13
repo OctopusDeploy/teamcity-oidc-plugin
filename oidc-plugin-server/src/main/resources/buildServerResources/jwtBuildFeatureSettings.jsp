@@ -52,10 +52,12 @@
 </table>
 
 <script>
+  const jwtContextPath = '${pageContext.request.contextPath}';
+
   function jwtSaveRotationSettings() {
     const enabled = document.getElementById('rotationEnabled').checked;
     const schedule = document.getElementById('cronSchedule').value;
-    jwtAdminPost('/admin/jwtRotationSettings.html',
+    jwtAdminPost(jwtContextPath + '/admin/jwtRotationSettings.html',
       'enabled=' + enabled + '&cronSchedule=' + encodeURIComponent(schedule),
       function(data) { jwtShowResult('jwtSaveResult', data.ok, data.message); },
       function() { jwtShowResult('jwtSaveResult', false, 'Request failed'); }
@@ -63,7 +65,7 @@
   }
 
   function jwtRotateNow() {
-    jwtAdminPost('/admin/jwtKeyRotate.html', '',
+    jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
       function(data) {
         const ok = data.status === 'rotated';
         const msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');

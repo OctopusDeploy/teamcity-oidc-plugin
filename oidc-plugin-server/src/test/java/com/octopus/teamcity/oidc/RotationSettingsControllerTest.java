@@ -43,7 +43,7 @@ public class RotationSettingsControllerTest {
 
     private SUser adminUser() {
         final var user = mock(SUser.class);
-        when(user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(true);
+        when(user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
         return user;
     }
 
@@ -147,7 +147,7 @@ public class RotationSettingsControllerTest {
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
         final var nonAdmin = mock(SUser.class);
-        when(nonAdmin.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(false);
+        when(nonAdmin.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(false);
 
         try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(request)).thenReturn(nonAdmin);
