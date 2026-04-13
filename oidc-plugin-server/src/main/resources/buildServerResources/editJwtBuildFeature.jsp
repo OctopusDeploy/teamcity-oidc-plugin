@@ -73,10 +73,10 @@
     $j(document).ready(function() {
         // Initialise claim checkboxes from stored comma-separated value.
         // Blank = all claims enabled, so tick all boxes when the field is empty.
-        var ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
+        const ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
                           'triggered_by','triggered_by_id','build_number'];
-        var stored = $j('#claims').val().trim();
-        var enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
+        const stored = $j('#claims').val().trim();
+        const enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
         $j('.jwt-claim-cb').each(function() {
             $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
         });
@@ -84,7 +84,7 @@
         // Sync hidden field on every checkbox change.
         // All checked → store blank (= "all"); partial → store comma-separated list.
         $j('.jwt-claim-cb').on('change', function() {
-            var checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
+            const checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
             $j('#claims').val(checked.length === ALL_CLAIMS.length ? '' : checked.join(','));
         });
     });
