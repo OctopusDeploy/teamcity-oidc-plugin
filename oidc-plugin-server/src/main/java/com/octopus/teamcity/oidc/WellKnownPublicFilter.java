@@ -57,7 +57,7 @@ public class WellKnownPublicFilter implements Filter {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=60, stale-while-revalidate=60");
             final var issuer = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
-            LOG.info("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
+            LOG.fine("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
 
             final var doc = getJsonObject(issuer);
 
