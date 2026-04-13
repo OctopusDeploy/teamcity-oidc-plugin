@@ -7,6 +7,9 @@
 
 <l:settingsGroup title="">
     <tr>
+        <td colspan="2"><span class="error" id="error_root_url"></span></td>
+    </tr>
+    <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
             <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
@@ -100,13 +103,13 @@
 </div>
 
 <script type="text/javascript">
-    final var _jwtToken = null;
-    final var _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
+    let _jwtToken = null;
+    const _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
 
     window.jwtTestOpen = function() {
         _jwtToken = null;
         ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(function(id) {
-            final var el = document.getElementById(id);
+            const el = document.getElementById(id);
             el.textContent = id === 'jwtRow3' ? '' : '\u25CB Pending';
             el.style.color = '#888';
         });
@@ -122,17 +125,17 @@
     }
 
     window.jwtSetRow = function(id, ok, message) {
-        final var el = document.getElementById(id);
+        const el = document.getElementById(id);
         el.textContent = (ok ? '\u2713 ' : '\u2717 ') + message;
         el.style.color = ok ? '#7ec87e' : '#e06c75';
     }
 
     window.jwtPost = function(params) {
-        final var body = Object.entries(params)
+        const body = Object.entries(params)
             .map(function(e) { return encodeURIComponent(e[0]) + '=' + encodeURIComponent(e[1]); })
             .join('&');
-        final var csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
-        final var csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+        const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
+        const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
         return fetch(_jwtTestUrl, {
             method: 'POST',
             headers: {
@@ -144,24 +147,24 @@
     }
 
     window.jwtTestRunChecks = async function() {
-        final var algorithm = document.getElementById('algorithm').value;
-        final var ttl = document.getElementById('ttl_minutes').value || '10';
-        final var audience = document.getElementById('audience').value;
-        final var buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
+        const algorithm = document.getElementById('algorithm').value;
+        const ttl = document.getElementById('ttl_minutes').value || '10';
+        const audience = document.getElementById('audience').value;
+        const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
 
         document.getElementById('jwtRow0').textContent = '\u23F3 Issuing JWT...';
-        final var r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+        const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
         jwtSetRow('jwtRow0', r1.ok, r1.message);
         if (!r1.ok) return;
         _jwtToken = r1.token;
 
         document.getElementById('jwtRow1').textContent = '\u23F3 Checking discovery endpoint...';
-        final var r2 = await jwtPost({step:'discovery'});
+        const r2 = await jwtPost({step:'discovery'});
         jwtSetRow('jwtRow1', r2.ok, r2.message);
         if (!r2.ok) return;
 
         document.getElementById('jwtRow2').textContent = '\u23F3 Verifying JWKS signature...';
-        final var r3 = await jwtPost({step:'jwks', token:_jwtToken});
+        const r3 = await jwtPost({step:'jwks', token:_jwtToken});
         jwtSetRow('jwtRow2', r3.ok, r3.message);
         if (!r3.ok) return;
 
@@ -170,19 +173,19 @@
     }
 
     window.jwtTestExchange = async function() {
-        final var serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
+        const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
         if (!serviceUrl) return;
-        final var audience = document.getElementById('audience').value;
+        const audience = document.getElementById('audience').value;
         document.getElementById('jwtExchangeBtn').disabled = true;
         document.getElementById('jwtRow3').textContent = '\u23F3 Trying exchange...';
         document.getElementById('jwtRow3').style.color = '#888';
-        final var r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
+        const r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
         jwtSetRow('jwtRow3', r.ok, r.message);
         document.getElementById('jwtExchangeBtn').disabled = false;
     }
 
     $j(document).ready(function() {
-        final var placeholder = $j('span#editBuildFeatureAdditionalButtons');
+        const placeholder = $j('span#editBuildFeatureAdditionalButtons');
         if (placeholder.length) {
             placeholder.empty();
             placeholder.append($j('span#jwtTestConnectionBtnHolder').children());
@@ -190,10 +193,10 @@
 
         // Initialise claim checkboxes from stored comma-separated value.
         // Blank = all claims enabled, so tick all boxes when the field is empty.
-        final var ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
+        const ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
                           'triggered_by','triggered_by_id','build_number'];
-        final var stored = $j('#claims').val().trim();
-        final var enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
+        const stored = $j('#claims').val().trim();
+        const enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
         $j('.jwt-claim-cb').each(function() {
             $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
         });
@@ -201,7 +204,7 @@
         // Sync hidden field on every checkbox change.
         // All checked → store blank (= "all"); partial → store comma-separated list.
         $j('.jwt-claim-cb').on('change', function() {
-            final var checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
+            const checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
             $j('#claims').val(checked.length === ALL_CLAIMS.length ? '' : checked.join(','));
         });
     });

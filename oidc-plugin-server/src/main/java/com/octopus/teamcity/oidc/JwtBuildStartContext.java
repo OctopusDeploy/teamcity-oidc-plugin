@@ -23,9 +23,9 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
             "triggered_by", "triggered_by_id", "build_number");
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
-    public JwtBuildStartContext(@NotNull ExtensionHolder extensionHolder,
-                                @NotNull SBuildServer buildServer,
-                                @NotNull JwtKeyManager keyManager) {
+    public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder,
+                                @NotNull final SBuildServer buildServer,
+                                @NotNull final JwtKeyManager keyManager) {
         this.extensionHolder = extensionHolder;
         this.buildServer = buildServer;
         this.keyManager = keyManager;
@@ -38,21 +38,21 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
-        final var  build = buildStartContext.getBuild();
-        final var  jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
+        final var build = buildStartContext.getBuild();
+        final var jwtBuildFeatures = build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE);
 
         LOG.fine("JWT plugin: updateParameters called for build " + build.getBuildId()
                 + " (" + build.getBuildTypeExternalId() + "), JWT features: " + jwtBuildFeatures.size());
 
         if (!jwtBuildFeatures.isEmpty()) {
             try {
-                final var  descriptor = jwtBuildFeatures.stream().findFirst().get();
-                Map<String, String> params = descriptor.getParameters();
+                final var descriptor = jwtBuildFeatures.stream().findFirst().orElseThrow();
+                final var params = descriptor.getParameters();
 
-                int ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
-                String algorithmName = params.getOrDefault("algorithm", "RS256");
+                final var ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
+                final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
-                String buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
+                final var buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
                         + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
 
@@ -61,21 +61,22 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                     return;
                 }
 
-                final var  audience = params.getOrDefault("audience", buildServerRootUrl);
+                final var rawAudience = params.getOrDefault("audience", "");
+                final var audience = rawAudience.isBlank() ? buildServerRootUrl : rawAudience;
 
-                final var  claimsParam = params.get("claims");
-                final var  enabledClaims = (claimsParam == null || claimsParam.isBlank())
+                final var claimsParam = params.get("claims");
+                final var enabledClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
                         : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
 
-                final var  branch = build.getBranch();
-                final var  branchName = branch != null ? branch.getName() : "";
+                final var branch = build.getBranch();
+                final var branchName = branch != null ? branch.getName() : "";
 
-                final var  triggeredBy = build.getTriggeredBy();
-                final var  user = triggeredBy.getUser();
+                final var triggeredBy = build.getTriggeredBy();
+                final var user = triggeredBy.getUser();
 
-                final var  now = new DateTime();
-                final var  claimsBuilder = new JWTClaimsSet.Builder()
+                final var now = new DateTime();
+                final var claimsBuilder = new JWTClaimsSet.Builder()
                         .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
                         .subject(build.getBuildTypeExternalId())
                         .audience(List.of(audience))
@@ -103,16 +104,16 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                     claimsBuilder.claim("build_number", build.getBuildNumber());
                 }
 
-                final var  signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);
-                final var  serialized = signedJWT.serialize();
+                final var signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);
+                final var serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                         + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
-            } catch (JOSEException e) {
+            } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
                 throw new RuntimeException(e);
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
                 throw e;
             }

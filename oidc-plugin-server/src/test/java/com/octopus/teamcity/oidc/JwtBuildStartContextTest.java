@@ -54,7 +54,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() throws Exception {
+    public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var  keyManager = new JwtKeyManager(serverPaths);
@@ -153,7 +153,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void doesNotInjectTokenWhenRootUrlIsNotHttps() throws Exception {
+    public void doesNotInjectTokenWhenRootUrlIsNotHttps() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
         final var keyManager = new JwtKeyManager(serverPaths);
@@ -169,7 +169,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void updateParametersWhenBuildFeatureEnabled() throws Exception {
+    public void updateParametersWhenBuildFeatureEnabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = new JwtKeyManager(serverPaths);
@@ -230,6 +230,53 @@ public class JwtBuildStartContextTest {
 
         final var jwt = SignedJWT.parse(jwtCaptor.getValue());
         assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("https://localhost:8111");
+    }
+
+    @Test
+    public void audienceDefaultsToServerRootUrlWhenAudienceParamIsBlank() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("audience", ""));
+
+        final var triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("https://localhost:8111");
+    }
+
+    @Test
+    public void triggeredByIdClaimIncludedWhenUserIsAvailable() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
+
+        final var triggeredBy = mock(TriggeredBy.class);
+        final var user = mock(SUser.class);
+        when(user.getId()).thenReturn(42L);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+        when(triggeredBy.getUser()).thenReturn(user);
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        assertThat(jwt.getJWTClaimsSet().getLongClaim("triggered_by_id")).isEqualTo(42L);
     }
 
     @Test

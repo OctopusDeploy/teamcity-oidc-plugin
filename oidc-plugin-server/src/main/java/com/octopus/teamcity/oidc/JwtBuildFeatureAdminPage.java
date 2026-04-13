@@ -11,7 +11,6 @@ import org.springframework.scheduling.support.CronExpression;
 
 import javax.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
@@ -26,10 +25,10 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     @NotNull private final JwtKeyManager keyManager;
     @NotNull private final RotationSettingsManager settingsManager;
 
-    public JwtBuildFeatureAdminPage(@NotNull PagePlaces pagePlaces,
-                                    @NotNull PluginDescriptor descriptor,
-                                    @NotNull JwtKeyManager keyManager,
-                                    @NotNull RotationSettingsManager settingsManager) {
+    public JwtBuildFeatureAdminPage(@NotNull final PagePlaces pagePlaces,
+                                    @NotNull final PluginDescriptor descriptor,
+                                    @NotNull final JwtKeyManager keyManager,
+                                    @NotNull final RotationSettingsManager settingsManager) {
         super(pagePlaces);
         this.keyManager = keyManager;
         this.settingsManager = settingsManager;
@@ -41,11 +40,11 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     }
 
     @Override
-    public void fillModel(@NotNull Map<String, Object> model, @NotNull HttpServletRequest request) {
+    public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
 
-        final var  jwks = new JWKSet(keyManager.getPublicKeys());
-        final var  jwksJson = jwks.toString();
+        final var jwks = new JWKSet(keyManager.getPublicKeys());
+        final var jwksJson = jwks.toString();
         model.put("jwks", jwksJson);
         model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
 
@@ -76,7 +75,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     }
 
     @Override
-    public boolean isAvailable(@NotNull HttpServletRequest request) {
+    public boolean isAvailable(@NotNull final HttpServletRequest request) {
         return super.isAvailable(request) && checkHasGlobalPermission(request, Permission.CHANGE_SERVER_SETTINGS);
     }
 

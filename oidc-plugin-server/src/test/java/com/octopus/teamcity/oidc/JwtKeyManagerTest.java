@@ -1,9 +1,7 @@
 package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.jwk.RSAKey;
 import jetbrains.buildServer.serverSide.ServerPaths;
-import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,12 +14,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermission;
-import java.text.ParseException;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,7 +31,7 @@ public class JwtKeyManagerTest {
     @Test
     public void keyFileIsReadableAndWritableByOwnerOnly() throws IOException {
         final var pluginDirectory = new File(tempDir, "foobar");
-        pluginDirectory.mkdirs();
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
@@ -50,9 +45,9 @@ public class JwtKeyManagerTest {
     }
 
     @Test
-    public void keyIdIsThumbprintOfPublicKey() throws IOException, ParseException, JOSEException {
+    public void keyIdIsThumbprintOfPublicKey() throws JOSEException {
         final var pluginDirectory = new File(tempDir, "foobar");
-        pluginDirectory.mkdirs();
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
 
         final var keyManager = new JwtKeyManager(serverPaths);
@@ -65,7 +60,7 @@ public class JwtKeyManagerTest {
     @Test
     public void testGetRsaKeyReusesFile() throws IOException {
         final var pluginDirectory = new File(tempDir, "foobar");
-        pluginDirectory.mkdirs();
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
@@ -80,11 +75,11 @@ public class JwtKeyManagerTest {
     @Test
     public void constructorThrowsRuntimeExceptionWithClearMessageWhenKeyFileIsCorrupt() throws Exception {
         final var pluginDirectory = new File(tempDir, "corrupt");
-        pluginDirectory.mkdirs();
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
 
         final var keyDir = new File(pluginDirectory, "JwtBuildFeature");
-        keyDir.mkdirs();
+        if (!keyDir.mkdirs()) throw new RuntimeException("Unable to create keyDir '" + keyDir + "'");
         FileUtils.writeStringToFile(new File(keyDir, "rsa-key.json"), "not-valid-json", StandardCharsets.UTF_8);
 
         assertThatThrownBy(() -> new JwtKeyManager(serverPaths))
@@ -112,6 +107,7 @@ public class JwtKeyManagerTest {
 
     @Test
     public void isHttpsUrlReturnsFalseForNull() {
+        //noinspection ConstantValue
         assertThat(JwtKeyManager.isHttpsUrl(null)).isFalse();
     }
 
@@ -132,11 +128,12 @@ public class JwtKeyManagerTest {
 
     @Test
     public void normalizeRootUrlReturnsNullForNull() {
+        //noinspection ConstantValue
         assertThat(JwtKeyManager.normalizeRootUrl(null)).isNull();
     }
 
     @Test
-    public void signThrowsForUnsupportedAlgorithm() throws Exception {
+    public void signThrowsForUnsupportedAlgorithm() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = new JwtKeyManager(serverPaths);
         final var claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()

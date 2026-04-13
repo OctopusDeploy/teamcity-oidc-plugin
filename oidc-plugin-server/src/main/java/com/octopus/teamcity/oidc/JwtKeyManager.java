@@ -41,9 +41,12 @@ public class JwtKeyManager {
     private final File keyDirectory;
     private final AtomicReference<KeyMaterial> keys;
 
-    public JwtKeyManager(@NotNull ServerPaths serverPaths) {
+    public JwtKeyManager(@NotNull final ServerPaths serverPaths) {
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
-        this.keyDirectory.mkdirs();
+        final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
+        if (!createDirectoryResult)
+            throw new RuntimeException("Failed to create key directory");
+
         try {
             this.keys = new AtomicReference<>(new KeyMaterial(
                     loadOrGenerateRsaKey(),
@@ -51,7 +54,7 @@ public class JwtKeyManager {
                     loadOrGenerateEcKey(),
                     loadRetiredEcKey()
             ));
-        } catch (IOException | ParseException | JOSEException | IllegalArgumentException e) {
+        } catch (final IOException | ParseException | JOSEException | IllegalArgumentException e) {
             throw new RuntimeException(
                     "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
         }
@@ -67,7 +70,7 @@ public class JwtKeyManager {
 
     public List<JWK> getPublicKeys() {
         final var snapshot = keys.get();
-        List<JWK> result = new ArrayList<>();
+        final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());
         if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
         result.add(snapshot.ec().toPublicJWK());
@@ -94,9 +97,9 @@ public class JwtKeyManager {
      *
      * @throws IllegalArgumentException if {@code algorithm} is not {@code "RS256"} or {@code "ES256"}
      */
-    public SignedJWT sign(@NotNull JWTClaimsSet claims, @NotNull String algorithm) throws JOSEException {
-        JWSHeader header;
-        JWSSigner signer;
+    public SignedJWT sign(@NotNull final JWTClaimsSet claims, @NotNull final String algorithm) throws JOSEException {
+        final JWSHeader header;
+        final JWSSigner signer;
         if ("ES256".equals(algorithm)) {
             final var ecKey = getEcKey();
             header = new JWSHeader.Builder(JWSAlgorithm.ES256)
@@ -120,12 +123,12 @@ public class JwtKeyManager {
         return jwt;
     }
 
-    static boolean isHttpsUrl(@Nullable String url) {
+    static boolean isHttpsUrl(@Nullable final String url) {
         return url != null && url.startsWith("https://");
     }
 
     /** Strips trailing slashes from a root URL. Cloud providers compare issuer by exact string. */
-    static String normalizeRootUrl(@Nullable String url) {
+    static String normalizeRootUrl(@Nullable final String url) {
         if (url == null) return null;
         return url.replaceAll("/+$", "");
     }
@@ -186,7 +189,7 @@ public class JwtKeyManager {
                 .generate();
     }
 
-    private void saveKeyToFile(@NotNull JWK key, @NotNull String fileName) throws IOException {
+    private void saveKeyToFile(@NotNull final JWK key, @NotNull final String fileName) throws IOException {
         final var keyFile = new File(keyDirectory, fileName);
         FileUtils.writeStringToFile(keyFile, EncryptUtil.scramble(key.toString()), StandardCharsets.UTF_8);
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {

@@ -27,7 +27,7 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
     private final ExtensionHolder extensionHolder;
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
-    public JwtBuildParametersProvider(@NotNull ExtensionHolder extensionHolder) {
+    public JwtBuildParametersProvider(@NotNull final ExtensionHolder extensionHolder) {
         this.extensionHolder = extensionHolder;
     }
 
@@ -41,7 +41,7 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
 
     @NotNull
     @Override
-    public Map<String, String> getParameters(@NotNull SBuild build, boolean emulationMode) {
+    public Map<String, String> getParameters(@NotNull final SBuild build, final boolean emulationMode) {
         if (!emulationMode) {
             return Map.of();
         }
@@ -49,7 +49,7 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
             if (build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
                 return Map.of();
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.fine("JWT plugin: could not check build features in emulation mode: " + e.getMessage());
             return Map.of();
         }
@@ -58,12 +58,12 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
 
     @NotNull
     @Override
-    public Collection<String> getParametersAvailableOnAgent(@NotNull SBuild build) {
+    public Collection<String> getParametersAvailableOnAgent(@NotNull final SBuild build) {
         try {
             if (!build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
                 return List.of(JwtPasswordsProvider.JWT_PARAMETER_NAME);
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.fine("JWT plugin: could not check build features for agent parameters: " + e.getMessage());
         }
         return List.of();

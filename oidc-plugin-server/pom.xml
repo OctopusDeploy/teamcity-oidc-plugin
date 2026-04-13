@@ -33,33 +33,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jetbrains.teamcity</groupId>
-            <artifactId>tests-support</artifactId>
-            <version>${teamcity-version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <!--
-                    tests-support transitively pulls in TestNG 6.14.3. When TestNG is on
-                    the classpath alongside JUnit, IntelliJ auto-detects it and runs all
-                    tests with RemoteTestNGStarter, which finds zero JUnit @Test methods
-                    and reports "No tests found". Excluding it forces IntelliJ (and Maven
-                    Surefire) to use JUnit 5 exclusively.
-                -->
-                <exclusion>
-                    <groupId>org.testng</groupId>
-                    <artifactId>testng</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>6.0.3</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
             <version>6.0.3</version>
             <scope>test</scope>
         </dependency>
