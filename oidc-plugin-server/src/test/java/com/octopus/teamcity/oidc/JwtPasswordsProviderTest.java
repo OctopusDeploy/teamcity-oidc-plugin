@@ -33,10 +33,12 @@ public class JwtPasswordsProviderTest {
         JwtPasswordsProvider provider = new JwtPasswordsProvider(extensionHolder);
         Collection<Parameter> passwords = provider.getPasswordParameters(build);
 
-        assertThat(passwords).hasSize(1);
-        Parameter param = passwords.iterator().next();
-        assertThat(param.getName()).isEqualTo("jwt.token");
-        assertThat(param.getValue()).isEqualTo("a.b.c");
+        assertThat(passwords)
+                .singleElement()
+                .satisfies(p -> {
+                    assertThat(p.getName()).isEqualTo("jwt.token");
+                    assertThat(p.getValue()).isEqualTo("a.b.c");
+                });
     }
 
     @Test

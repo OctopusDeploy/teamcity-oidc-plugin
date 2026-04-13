@@ -10,7 +10,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Collection;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,8 +59,10 @@ public class JwtBuildFeatureTest {
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         final var errors = processor.process(Map.of("ttl_minutes", "notanumber"));
 
-        assertThat(errors).hasSize(1);
-        assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("ttl_minutes");
     }
 
     @Test
@@ -72,8 +73,10 @@ public class JwtBuildFeatureTest {
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         final var errors = processor.process(Map.of("ttl_minutes", "0"));
 
-        assertThat(errors).hasSize(1);
-        assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("ttl_minutes");
     }
 
     @Test
@@ -84,8 +87,10 @@ public class JwtBuildFeatureTest {
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         final var errors = processor.process(Map.of("ttl_minutes", "1441"));
 
-        assertThat(errors).hasSize(1);
-        assertThat(errors.iterator().next().getPropertyName()).isEqualTo("ttl_minutes");
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("ttl_minutes");
     }
 
     @Test
