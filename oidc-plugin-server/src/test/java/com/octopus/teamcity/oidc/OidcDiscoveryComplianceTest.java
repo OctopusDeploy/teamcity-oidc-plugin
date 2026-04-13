@@ -27,8 +27,7 @@ import static org.mockito.Mockito.*;
  * Integration tests: verify that the OIDC discovery document produced by
  * WellKnownPublicFilter is compliant with the OpenID Connect Discovery 1.0 spec
  * and contains the fields required by cloud provider OIDC federation setups.
- *
- * Reference: https://openid.net/specs/openid-connect-discovery-1_0.html
+  * Reference: <a href="https://openid.net/specs/openid-connect-discovery-1_0.html">...</a>
  */
 @ExtendWith(MockitoExtension.class)
 public class OidcDiscoveryComplianceTest {
@@ -44,13 +43,13 @@ public class OidcDiscoveryComplianceTest {
     void fetchDiscoveryDocument() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        JwtKeyManager keyManager = new JwtKeyManager(serverPaths);
-        WellKnownPublicFilter filter = new WellKnownPublicFilter(keyManager, buildServer);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
 
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        FilterChain chain = mock(FilterChain.class);
-        StringWriter writer = new StringWriter();
+        final var request = mock(HttpServletRequest.class);
+        final var response = mock(HttpServletResponse.class);
+        final var chain = mock(FilterChain.class);
+        final var writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
@@ -85,7 +84,7 @@ public class OidcDiscoveryComplianceTest {
     public void responseTypesSupportedIsPresent() {
         // Required by spec
         assertThat(discoveryDocument.has("response_types_supported")).isTrue();
-        List<String> types = toStringList(discoveryDocument.get("response_types_supported").getAsJsonArray());
+        final var types = toStringList(discoveryDocument.get("response_types_supported").getAsJsonArray());
         assertThat(types).contains("id_token");
     }
 
@@ -93,7 +92,7 @@ public class OidcDiscoveryComplianceTest {
     public void subjectTypesSupportedIsPresent() {
         // Required by spec
         assertThat(discoveryDocument.has("subject_types_supported")).isTrue();
-        List<String> types = toStringList(discoveryDocument.get("subject_types_supported").getAsJsonArray());
+        final var types = toStringList(discoveryDocument.get("subject_types_supported").getAsJsonArray());
         assertThat(types).contains("public");
     }
 
@@ -107,7 +106,7 @@ public class OidcDiscoveryComplianceTest {
 
     @Test
     public void advertisesRS256() {
-        List<String> algs = toStringList(
+        final var algs = toStringList(
                 discoveryDocument.get("id_token_signing_alg_values_supported").getAsJsonArray());
         assertThat(algs).contains("RS256");
     }
@@ -115,7 +114,7 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void advertisesES256() {
         // Critical: cloud providers reject ES256 tokens if ES256 isn't advertised here
-        List<String> algs = toStringList(
+        final var algs = toStringList(
                 discoveryDocument.get("id_token_signing_alg_values_supported").getAsJsonArray());
         assertThat(algs).contains("ES256");
     }
@@ -130,13 +129,13 @@ public class OidcDiscoveryComplianceTest {
 
     @Test
     public void claimsSupportedIncludesStandardClaims() {
-        List<String> claims = toStringList(discoveryDocument.get("claims_supported").getAsJsonArray());
+        final var claims = toStringList(discoveryDocument.get("claims_supported").getAsJsonArray());
         assertThat(claims).contains("sub", "iss", "aud", "iat", "exp");
     }
 
     @Test
     public void claimsSupportedIncludesCustomBuildClaims() {
-        List<String> claims = toStringList(discoveryDocument.get("claims_supported").getAsJsonArray());
+        final var claims = toStringList(discoveryDocument.get("claims_supported").getAsJsonArray());
         assertThat(claims).contains("branch", "build_type_external_id", "project_external_id",
                 "triggered_by", "build_number");
     }
@@ -163,8 +162,8 @@ public class OidcDiscoveryComplianceTest {
 
     // --- helper ---
 
-    private List<String> toStringList(JsonArray array) {
-        List<String> result = new ArrayList<>();
+    private List<String> toStringList(final JsonArray array) {
+        final var result = new ArrayList<String>();
         array.forEach(e -> result.add(e.getAsString()));
         return result;
     }
