@@ -41,7 +41,7 @@ public class JwtKeyManager {
     private final File keyDirectory;
     private final AtomicReference<KeyMaterial> keys;
 
-    public JwtKeyManager(@NotNull final ServerPaths serverPaths) {
+    public JwtKeyManager(@NotNull final ServerPaths serverPaths) throws RuntimeException {
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
         if (!createDirectoryResult)
@@ -58,6 +58,11 @@ public class JwtKeyManager {
             throw new RuntimeException(
                     "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
         }
+    }
+
+    /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
+    public RotationSettingsManager createRotationSettingsManager() {
+        return new RotationSettingsManager(keyDirectory);
     }
 
     public RSAKey getRsaKey() {
