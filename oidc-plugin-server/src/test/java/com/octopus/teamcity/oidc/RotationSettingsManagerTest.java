@@ -25,11 +25,12 @@ public class RotationSettingsManagerTest {
     void roundTripsEnabledSettings() {
         final var mgr = new RotationSettingsManager(tempDir);
         final var now = Instant.parse("2026-04-04T03:00:00Z");
-        mgr.save(new RotationSettings(true, "0 0 2 * * *", now));
+        final var schedule = "0 0 2 * * *";
+        mgr.save(new RotationSettings(true, schedule, now));
 
         final var loaded = mgr.load();
         assertThat(loaded.enabled()).isTrue();
-        assertThat(loaded.cronSchedule()).isEqualTo("0 0 2 * * *");
+        assertThat(loaded.cronSchedule()).isEqualTo(schedule);
         assertThat(loaded.lastRotatedAt()).isEqualTo(now);
     }
 
