@@ -47,20 +47,20 @@ public class JwtTestController extends BaseController {
     private final CSRFFilter csrfFilter;
 
     @Autowired
-    public JwtTestController(@NotNull WebControllerManager controllerManager,
-                              @NotNull JwtKeyManager keyManager,
-                              @NotNull SBuildServer buildServer,
-                              @NotNull ExtensionHolder extensionHolder) {
+    public JwtTestController(@NotNull final WebControllerManager controllerManager,
+                             @NotNull final JwtKeyManager keyManager,
+                             @NotNull final SBuildServer buildServer,
+                             @NotNull final ExtensionHolder extensionHolder) {
         this(controllerManager, keyManager, buildServer,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
                 new CSRFFilter(extensionHolder));
     }
 
-    JwtTestController(@NotNull WebControllerManager controllerManager,
-                      @NotNull JwtKeyManager keyManager,
-                      @NotNull SBuildServer buildServer,
-                      @NotNull HttpClient httpClient,
-                      @NotNull CSRFFilter csrfFilter) {
+    JwtTestController(@NotNull final WebControllerManager controllerManager,
+                      @NotNull final JwtKeyManager keyManager,
+                      @NotNull final SBuildServer buildServer,
+                      @NotNull final HttpClient httpClient,
+                      @NotNull final CSRFFilter csrfFilter) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
         this.httpClient = httpClient;
@@ -70,8 +70,8 @@ public class JwtTestController extends BaseController {
     }
 
     @Override
-    protected ModelAndView doHandle(@NotNull HttpServletRequest request,
-                                    @NotNull HttpServletResponse response) throws IOException {
+    protected ModelAndView doHandle(@NotNull final HttpServletRequest request,
+                                    @NotNull final HttpServletResponse response) throws IOException {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return null;
@@ -83,28 +83,28 @@ public class JwtTestController extends BaseController {
 
         response.setContentType("application/json;charset=UTF-8");
 
-        SUser user = SessionUser.getUser(request);
+        final var user = SessionUser.getUser(request);
         if (user == null || !user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             writeJson(response, false, "Access denied");
             return null;
         }
 
-        String step = request.getParameter("step");
+        final var step = request.getParameter("step");
         if (step == null || step.isBlank()) {
             writeJson(response, false, "Missing required parameter: step");
             return null;
         }
         try {
             if ("jwt".equals(step)) {
-                String[] result = stepJwt(request); // [message, serializedToken]
-                JSONObject json = new JSONObject();
+                final var result = stepJwt(request); // [message, serializedToken]
+                final var json = new JSONObject();
                 json.put("ok", true);
                 json.put("message", result[0]);
                 json.put("token", result[1]);
                 response.getWriter().write(json.toJSONString());
             } else {
-                String message = switch (step) {
+                final var message = switch (step) {
                     case "discovery" -> stepDiscovery();
                     case "jwks" -> stepJwks(request);
                     case "exchange" -> stepExchange(request);
@@ -112,42 +112,42 @@ public class JwtTestController extends BaseController {
                 };
                 writeJson(response, true, message);
             }
-        } catch (TestStepException e) {
+        } catch (final TestStepException e) {
             writeJson(response, false, e.getMessage());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.log(Level.WARNING, "JWT plugin: test step '" + step + "' failed", e);
             writeJson(response, false, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
         return null;
     }
 
-    private String[] stepJwt(HttpServletRequest request) throws Exception {
-        String rootUrl = buildServer.getRootUrl();
+    private String[] stepJwt(final HttpServletRequest request) throws Exception {
+        final var rootUrl = buildServer.getRootUrl();
         if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
-        String algorithm = request.getParameter("algorithm");
+        var algorithm = request.getParameter("algorithm");
         if (algorithm == null || algorithm.isBlank()) algorithm = "RS256";
-        int ttl = parseTtl(request.getParameter("ttl_minutes"));
-        String audience = request.getParameter("audience");
+        final var ttl = parseTtl(request.getParameter("ttl_minutes"));
+        var audience = request.getParameter("audience");
         if (audience == null || audience.isBlank()) audience = rootUrl;
 
-        String buildTypeId = request.getParameter("buildTypeId");
+        final var buildTypeId = request.getParameter("buildTypeId");
         if (buildTypeId == null || buildTypeId.isBlank()) {
             throw new TestStepException("Missing required parameter: buildTypeId");
         }
         // TC passes the id param as "buildType:<externalId>" — strip the prefix if present
-        String externalId = buildTypeId.startsWith("buildType:")
+        final var externalId = buildTypeId.startsWith("buildType:")
                 ? buildTypeId.substring("buildType:".length())
                 : buildTypeId;
-        SBuildType buildType = buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
+        final var buildType = buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
         if (buildType == null) {
             throw new TestStepException("Build type not found: " + buildTypeId);
         }
-        String subject = buildType.getExternalId();
+        final var subject = buildType.getExternalId();
 
-        Date now = new Date();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        final var now = new Date();
+        final var claims = new JWTClaimsSet.Builder()
                 .jwtID(UUID.randomUUID().toString())
                 .subject(subject)
                 .issuer(rootUrl)
@@ -157,49 +157,49 @@ public class JwtTestController extends BaseController {
                 .expirationTime(new Date(now.getTime() + ttl * 60_000L))
                 .build();
 
-        SignedJWT jwt = keyManager.sign(claims, algorithm);
-        String serialized = jwt.serialize();
-        String message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
+        final var jwt = keyManager.sign(claims, algorithm);
+        final var serialized = jwt.serialize();
+        final var message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
         return new String[]{message, serialized};
     }
 
     private String stepDiscovery() throws Exception {
-        String rootUrl = buildServer.getRootUrl();
-        String url = rootUrl + "/.well-known/openid-configuration";
-        HttpResponse<String> resp = httpGet(url);
+        final var rootUrl = buildServer.getRootUrl();
+        final var url = rootUrl + "/.well-known/openid-configuration";
+        final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
             throw new TestStepException("Discovery endpoint returned HTTP " + resp.statusCode());
         }
-        JSONObject doc = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(resp.body());
-        String issuer = (String) doc.get("issuer");
+        final var doc = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(resp.body());
+        final var issuer = (String) doc.get("issuer");
         if (!rootUrl.equals(issuer)) {
             throw new TestStepException("issuer mismatch: expected \"" + rootUrl + "\", got \"" + issuer + "\"");
         }
         return "Discovery endpoint OK (issuer matches)";
     }
 
-    private String stepJwks(HttpServletRequest request) throws Exception {
-        String token = request.getParameter("token");
+    private String stepJwks(final HttpServletRequest request) throws Exception {
+        final var token = request.getParameter("token");
         if (token == null || token.isBlank()) {
             throw new TestStepException("Missing required parameter: token");
         }
-        String rootUrl = buildServer.getRootUrl();
-        String url = rootUrl + "/.well-known/jwks.json";
-        HttpResponse<String> resp = httpGet(url);
+        final var rootUrl = buildServer.getRootUrl();
+        final var url = rootUrl + "/.well-known/jwks.json";
+        final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
             throw new TestStepException("JWKS endpoint returned HTTP " + resp.statusCode());
         }
-        JWKSet jwks = JWKSet.parse(resp.body());
-        SignedJWT jwt = SignedJWT.parse(token);
-        String kid = jwt.getHeader().getKeyID();
-        JWK jwk = jwks.getKeyByKeyId(kid);
+        final var jwks = JWKSet.parse(resp.body());
+        final var jwt = SignedJWT.parse(token);
+        final var kid = jwt.getHeader().getKeyID();
+        final var jwk = jwks.getKeyByKeyId(kid);
         if (jwk == null) {
             throw new TestStepException("Key ID not found in JWKS (kid: " + kid + ")");
         }
-        boolean verified;
-        if (jwk instanceof RSAKey rsaKey) {
+        final boolean verified;
+        if (jwk instanceof final RSAKey rsaKey) {
             verified = jwt.verify(new RSASSAVerifier(rsaKey));
-        } else if (jwk instanceof ECKey ecKey) {
+        } else if (jwk instanceof final ECKey ecKey) {
             verified = jwt.verify(new ECDSAVerifier(ecKey));
         } else {
             throw new TestStepException("Unsupported key type in JWKS: " + jwk.getKeyType());
@@ -210,10 +210,10 @@ public class JwtTestController extends BaseController {
         return "JWKS OK — signature verified";
     }
 
-    private String stepExchange(HttpServletRequest request) throws Exception {
-        String token = request.getParameter("token");
-        String serviceUrl = request.getParameter("serviceUrl");
-        String audience = request.getParameter("audience");
+    private String stepExchange(final HttpServletRequest request) throws Exception {
+        final var token = request.getParameter("token");
+        var serviceUrl = request.getParameter("serviceUrl");
+        final var audience = request.getParameter("audience");
         if (token == null || token.isBlank()) {
             throw new TestStepException("Missing required parameter: token");
         }
@@ -225,36 +225,36 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("serviceUrl must use HTTPS");
         }
 
-        String discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
-        HttpResponse<String> discoveryResp = httpGet(discoveryUrl);
+        final var discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
+        final var discoveryResp = httpGet(discoveryUrl);
         if (discoveryResp.statusCode() != 200) {
             throw new TestStepException("Service discovery returned HTTP " + discoveryResp.statusCode());
         }
-        JSONObject discoveryDoc = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(discoveryResp.body());
-        String tokenEndpoint = (String) discoveryDoc.get("token_endpoint");
+        final var discoveryDoc = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(discoveryResp.body());
+        final var tokenEndpoint = (String) discoveryDoc.get("token_endpoint");
         if (tokenEndpoint == null || tokenEndpoint.isBlank()) {
             throw new TestStepException("token_endpoint not found in service discovery document");
         }
 
-        URI serviceUri = URI.create(serviceUrl);
-        URI rawEndpointUri = URI.create(tokenEndpoint);
-        URI resolvedEndpoint = new URI(serviceUri.getScheme(), serviceUri.getAuthority(),
+        final var serviceUri = URI.create(serviceUrl);
+        final var rawEndpointUri = URI.create(tokenEndpoint);
+        final var resolvedEndpoint = new URI(serviceUri.getScheme(), serviceUri.getAuthority(),
                 rawEndpointUri.getPath(), rawEndpointUri.getQuery(), null);
 
-        String formBody = "grant_type=" + encode("urn:ietf:params:oauth:grant-type:token-exchange")
+        final var formBody = "grant_type=" + encode("urn:ietf:params:oauth:grant-type:token-exchange")
                 + "&audience=" + encode(audience != null ? audience : "")
                 + "&subject_token=" + encode(token)
                 + "&subject_token_type=" + encode("urn:ietf:params:oauth:token-type:jwt");
 
-        HttpRequest exchangeReq = HttpRequest.newBuilder()
+        final var exchangeReq = HttpRequest.newBuilder()
                 .uri(resolvedEndpoint)
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
-        HttpResponse<String> exchangeResp = httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString());
-        int status = exchangeResp.statusCode();
-        String bodySnippet = exchangeResp.body().length() > 200
+        final var exchangeResp = httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString());
+        final var status = exchangeResp.statusCode();
+        final var bodySnippet = exchangeResp.body().length() > 200
                 ? exchangeResp.body().substring(0, 200) : exchangeResp.body();
         if (status < 200 || status >= 300) {
             throw new TestStepException("Exchange failed (HTTP " + status + "): " + bodySnippet);
@@ -263,51 +263,51 @@ public class JwtTestController extends BaseController {
     }
 
     /** Allows HTTP for localhost/127.0.0.1 to support local development and testing. */
-    private static boolean isLocalhostUrl(String url) {
+    private static boolean isLocalhostUrl(final String url) {
         try {
-            String host = URI.create(url).getHost();
+            final var host = URI.create(url).getHost();
             return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             return false;
         }
     }
 
-    private static String encode(String value) {
+    private static String encode(final String value) {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    private HttpResponse<String> httpGet(String url) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
+    private HttpResponse<String> httpGet(final String url) throws Exception {
+        final var req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(5))
                 .GET()
                 .build();
         try {
             return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-        } catch (IOException e) {
+        } catch (final IOException e) {
             throw new TestStepException("Could not reach " + url + " — "
                     + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
-    private static int parseTtl(String value) {
+    private static int parseTtl(final String value) {
         try {
-            int ttl = (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
+            final var ttl = (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
             return Math.max(1, Math.min(ttl, 1440));
-        } catch (NumberFormatException e) {
+        } catch (final NumberFormatException e) {
             return 10;
         }
     }
 
-    private static void writeJson(HttpServletResponse response, boolean ok, String message) throws IOException {
-        JSONObject json = new JSONObject();
+    private static void writeJson(final HttpServletResponse response, final boolean ok, final String message) throws IOException {
+        final var json = new JSONObject();
         json.put("ok", ok);
         json.put("message", message);
         response.getWriter().write(json.toJSONString());
     }
 
     static class TestStepException extends Exception {
-        TestStepException(String message) {
+        TestStepException(final String message) {
             super(message);
         }
     }
