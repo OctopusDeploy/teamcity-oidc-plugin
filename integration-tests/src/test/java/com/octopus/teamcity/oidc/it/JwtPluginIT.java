@@ -1,6 +1,5 @@
 package com.octopus.teamcity.oidc.it;
 
-import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -27,19 +26,15 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
 
 /**
  * End-to-end integration tests: starts a real TeamCity server with the plugin installed,
  * then validates the OIDC endpoints over HTTP the same way a cloud provider would.
- *
  * Run with: mvn verify (from the project root, after mvn package)
  * Skipped by: mvn test  (only failsafe/verify triggers these)
- *
  * TeamCity startup takes 60–120 seconds; the container is shared across all tests in this class.
  */
 @Testcontainers
@@ -52,7 +47,7 @@ public class JwtPluginIT {
     private static final Path PLUGIN_ZIP = requirePluginZip();
 
     private static Path requirePluginZip() {
-        Path zip = Path.of(
+        final var zip = Path.of(
                 System.getProperty("project.basedir", "."),
                 "../target/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
         ).normalize();
@@ -91,7 +86,7 @@ public class JwtPluginIT {
     static String baseUrl;
     static HttpClient http;
 
-    /** Basic-auth header for the TeamCity super user (empty username, token as password). */
+    /** Basic-auth header for the TeamCity superuser (empty username, token as password). */
     static String superUserAuthHeader;
 
     /** TC CSRF token, fetched once during setup and reused for all POST requests. */
@@ -110,8 +105,8 @@ public class JwtPluginIT {
         waitForTcReady();
         dumpTcPluginLog();
 
-        String token = extractSuperUserTokenWithRetry();
-        String encoded = Base64.getEncoder().encodeToString((":" + token).getBytes());
+        final var token = extractSuperUserTokenWithRetry();
+        final var encoded = Base64.getEncoder().encodeToString((":" + token).getBytes());
         superUserAuthHeader = "Basic " + encoded;
 
         configureServerRootUrl();
@@ -130,7 +125,7 @@ public class JwtPluginIT {
     private static void acceptLicenseAgreementIfRequired() throws Exception {
         // Wait until TC has logged the license-agreement stage, which means it is
         // now blocked and ready to process the acceptance.
-        long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
         while (System.currentTimeMillis() < deadline) {
             final var result = teamcity.execInContainer(
                     "grep", "-q", "Review and accept TeamCity license agreement",
@@ -153,9 +148,9 @@ public class JwtPluginIT {
      * Wait until TC transitions from 503 (loading / awaiting license) to 401 (ready).
      */
     private static void waitForTcReady() throws Exception {
-        long deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
         while (System.currentTimeMillis() < deadline) {
-            HttpResponse<String> r = http.send(
+            final var r = http.send(
                     HttpRequest.newBuilder().uri(URI.create(baseUrl + "/")).GET().build(),
                     HttpResponse.BodyHandlers.ofString()
             );
@@ -195,7 +190,7 @@ public class JwtPluginIT {
          * Fix: configure TeamCity guest access for /.well-known/* paths, or implement
          * a RequestInterceptorAdapter that exempts these paths from auth.
          */
-        HttpResponse<String> response = get("/.well-known/jwks.json", null);
+        final var response = get("/.well-known/jwks.json", null);
 
         assertThat(response.statusCode())
                 .as("JWKS endpoint must return 200 without authentication — " +
@@ -206,11 +201,11 @@ public class JwtPluginIT {
 
     @Test
     void jwksEndpointReturnsBothRsaAndEcPublicKeys() throws Exception {
-        String body = publicGet("/.well-known/jwks.json");
-        JWKSet jwks = JWKSet.parse(body);
+        final var body = publicGet("/.well-known/jwks.json");
+        final var jwks = JWKSet.parse(body);
 
         boolean hasRsa = false, hasEc = false;
-        for (JWK key : jwks.getKeys()) {
+        for (final var key : jwks.getKeys()) {
             if (key instanceof RSAKey) hasRsa = true;
             if (key instanceof ECKey) hasEc = true;
         }
@@ -221,10 +216,10 @@ public class JwtPluginIT {
 
     @Test
     void jwksEndpointNeverExposesPrivateKeyMaterial() throws Exception {
-        String body = publicGet("/.well-known/jwks.json");
-        JWKSet jwks = JWKSet.parse(body);
+        final var body = publicGet("/.well-known/jwks.json");
+        final var jwks = JWKSet.parse(body);
 
-        for (JWK key : jwks.getKeys()) {
+        for (final var key : jwks.getKeys()) {
             assertThat(key.isPrivate())
                     .as("Key %s must not contain private key material", key.getKeyID())
                     .isFalse();
@@ -233,7 +228,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksResponseHasCacheControlHeader() throws Exception {
-        HttpResponse<String> response = publicGetWithHeaders("/.well-known/jwks.json");
+        final var response = publicGetWithHeaders("/.well-known/jwks.json");
 
         assertThat(response.headers().firstValue("Cache-Control"))
                 .isPresent()
@@ -242,12 +237,12 @@ public class JwtPluginIT {
 
     @Test
     void jwksKeyIdsAreThumbprints() throws Exception {
-        String body = publicGet("/.well-known/jwks.json");
-        JWKSet jwks = JWKSet.parse(body);
+        final var body = publicGet("/.well-known/jwks.json");
+        final var jwks = JWKSet.parse(body);
 
-        for (JWK key : jwks.getKeys()) {
-            String kid = key.getKeyID();
-            String expectedThumbprint = key.computeThumbprint().toString();
+        for (final var key : jwks.getKeys()) {
+            final var kid = key.getKeyID();
+            final var expectedThumbprint = key.computeThumbprint().toString();
             assertThat(kid)
                     .as("kid for key %s should be its thumbprint", kid)
                     .isEqualTo(expectedThumbprint);
@@ -264,7 +259,7 @@ public class JwtPluginIT {
          * CRITICAL: same requirement as the JWKS endpoint. Cloud providers fetch
          * the discovery document without credentials during OIDC provider setup.
          */
-        HttpResponse<String> response = get("/.well-known/openid-configuration", null);
+        final var response = get("/.well-known/openid-configuration", null);
 
         assertThat(response.statusCode())
                 .as("Discovery endpoint must return 200 without authentication. " +
@@ -274,17 +269,17 @@ public class JwtPluginIT {
 
     @Test
     void discoveryDocumentIssuerMatchesServerUrl() throws Exception {
-        JsonObject doc = fetchDiscoveryDocument();
+        final var doc = fetchDiscoveryDocument();
         assertThat(doc.get("issuer").getAsString()).isEqualTo(baseUrl);
     }
 
     @Test
     void discoveryDocumentJwksUriPointsToWorkingJwksEndpoint() throws Exception {
-        JsonObject doc = fetchDiscoveryDocument();
-        String jwksUri = doc.get("jwks_uri").getAsString();
+        final var doc = fetchDiscoveryDocument();
+        final var jwksUri = doc.get("jwks_uri").getAsString();
 
         // The URI in the document should resolve to a valid JWKS
-        HttpResponse<String> jwksResponse = http.send(
+        final var jwksResponse = http.send(
                 HttpRequest.newBuilder().uri(URI.create(jwksUri)).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
@@ -301,15 +296,15 @@ public class JwtPluginIT {
 
     @Test
     void discoveryDocumentAdvertisesBothSigningAlgorithms() throws Exception {
-        JsonObject doc = fetchDiscoveryDocument();
-        List<String> algs = toStringList(doc.get("id_token_signing_alg_values_supported").getAsJsonArray());
+        final var doc = fetchDiscoveryDocument();
+        final var algs = toStringList(doc.get("id_token_signing_alg_values_supported").getAsJsonArray());
 
         assertThat(algs).contains("RS256", "ES256");
     }
 
     @Test
     void discoveryDocumentHasAllRequiredOidcFields() throws Exception {
-        JsonObject doc = fetchDiscoveryDocument();
+        final var doc = fetchDiscoveryDocument();
 
         assertThat(doc.has("issuer")).as("issuer required").isTrue();
         assertThat(doc.has("jwks_uri")).as("jwks_uri required").isTrue();
@@ -320,7 +315,7 @@ public class JwtPluginIT {
 
     @Test
     void discoveryDocumentHasCacheControlHeader() throws Exception {
-        HttpResponse<String> response = publicGetWithHeaders("/.well-known/openid-configuration");
+        final var response = publicGetWithHeaders("/.well-known/openid-configuration");
 
         assertThat(response.headers().firstValue("Cache-Control"))
                 .isPresent()
@@ -333,8 +328,8 @@ public class JwtPluginIT {
 
     @Test
     void discoveryDocumentJwksUriEndsWithJwksPath() throws Exception {
-        JsonObject doc = fetchDiscoveryDocument();
-        String jwksUri = doc.get("jwks_uri").getAsString();
+        final var doc = fetchDiscoveryDocument();
+        final var jwksUri = doc.get("jwks_uri").getAsString();
 
         // Must end with the path the JWKS controller is registered on
         assertThat(jwksUri).endsWith("/.well-known/jwks.json");
@@ -343,7 +338,7 @@ public class JwtPluginIT {
     @Test
     void discoveryIssuerHasNoTrailingSlash() throws Exception {
         // AWS and GCP compare the issuer claim character-for-character
-        JsonObject doc = fetchDiscoveryDocument();
+        final var doc = fetchDiscoveryDocument();
         assertThat(doc.get("issuer").getAsString()).doesNotEndWith("/");
     }
 
@@ -353,7 +348,7 @@ public class JwtPluginIT {
 
     @Test
     void keyRotationEndpointRequiresPost() throws Exception {
-        HttpResponse<String> response = get("/admin/jwtKeyRotate.html", superUserAuthHeader);
+        final var response = get("/admin/jwtKeyRotate.html", superUserAuthHeader);
         // GET must be rejected
         assertThat(response.statusCode()).isEqualTo(405);
     }
@@ -361,30 +356,30 @@ public class JwtPluginIT {
     @Test
     void keyRotationEndpointRotatesKeysAndUpdatesJwks() throws Exception {
         // Capture current key IDs
-        String jwksBefore = publicGet("/.well-known/jwks.json");
-        JWKSet setsBefore = JWKSet.parse(jwksBefore);
-        List<String> kidsBefore = setsBefore.getKeys().stream().map(JWK::getKeyID).toList();
+        final var jwksBefore = publicGet("/.well-known/jwks.json");
+        final var setsBefore = JWKSet.parse(jwksBefore);
+        final var kidsBefore = setsBefore.getKeys().stream().map(JWK::getKeyID).toList();
 
         // Rotate
-        HttpResponse<String> rotateResponse = post("/admin/jwtKeyRotate.html", superUserAuthHeader);
+        final var rotateResponse = post("/admin/jwtKeyRotate.html", superUserAuthHeader);
         assertThat(rotateResponse.statusCode()).isEqualTo(200);
         assertThat(rotateResponse.body()).contains("rotated");
 
         // New JWKS should have new keys; previously-active keys become retired (overlap window).
         // Previously-retired keys are evicted, so not all old kids will be present.
-        String jwksAfter = publicGet("/.well-known/jwks.json");
-        JWKSet setsAfter = JWKSet.parse(jwksAfter);
-        List<String> kidsAfter = setsAfter.getKeys().stream().map(JWK::getKeyID).toList();
+        final var jwksAfter = publicGet("/.well-known/jwks.json");
+        final var setsAfter = JWKSet.parse(jwksAfter);
+        final var kidsAfter = setsAfter.getKeys().stream().map(JWK::getKeyID).toList();
 
         // Some old keys must still be in JWKS (the ones that were active are now retired)
-        List<String> retained = new ArrayList<>(kidsAfter);
+        final List<String> retained = new ArrayList<>(kidsAfter);
         retained.retainAll(kidsBefore);
         assertThat(retained)
                 .as("Previously-active keys must remain in JWKS after rotation (overlap window for in-flight JWTs)")
                 .isNotEmpty();
 
         // New keys must have been added
-        List<String> added = new ArrayList<>(kidsAfter);
+        final List<String> added = new ArrayList<>(kidsAfter);
         added.removeAll(kidsBefore);
         assertThat(added)
                 .as("New active keys must be added by rotation")
@@ -395,8 +390,8 @@ public class JwtPluginIT {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private HttpResponse<String> get(String path, String authHeader) throws Exception {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
+    private HttpResponse<String> get(final String path, final String authHeader) throws Exception {
+        final var builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
                 .GET();
         if (authHeader != null) {
@@ -405,21 +400,9 @@ public class JwtPluginIT {
         return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    private String authenticatedGet(String path) throws Exception {
-        HttpResponse<String> response = get(httpAuthPath(path), superUserAuthHeader);
-        assertThat(response.statusCode())
-                .as("Authenticated GET %s returned unexpected status", path)
-                .isEqualTo(200);
-        return response.body();
-    }
-
-    private HttpResponse<String> authenticatedGetWithHeaders(String path) throws Exception {
-        return get(httpAuthPath(path), superUserAuthHeader);
-    }
-
-    private HttpResponse<String> post(String path, String authHeader) throws Exception {
-        String body = csrfToken != null ? "tc-csrf-token=" + csrfToken : "";
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
+    private HttpResponse<String> post(final String path, final String authHeader) throws Exception {
+        final var body = csrfToken != null ? "tc-csrf-token=" + csrfToken : "";
+        final var builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + httpAuthPath(path)))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body));
@@ -430,13 +413,13 @@ public class JwtPluginIT {
     }
 
     /** Prefixes the path with /httpAuth/ so TeamCity processes Basic auth credentials. */
-    private static String httpAuthPath(String path) {
+    private static String httpAuthPath(final String path) {
         return "/httpAuth" + path;
     }
 
     /** Fetches a public path without authentication or /httpAuth/ prefix. */
-    private String publicGet(String path) throws Exception {
-        HttpResponse<String> response = get(path, null);
+    private String publicGet(final String path) throws Exception {
+        final var response = get(path, null);
         assertThat(response.statusCode())
                 .as("GET %s returned unexpected status", path)
                 .isEqualTo(200);
@@ -444,17 +427,17 @@ public class JwtPluginIT {
     }
 
     /** Fetches a public path without auth, returning the full response for header inspection. */
-    private HttpResponse<String> publicGetWithHeaders(String path) throws Exception {
+    private HttpResponse<String> publicGetWithHeaders(final String path) throws Exception {
         return get(path, null);
     }
 
     private JsonObject fetchDiscoveryDocument() throws Exception {
-        String body = publicGet("/.well-known/openid-configuration");
+        final var body = publicGet("/.well-known/openid-configuration");
         return JsonParser.parseString(body).getAsJsonObject();
     }
 
-    private List<String> toStringList(JsonArray array) {
-        List<String> result = new ArrayList<>();
+    private List<String> toStringList(final JsonArray array) {
+        final List<String> result = new ArrayList<>();
         array.forEach(e -> result.add(e.getAsString()));
         return result;
     }
@@ -467,22 +450,22 @@ public class JwtPluginIT {
      */
     private static void configureServerRootUrl() throws Exception {
         // Fetch the CSRF token from the global settings page.
-        HttpResponse<String> page = http.send(
+        final var page = http.send(
                 HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/httpAuth/admin/admin.html?item=serverConfigGeneral"))
                         .header("Authorization", superUserAuthHeader)
                         .GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
-        Matcher csrfMatcher = Pattern.compile("tc-csrf-token\" content=\"([^\"]+)\"").matcher(page.body());
+        final var csrfMatcher = Pattern.compile("tc-csrf-token\" content=\"([^\"]+)\"").matcher(page.body());
         if (!csrfMatcher.find()) {
             throw new IllegalStateException("Could not find CSRF token on global settings page");
         }
-        String csrf = csrfMatcher.group(1);
+        final var csrf = csrfMatcher.group(1);
         csrfToken = csrf;
 
         // POST the new root URL.
-        String form = "rootUrl=" + URI.create(baseUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F")
+        final var form = "rootUrl=" + URI.create(baseUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F")
                       + "&submitSettings=store&tc-csrf-token=" + csrf;
         http.send(
                 HttpRequest.newBuilder()
@@ -496,20 +479,20 @@ public class JwtPluginIT {
     }
 
     /**
-     * TC writes the super user token to teamcity-server.log after plugins are fully loaded.
+     * TC writes the superuser token to teamcity-server.log after plugins are fully loaded.
      * Retry for up to 60 seconds in case TC just finished accepting the license agreement
      * and hasn't written the token yet.
      */
     private static String extractSuperUserTokenWithRetry() throws Exception {
-        long deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
-        String lastError = "";
+        final var deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
+        var lastError = "";
         while (System.currentTimeMillis() < deadline) {
             final var result = teamcity.execInContainer(
                     "grep", "-o", "Super user authentication token: [0-9]*",
                     "/opt/teamcity/logs/teamcity-server.log"
             );
-            String output = result.getStdout().trim();
-            Matcher matcher = Pattern.compile("Super user authentication token: (\\d+)").matcher(output);
+            final var output = result.getStdout().trim();
+            final var matcher = Pattern.compile("Super user authentication token: (\\d+)").matcher(output);
             if (matcher.find()) {
                 return matcher.group(1);
             }
