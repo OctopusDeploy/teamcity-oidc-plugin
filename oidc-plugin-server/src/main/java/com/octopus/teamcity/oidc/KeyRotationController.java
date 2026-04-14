@@ -58,7 +58,11 @@ public class KeyRotationController extends BaseController {
         }
 
         final var user = SessionUser.getUser(request);
-        if (user == null || !user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
+        if (user == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return null;
+        }
+        if (!user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return null;
         }

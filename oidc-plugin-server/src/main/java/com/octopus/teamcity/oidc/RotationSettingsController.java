@@ -55,7 +55,12 @@ public class RotationSettingsController extends BaseController {
         response.setContentType("application/json;charset=UTF-8");
 
         final var user = SessionUser.getUser(request);
-        if (user == null || !user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
+        if (user == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            writeJson(response, false, "Not authenticated");
+            return null;
+        }
+        if (!user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             writeJson(response, false, "Access denied");
             return null;

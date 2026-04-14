@@ -158,7 +158,7 @@ public class RotationSettingsControllerTest {
     }
 
     @Test
-    void nullSessionUserReturns403() throws Exception {
+    void nullSessionUserReturns401() throws Exception {
         when(request.getMethod()).thenReturn("POST");
         when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
@@ -167,6 +167,6 @@ public class RotationSettingsControllerTest {
             controller(new RotationSettingsManager(tempDir)).doHandle(request, response);
         }
 
-        verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 }

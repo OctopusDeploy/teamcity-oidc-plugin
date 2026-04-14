@@ -129,7 +129,7 @@ public class KeyRotationControllerTest {
     }
 
     @Test
-    public void postWithNoSessionUserReturns403() throws Exception {
+    public void postWithNoSessionUserReturns401() throws Exception {
         when(request.getMethod()).thenReturn("POST");
 
         try (final var sessionUser = mockStatic(SessionUser.class)) {
@@ -137,7 +137,7 @@ public class KeyRotationControllerTest {
             controller().doHandle(request, response);
         }
 
-        verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     @Test
