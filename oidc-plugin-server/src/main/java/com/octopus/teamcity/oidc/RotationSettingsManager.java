@@ -22,7 +22,7 @@ public class RotationSettingsManager {
 
     private final File settingsFile;
 
-    public RotationSettingsManager(@NotNull File keyDirectory) {
+    public RotationSettingsManager(@NotNull final File keyDirectory) {
         this.settingsFile = new File(keyDirectory, FILE_NAME);
     }
 
@@ -31,30 +31,37 @@ public class RotationSettingsManager {
             return RotationSettings.defaults();
         }
         try {
-            String json = FileUtils.readFileToString(settingsFile, StandardCharsets.UTF_8);
-            JSONObject obj = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(json);
-            boolean enabled = Boolean.TRUE.equals(obj.get("enabled"));
-            String schedule = obj.containsKey("cronSchedule")
+            final var json = FileUtils.readFileToString(settingsFile, StandardCharsets.UTF_8);
+            final var obj = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(json);
+            final var defaults = RotationSettings.defaults();
+            final var enabledValue = obj.get("enabled");
+            final var enabled = enabledValue instanceof Boolean ? (Boolean) enabledValue : defaults.enabled();
+            final var schedule = obj.containsKey("cronSchedule")
                     ? (String) obj.get("cronSchedule")
-                    : RotationSettings.DEFAULT_SCHEDULE;
-            Instant lastRotatedAt = obj.containsKey("lastRotatedAt") && obj.get("lastRotatedAt") != null
+                    : defaults.cronSchedule();
+            final var lastRotatedAt = obj.containsKey("lastRotatedAt") && obj.get("lastRotatedAt") != null
                     ? Instant.parse((String) obj.get("lastRotatedAt"))
                     : null;
             return new RotationSettings(enabled, schedule, lastRotatedAt);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.log(Level.WARNING, "JWT plugin: failed to load rotation settings, using defaults", e);
             return RotationSettings.defaults();
         }
     }
 
-    public synchronized void save(@NotNull RotationSettings settings) {
-        JSONObject obj = new JSONObject();
+    public synchronized void updateLastRotatedAt(@NotNull final Instant lastRotatedAt) {
+        final var current = load();
+        save(new RotationSettings(current.enabled(), current.cronSchedule(), lastRotatedAt));
+    }
+
+    public synchronized void save(@NotNull final RotationSettings settings) {
+        final var obj = new JSONObject();
         obj.put("enabled", settings.enabled());
         obj.put("cronSchedule", settings.cronSchedule());
         obj.put("lastRotatedAt", settings.lastRotatedAt() != null ? settings.lastRotatedAt().toString() : null);
         try {
             FileUtils.writeStringToFile(settingsFile, obj.toJSONString(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
+        } catch (final IOException e) {
             LOG.log(Level.SEVERE, "JWT plugin: failed to save rotation settings", e);
         }
     }

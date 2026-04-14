@@ -27,83 +27,73 @@ public class KeyRotationSchedulerTest {
         return new JwtKeyManager(serverPaths);
     }
 
+    private RotationSettingsManager settingsManager() {
+        return new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
+    }
+
     @Test
     void registersAsBuildServerListener() {
-        JwtKeyManager km = keyManager();
-        RotationSettingsManager mgr = new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
-        new KeyRotationScheduler(buildServer, km, mgr);
+        new KeyRotationScheduler(buildServer, keyManager(), settingsManager());
         verify(buildServer).addListener(any(KeyRotationScheduler.class));
     }
 
     @Test
     void doesNotRotateWhenDisabled() throws Exception {
-        JwtKeyManager km = keyManager();
-        File keyDir = new File(tempDir, "JwtBuildFeature");
-        RotationSettingsManager mgr = new RotationSettingsManager(keyDir);
+        final var km = keyManager();
+        final var mgr = settingsManager();
         mgr.save(new RotationSettings(false, RotationSettings.DEFAULT_SCHEDULE, null));
-        String originalKid = km.getRsaKey().getKeyID();
+        final var originalKid = km.getRsaKey().getKeyID();
 
-        KeyRotationScheduler scheduler = new KeyRotationScheduler(buildServer, km, mgr);
-        scheduler.checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
     }
 
     @Test
     void rotatesWhenEnabledAndOverdue() throws Exception {
-        JwtKeyManager km = keyManager();
-        File keyDir = new File(tempDir, "JwtBuildFeature");
-        RotationSettingsManager mgr = new RotationSettingsManager(keyDir);
-        // lastRotatedAt in the distant past → overdue
+        final var km = keyManager();
+        final var mgr = settingsManager();
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
                 Instant.parse("2000-01-01T00:00:00Z")));
-        String originalKid = km.getRsaKey().getKeyID();
+        final var originalKid = km.getRsaKey().getKeyID();
 
-        KeyRotationScheduler scheduler = new KeyRotationScheduler(buildServer, km, mgr);
-        scheduler.checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 
     @Test
     void doesNotRotateWhenEnabledButNotYetDue() throws Exception {
-        JwtKeyManager km = keyManager();
-        File keyDir = new File(tempDir, "JwtBuildFeature");
-        RotationSettingsManager mgr = new RotationSettingsManager(keyDir);
+        final var km = keyManager();
+        final var mgr = settingsManager();
         // lastRotatedAt is now → next fire is months away
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE, Instant.now()));
-        String originalKid = km.getRsaKey().getKeyID();
+        final var originalKid = km.getRsaKey().getKeyID();
 
-        KeyRotationScheduler scheduler = new KeyRotationScheduler(buildServer, km, mgr);
-        scheduler.checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
     }
 
     @Test
     void updatesLastRotatedAtAfterRotation() throws Exception {
-        JwtKeyManager km = keyManager();
-        File keyDir = new File(tempDir, "JwtBuildFeature");
-        RotationSettingsManager mgr = new RotationSettingsManager(keyDir);
+        final var km = keyManager();
+        final var mgr = settingsManager();
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
                 Instant.parse("2000-01-01T00:00:00Z")));
 
-        KeyRotationScheduler scheduler = new KeyRotationScheduler(buildServer, km, mgr);
-        Instant before = Instant.now();
-        scheduler.checkAndRotateIfDue();
-        Instant after = Instant.now();
+        final var before = Instant.now();
+        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+        final var after = Instant.now();
 
-        Instant recorded = mgr.load().lastRotatedAt();
+        final var recorded = mgr.load().lastRotatedAt();
         assertThat(recorded).isNotNull();
-        assertThat(recorded).isAfterOrEqualTo(before);
-        assertThat(recorded).isBeforeOrEqualTo(after);
+        assertThat(recorded).isAfterOrEqualTo(before).isBeforeOrEqualTo(after);
     }
 
     @Test
     void shuttingDownStopsExecutor() {
-        JwtKeyManager km = keyManager();
-        RotationSettingsManager mgr = new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
-        KeyRotationScheduler scheduler = new KeyRotationScheduler(buildServer, km, mgr);
+        final var scheduler = new KeyRotationScheduler(buildServer, keyManager(), settingsManager());
         scheduler.serverStartup();
         scheduler.serverShutdown(); // must not throw or hang
     }

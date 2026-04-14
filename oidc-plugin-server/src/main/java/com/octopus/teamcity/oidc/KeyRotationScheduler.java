@@ -21,13 +21,13 @@ public class KeyRotationScheduler extends BuildServerAdapter {
     private final RotationSettingsManager settingsManager;
     private final ScheduledExecutorService executor;
 
-    public KeyRotationScheduler(@NotNull SBuildServer buildServer,
-                                @NotNull JwtKeyManager keyManager,
-                                @NotNull RotationSettingsManager settingsManager) {
+    public KeyRotationScheduler(@NotNull final SBuildServer buildServer,
+                                @NotNull final JwtKeyManager keyManager,
+                                @NotNull final RotationSettingsManager settingsManager) {
         this.keyManager = keyManager;
         this.settingsManager = settingsManager;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "jwt-key-rotation-scheduler");
+            final var t = new Thread(r, "jwt-key-rotation-scheduler");
             t.setDaemon(true);
             return t;
         });
@@ -40,7 +40,7 @@ public class KeyRotationScheduler extends BuildServerAdapter {
         executor.scheduleAtFixedRate(() -> {
             try {
                 checkAndRotateIfDue();
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected error during rotation check", e);
             }
         }, 0, 1, TimeUnit.HOURS);
@@ -54,29 +54,29 @@ public class KeyRotationScheduler extends BuildServerAdapter {
 
     /** Package-private for testing. */
     void checkAndRotateIfDue() {
-        RotationSettings settings = settingsManager.load();
+        final var settings = settingsManager.load();
         if (!settings.enabled()) {
             return;
         }
 
-        CronExpression cron;
+        final CronExpression cron;
         try {
             cron = CronExpression.parse(settings.cronSchedule());
-        } catch (IllegalArgumentException e) {
+        } catch (final IllegalArgumentException e) {
             LOG.warning("JWT plugin: invalid cron schedule \"" + settings.cronSchedule() + "\": " + e.getMessage());
             return;
         }
 
-        LocalDateTime lastRotated = settings.lastRotatedAt() != null
+        final var lastRotated = settings.lastRotatedAt() != null
                 ? settings.lastRotatedAt().atZone(ZoneOffset.UTC).toLocalDateTime()
                 : LocalDateTime.ofEpochSecond(0, 0, ZoneOffset.UTC);
 
-        LocalDateTime nextDue = cron.next(lastRotated);
+        final var nextDue = cron.next(lastRotated);
         if (nextDue == null) {
             return;
         }
 
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        final var now = LocalDateTime.now(ZoneOffset.UTC);
         if (now.isBefore(nextDue)) {
             return;
         }
@@ -84,13 +84,9 @@ public class KeyRotationScheduler extends BuildServerAdapter {
         LOG.info("JWT plugin: auto-rotating keys (next was due " + nextDue + " UTC)");
         try {
             keyManager.rotateKey();
-            settingsManager.save(new RotationSettings(
-                    settings.enabled(),
-                    settings.cronSchedule(),
-                    Instant.now()
-            ));
+            settingsManager.updateLastRotatedAt(Instant.now());
             LOG.info("JWT plugin: auto key rotation completed successfully");
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: auto key rotation failed", e);
         }
     }

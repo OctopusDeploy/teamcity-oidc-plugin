@@ -52,10 +52,12 @@
 </table>
 
 <script>
+  const jwtContextPath = '${pageContext.request.contextPath}';
+
   function jwtSaveRotationSettings() {
-    final var enabled = document.getElementById('rotationEnabled').checked;
-    final var schedule = document.getElementById('cronSchedule').value;
-    jwtAdminPost('/admin/jwtRotationSettings.html',
+    const enabled = document.getElementById('rotationEnabled').checked;
+    const schedule = document.getElementById('cronSchedule').value;
+    jwtAdminPost(jwtContextPath + '/admin/jwtRotationSettings.html',
       'enabled=' + enabled + '&cronSchedule=' + encodeURIComponent(schedule),
       function(data) { jwtShowResult('jwtSaveResult', data.ok, data.message); },
       function() { jwtShowResult('jwtSaveResult', false, 'Request failed'); }
@@ -63,14 +65,14 @@
   }
 
   function jwtRotateNow() {
-    jwtAdminPost('/admin/jwtKeyRotate.html', '',
+    jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
       function(data) {
-        final var ok = data.status === 'rotated';
-        final var msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');
+        const ok = data.status === 'rotated';
+        const msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');
         jwtShowResult('jwtRotateResult', ok, msg);
         if (ok) {
-          final var now = new Date();
-          final var formatted = now.getUTCFullYear() + '-' +
+          const now = new Date();
+          const formatted = now.getUTCFullYear() + '-' +
             String(now.getUTCMonth() + 1).padStart(2, '0') + '-' +
             String(now.getUTCDate()).padStart(2, '0') + ' ' +
             String(now.getUTCHours()).padStart(2, '0') + ':' +
@@ -97,7 +99,7 @@
   }
 
   function jwtShowResult(elementId, ok, message) {
-    final var el = document.getElementById(elementId);
+    const el = document.getElementById(elementId);
     el.textContent = message;
     el.style.color = ok ? 'green' : 'red';
     el.style.display = 'inline';

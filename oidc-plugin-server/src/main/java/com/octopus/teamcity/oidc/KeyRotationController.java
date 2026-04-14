@@ -3,7 +3,6 @@ package com.octopus.teamcity.oidc;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.auth.Permission;
-import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.CSRFFilter;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
 import jetbrains.buildServer.web.util.SessionUser;
@@ -24,27 +23,31 @@ public class KeyRotationController extends BaseController {
     static final String PATH = "/admin/jwtKeyRotate.html";
 
     @NotNull private final JwtKeyManager keyManager;
+    @NotNull private final RotationSettingsManager settingsManager;
     @NotNull private final CSRFFilter csrfFilter;
 
     @Autowired
-    public KeyRotationController(@NotNull WebControllerManager controllerManager,
-                                 @NotNull JwtKeyManager keyManager,
-                                 @NotNull ExtensionHolder extensionHolder) {
-        this(controllerManager, keyManager, new CSRFFilter(extensionHolder));
+    public KeyRotationController(@NotNull final WebControllerManager controllerManager,
+                                 @NotNull final JwtKeyManager keyManager,
+                                 @NotNull final RotationSettingsManager settingsManager,
+                                 @NotNull final ExtensionHolder extensionHolder) {
+        this(controllerManager, keyManager, settingsManager, new CSRFFilter(extensionHolder));
     }
 
-    KeyRotationController(@NotNull WebControllerManager controllerManager,
-                          @NotNull JwtKeyManager keyManager,
-                          @NotNull CSRFFilter csrfFilter) {
+    KeyRotationController(@NotNull final WebControllerManager controllerManager,
+                          @NotNull final JwtKeyManager keyManager,
+                          @NotNull final RotationSettingsManager settingsManager,
+                          @NotNull final CSRFFilter csrfFilter) {
         this.keyManager = keyManager;
+        this.settingsManager = settingsManager;
         this.csrfFilter = csrfFilter;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: KeyRotationController registered at " + PATH);
     }
 
     @Override
-    protected ModelAndView doHandle(@NotNull HttpServletRequest request,
-                                    @NotNull HttpServletResponse response) throws IOException {
+    protected ModelAndView doHandle(@NotNull final HttpServletRequest request,
+                                    @NotNull final HttpServletResponse response) throws IOException {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return null;
@@ -54,8 +57,12 @@ public class KeyRotationController extends BaseController {
             return null;
         }
 
-        SUser user = SessionUser.getUser(request);
-        if (user == null || !user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)) {
+        final var user = SessionUser.getUser(request);
+        if (user == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return null;
+        }
+        if (!user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return null;
         }
@@ -63,16 +70,17 @@ public class KeyRotationController extends BaseController {
         try {
             LOG.info("JWT plugin: key rotation requested");
             keyManager.rotateKey();
+            settingsManager.updateLastRotatedAt(java.time.Instant.now());
             LOG.info("JWT plugin: key rotation completed successfully");
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write("{\"status\":\"rotated\"}");
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: key rotation failed", e);
             response.setContentType("application/json;charset=UTF-8");
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            JSONObject error = new JSONObject();
+            final var error = new JSONObject();
             error.put("status", "error");
-            error.put("message", e.getMessage());
+            error.put("message", "Key rotation failed.");
             response.getWriter().write(error.toJSONString());
         }
         return null;

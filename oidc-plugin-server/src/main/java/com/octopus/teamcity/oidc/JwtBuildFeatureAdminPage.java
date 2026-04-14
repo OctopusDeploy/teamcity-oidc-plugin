@@ -58,15 +58,18 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
             model.put("lastRotatedAt", "Never");
         }
 
-        if (settings.enabled() && settings.lastRotatedAt() != null) {
+        if (settings.enabled()) {
             try {
                 final var  cron = CronExpression.parse(settings.cronSchedule());
-                final var  last = settings.lastRotatedAt().atZone(ZoneOffset.UTC).toLocalDateTime();
+                final var  lastInstant = settings.lastRotatedAt() != null
+                        ? settings.lastRotatedAt()
+                        : java.time.Instant.EPOCH;
+                final var  last = lastInstant.atZone(ZoneOffset.UTC).toLocalDateTime();
                 final var  next = cron.next(last);
                 model.put("nextDue", next != null
                         ? FMT.format(next.atZone(ZoneOffset.UTC).toInstant()) + " UTC"
                         : null);
-            } catch (IllegalArgumentException e) {
+            } catch (final IllegalArgumentException e) {
                 model.put("nextDue", null);
             }
         } else {

@@ -15,6 +15,6 @@
     <bean id="jwtBuildFeatureAdminPage" class="com.octopus.teamcity.oidc.JwtBuildFeatureAdminPage"/>
     <bean id="keyRotationController" class="com.octopus.teamcity.oidc.KeyRotationController"/>
     <bean id="rotationSettingsController" class="com.octopus.teamcity.oidc.RotationSettingsController"/>
-    <bean id="jwtTestController" class="com.octopus.teamcity.oidc.JwtTestController"/>
     <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter"/>
 </beans>
+

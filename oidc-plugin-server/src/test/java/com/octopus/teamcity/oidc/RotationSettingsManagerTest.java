@@ -14,8 +14,8 @@ public class RotationSettingsManagerTest {
 
     @Test
     void returnsDefaultsWhenFileAbsent() {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
-        RotationSettings settings = mgr.load();
+        final var mgr = new RotationSettingsManager(tempDir);
+        final var settings = mgr.load();
         assertThat(settings.enabled()).isTrue();
         assertThat(settings.cronSchedule()).isEqualTo(RotationSettings.DEFAULT_SCHEDULE);
         assertThat(settings.lastRotatedAt()).isNull();
@@ -23,31 +23,32 @@ public class RotationSettingsManagerTest {
 
     @Test
     void roundTripsEnabledSettings() {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
-        Instant now = Instant.parse("2026-04-04T03:00:00Z");
-        mgr.save(new RotationSettings(true, "0 0 2 * * *", now));
+        final var mgr = new RotationSettingsManager(tempDir);
+        final var now = Instant.parse("2026-04-04T03:00:00Z");
+        final var schedule = "0 0 2 * * *";
+        mgr.save(new RotationSettings(true, schedule, now));
 
-        RotationSettings loaded = mgr.load();
+        final var loaded = mgr.load();
         assertThat(loaded.enabled()).isTrue();
-        assertThat(loaded.cronSchedule()).isEqualTo("0 0 2 * * *");
+        assertThat(loaded.cronSchedule()).isEqualTo(schedule);
         assertThat(loaded.lastRotatedAt()).isEqualTo(now);
     }
 
     @Test
     void roundTripsNullLastRotatedAt() {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
+        final var mgr = new RotationSettingsManager(tempDir);
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE, null));
 
-        RotationSettings loaded = mgr.load();
+        final var loaded = mgr.load();
         assertThat(loaded.lastRotatedAt()).isNull();
     }
 
     @Test
     void saveIsVisibleAfterReload() {
-        RotationSettingsManager mgr = new RotationSettingsManager(tempDir);
+        final var mgr = new RotationSettingsManager(tempDir);
         mgr.save(new RotationSettings(true, "0 0 4 * * *", null));
         // new instance, same directory
-        RotationSettingsManager mgr2 = new RotationSettingsManager(tempDir);
+        final var mgr2 = new RotationSettingsManager(tempDir);
         assertThat(mgr2.load().cronSchedule()).isEqualTo("0 0 4 * * *");
     }
 }

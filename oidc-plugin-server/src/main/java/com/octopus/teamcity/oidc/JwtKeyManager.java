@@ -60,6 +60,11 @@ public class JwtKeyManager {
         }
     }
 
+    /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
+    public RotationSettingsManager createRotationSettingsManager() {
+        return new RotationSettingsManager(keyDirectory);
+    }
+
     public RSAKey getRsaKey() {
         return keys.get().rsa();
     }
