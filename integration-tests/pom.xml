@@ -91,7 +91,6 @@
                 <configuration>
                     <systemPropertyVariables>
                         <project.basedir>${project.basedir}</project.basedir>
-                        <plugin.zip.name>Octopus.TeamCity.OIDC.${revision}</plugin.zip.name>
                     </systemPropertyVariables>
                 </configuration>
                 <executions>
