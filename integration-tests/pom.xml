@@ -45,6 +45,13 @@
             <version>9.41.1</version>
             <scope>test</scope>
         </dependency>
+        <!-- TLS cert generation at test startup — avoids committing private keys -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.78.1</version>
+            <scope>test</scope>
+        </dependency>
         <!-- JSON parsing (already transitive via Nimbus; declared explicitly for compile visibility) -->
         <dependency>
             <groupId>net.minidev</groupId>

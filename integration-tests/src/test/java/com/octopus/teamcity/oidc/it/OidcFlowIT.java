@@ -23,7 +23,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.KeyStore;
-import java.security.cert.CertificateFactory;
 import java.time.Duration;
 import java.util.Base64;
 
@@ -68,6 +67,8 @@ public class OidcFlowIT {
         return zip;
     }
 
+    /** Generated at test startup — CA and server cert/key for the Caddy TLS proxy. */
+    private static final TlsCertificateGenerator.Result TLS;
     /**
      * Temp directory bind-mounted as TC's plugins dir.
      * Using a bind mount (not withCopyFileToContainer) so TC can create subdirectories
@@ -84,19 +85,21 @@ public class OidcFlowIT {
     private static final Path TC_CACERTS_WITH_TEST_CA;
     static {
         try {
+            TLS = TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost");
+
             TC_PLUGINS_DIR = Files.createTempDirectory("tc-plugins-");
             Files.copy(PLUGIN_ZIP, TC_PLUGINS_DIR.resolve(System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"),
                     StandardCopyOption.REPLACE_EXISTING);
             TC_PLUGINS_DIR.toFile().setWritable(true, false);
 
-            TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa();
+            TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa(TLS.caCert());
         } catch (Exception e) {
             throw new RuntimeException("Failed to prepare TC runtime files", e);
         }
     }
 
     /** Copies the host JVM's cacerts and adds the test CA so TC can talk to Caddy. */
-    private static Path buildCacertsWithTestCa() throws Exception {
+    private static Path buildCacertsWithTestCa(java.security.cert.Certificate caCert) throws Exception {
         String javaHome = System.getProperty("java.home");
         Path hostCacerts = Path.of(javaHome, "lib", "security", "cacerts");
 
@@ -110,10 +113,7 @@ public class OidcFlowIT {
             ks.load(null, pass);
         }
 
-        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        try (InputStream in = OidcFlowIT.class.getResourceAsStream("/tls/ca.crt")) {
-            ks.setCertificateEntry("test-ca", cf.generateCertificate(in));
-        }
+        ks.setCertificateEntry("test-ca", caCert);
 
         Path tmp = Files.createTempFile("tc-cacerts-", ".jks");
         try (OutputStream out = Files.newOutputStream(tmp)) {
@@ -153,7 +153,7 @@ public class OidcFlowIT {
             .withEnv("ADMIN_API_KEY", OCTOPUS_ADMIN_API_KEY)
             .withEnv("DISABLE_DIND", "Y")
             .withCopyFileToContainer(
-                    MountableFile.forClasspathResource("tls/ca.crt"),
+                    MountableFile.forHostPath(TLS.caCertPem().toString()),
                     "/usr/local/share/ca-certificates/test-ca.crt"
             )
             .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-octopus"))
@@ -187,11 +187,11 @@ public class OidcFlowIT {
                     "/etc/caddy/Caddyfile"
             )
             .withCopyFileToContainer(
-                    MountableFile.forClasspathResource("tls/server.crt"),
+                    MountableFile.forHostPath(TLS.serverCertPem().toString()),
                     "/etc/caddy/tls/server.crt"
             )
             .withCopyFileToContainer(
-                    MountableFile.forClasspathResource("tls/server.key"),
+                    MountableFile.forHostPath(TLS.serverKeyPem().toString()),
                     "/etc/caddy/tls/server.key"
             )
             .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-caddy"))
@@ -224,7 +224,7 @@ public class OidcFlowIT {
         octopusBaseUrl = "http://localhost:" + octopus.getMappedPort(8080);
         log("Containers up. TC=" + tcBaseUrl + " Octopus=" + octopusBaseUrl);
 
-        SSLContext ssl = TlsTrustManager.buildSslContext();
+        SSLContext ssl = TlsTrustManager.buildSslContext(TLS.caCert());
         tcHttp = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(Duration.ofSeconds(10))
