@@ -54,6 +54,8 @@ public class JwtTestControllerTest {
         keyManager = new JwtKeyManager(serverPaths);
         // Default: CSRF check passes. lenient() because some tests use GET (CSRF never reached).
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
+        // Default: HTTPS root URL. lenient() because not all tests exercise this path.
+        lenient().when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
     }
 
@@ -115,7 +117,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepRS256ReturnsSignedToken() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
@@ -130,7 +131,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepES256ReturnsSignedToken() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "ES256", "ttl_minutes", "10",
@@ -144,7 +144,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepUsesBuildTypeExternalIdAsSubject() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyProject_MyBuild");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
@@ -159,7 +158,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepAcceptsBuildTypeIdWithoutPrefix() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
@@ -173,7 +171,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepFailsWhenBuildTypeIdMissing() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10", "audience", "aud"
         ));
@@ -184,7 +181,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepFailsWhenBuildTypeIdIsBlank() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
             "audience", "aud", "buildTypeId", ""
@@ -196,7 +192,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepFailsWhenBuildTypeNotFound() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         when(buildServer.getProjectManager()).thenReturn(projectManager);
         when(projectManager.findBuildTypeByExternalId("Unknown")).thenReturn(null);
         final var result = callStep(Map.of(
@@ -210,7 +205,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepClampsTtlToOneDayMaximum() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "999999",
@@ -239,7 +233,6 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepSucceedsWhenIssuerMatches() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}"))
             .when(httpClient).send(any(), any());
 
@@ -250,7 +243,6 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepFailsWhenIssuerMismatches() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         doReturn(mockResponse(200, "{\"issuer\":\"https://wrong.example.com\"}"))
             .when(httpClient).send(any(), any());
 
@@ -261,7 +253,6 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepFailsWhenServerUnreachable() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         doThrow(new IOException("Connection refused")).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of("step", "discovery"));
@@ -273,7 +264,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksStepVerifiesValidRs256Token() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
@@ -290,7 +280,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksStepVerifiesValidEs256Token() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "ES256", "ttl_minutes", "5",
@@ -306,7 +295,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksStepFailsWhenKidNotInJwks() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
@@ -323,7 +311,6 @@ public class JwtTestControllerTest {
     // ---- step=exchange ----
 
     private String issueToken() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
@@ -412,7 +399,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepDefaultsAlgorithmToRS256() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "audience", "aud", "buildTypeId", "buildType:MyBuildType"
@@ -426,7 +412,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepIncludesNbfEqualToIat() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
@@ -442,7 +427,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepDefaultsAudienceToRootUrl() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "buildTypeId", "buildType:MyBuildType"
@@ -465,7 +449,6 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksStepFailsWhenJwksEndpointReturnsNon200() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         doReturn(mockResponse(500, "{}")).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of("step", "jwks", "token", "dummy.token.here"));
