@@ -30,7 +30,7 @@ public class OidcFlowIT {
     private static final int TC_PORT = 8111;
     private static final String TC_IMAGE = "jetbrains/teamcity-server:2025.11";
     private static final String AGENT_IMAGE = "jetbrains/teamcity-agent:2025.11";
-    private static final String OCTOPUS_IMAGE = "octopusdeploy/octopusdeploy:2024.3";
+    private static final String OCTOPUS_IMAGE = "octopusdeploy/octopusdeploy:2025.4";
     private static final String CADDY_IMAGE = "caddy:2";
     private static final String MSSQL_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest";
 
