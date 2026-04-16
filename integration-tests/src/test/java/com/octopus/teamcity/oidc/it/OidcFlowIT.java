@@ -3,7 +3,6 @@ package com.octopus.teamcity.oidc.it;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -18,7 +17,6 @@ import net.minidev.json.parser.JSONParser;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.KeyStore;
 import java.time.Duration;
 import java.util.Base64;
@@ -79,13 +77,6 @@ public class OidcFlowIT {
     /** Generated at test startup — CA and server cert/key for the Caddy TLS proxy. */
     private static final TlsCertificateGenerator.Result TLS;
     /**
-     * Temp directory bind-mounted as TC's plugins dir.
-     * Using a bind mount (not withCopyFileToContainer) so TC can create subdirectories
-     * like .bundledTools — docker cp sets root ownership on the parent dir, which
-     * prevents the tcuser process from writing into it.
-     */
-    private static final Path TC_PLUGINS_DIR;
-    /**
      * The TC container's JVM cacerts with the test CA cert added, so that
      * JwtTestController's HttpClient can reach Caddy over HTTPS without
      * an SSLHandshakeException. Built on the host (where we have write access)
@@ -95,12 +86,6 @@ public class OidcFlowIT {
     static {
         try {
             TLS = TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost");
-
-            TC_PLUGINS_DIR = Files.createTempDirectory("tc-plugins-");
-            Files.copy(PLUGIN_ZIP, TC_PLUGINS_DIR.resolve(System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"),
-                    StandardCopyOption.REPLACE_EXISTING);
-            TC_PLUGINS_DIR.toFile().setWritable(true, false);
-
             TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa(TLS.caCert());
         } catch (final Exception e) {
             throw new RuntimeException("Failed to prepare TC runtime files", e);
@@ -175,12 +160,17 @@ public class OidcFlowIT {
             .withNetworkAliases(TC_INTERNAL_ALIAS)
             .withExposedPorts(TC_PORT)
             .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
-            .withFileSystemBind(TC_PLUGINS_DIR.toString(),
-                    "/data/teamcity_server/datadir/plugins", BindMode.READ_WRITE)
+            // Copy the plugin zip via the Docker API so it works with a remote (DinD) daemon.
+            // withFileSystemBind would fail because the DinD daemon can't see paths inside
+            // the Maven container's /tmp.
+            .withCopyFileToContainer(
+                    MountableFile.forHostPath(PLUGIN_ZIP.toString()),
+                    "/data/teamcity_server/datadir/plugins/" + PLUGIN_ZIP.getFileName())
             // Replace the JVM truststore with one that includes our test CA, so that
             // JwtTestController's HttpClient can reach Caddy over HTTPS.
-            .withFileSystemBind(TC_CACERTS_WITH_TEST_CA.toString(),
-                    "/opt/java/openjdk/lib/security/cacerts", BindMode.READ_ONLY)
+            .withCopyFileToContainer(
+                    MountableFile.forHostPath(TC_CACERTS_WITH_TEST_CA.toString()),
+                    "/opt/java/openjdk/lib/security/cacerts")
             .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-teamcity"))
             .waitingFor(
                     Wait.forHttp("/mnt/").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5))
