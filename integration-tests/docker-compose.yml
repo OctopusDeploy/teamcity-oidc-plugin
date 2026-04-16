@@ -1,0 +1,43 @@
+# Runs the integration tests with a Docker-in-Docker daemon available.
+#
+# Testcontainers needs Docker to start the containers the tests require
+# (TeamCity server, Caddy, Octopus Deploy, MSSQL, TeamCity agent).
+# The `docker` service provides a DinD daemon; `integration-tests` waits
+# for it to be healthy before running Maven.
+#
+# Run from the repo root:
+#   REVISION=1.0-SNAPSHOT docker compose -f integration-tests/docker-compose.yml \
+#     up --abort-on-container-exit --exit-code-from integration-tests
+
+services:
+  docker:
+    image: docker:27-dind
+    privileged: true
+    command: ["--tls=false"]
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  integration-tests:
+    image: maven:3.9-amazoncorretto-21
+    depends_on:
+      docker:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://docker:2375
+      # Testcontainers maps container ports on the DinD host, not localhost
+      TESTCONTAINERS_HOST_OVERRIDE: docker
+      REVISION: ${REVISION:-1.0-SNAPSHOT}
+    volumes:
+      - ../:/workspace
+      - maven-repo:/root/.m2
+    working_dir: /workspace
+    command: mvn verify -pl integration-tests -am -Drevision=${REVISION:-1.0-SNAPSHOT}
+
+volumes:
+  maven-repo:
