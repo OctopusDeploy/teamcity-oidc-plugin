@@ -37,4 +37,4 @@ services:
       - ../:/workspace
       - /opt/buildagent/system/jetbrains.maven.runner/maven.repo.local:/root/.m2/repository
     working_dir: /workspace
-    command: mvn verify -pl integration-tests -Drevision=${REVISION:-1.0-SNAPSHOT}
+    command: mvn verify -pl integration-tests -ntp -Drevision=${REVISION:-1.0-SNAPSHOT}
