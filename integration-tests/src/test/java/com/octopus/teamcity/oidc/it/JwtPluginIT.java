@@ -281,20 +281,17 @@ public class JwtPluginIT {
         final var doc = fetchDiscoveryDocument();
         final var jwksUri = doc.get("jwks_uri").getAsString();
 
-        // The URI in the document should resolve to a valid JWKS
+        // The URI in the document must be publicly accessible and return a valid JWKS
         final var jwksResponse = http.send(
                 HttpRequest.newBuilder().uri(URI.create(jwksUri)).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
-        // Accept 200 (public) or 401 (auth required — also a bug, but separate from this test)
         assertThat(jwksResponse.statusCode())
-                .as("jwks_uri must resolve to an endpoint that exists")
-                .isIn(200, 401);
+                .as("jwks_uri must be publicly accessible — cloud providers fetch it unauthenticated. " +
+                    "Got %d. Body: %s", jwksResponse.statusCode(), jwksResponse.body())
+                .isEqualTo(200);
 
-        // If accessible, it must parse as a valid JWKSet
-        if (jwksResponse.statusCode() == 200) {
-            JWKSet.parse(jwksResponse.body()); // throws ParseException if invalid
-        }
+        JWKSet.parse(jwksResponse.body()); // throws ParseException if invalid
     }
 
     @Test
