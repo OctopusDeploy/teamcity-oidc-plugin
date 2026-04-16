@@ -43,6 +43,9 @@ public class JwtPluginIT {
     private static final int TC_PORT = 8111;
     private static final String TC_IMAGE = "jetbrains/teamcity-server:2025.11";
 
+    private static final Duration TC_READY_TIMEOUT = Duration.ofMinutes(5);
+    private static final Duration LICENSE_ACCEPTANCE_TIMEOUT = Duration.ofMinutes(2);
+
     /** Path produced by the build module's maven-assembly-plugin. */
     private static final Path PLUGIN_ZIP = requirePluginZip();
 
@@ -125,7 +128,7 @@ public class JwtPluginIT {
     private static void acceptLicenseAgreementIfRequired() throws Exception {
         // Wait until TC has logged the license-agreement stage, which means it is
         // now blocked and ready to process the acceptance.
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
+        final var deadline = System.currentTimeMillis() + LICENSE_ACCEPTANCE_TIMEOUT.toMillis();
         while (System.currentTimeMillis() < deadline) {
             final var result = teamcity.execInContainer(
                     "grep", "-q", "Review and accept TeamCity license agreement",
@@ -148,7 +151,7 @@ public class JwtPluginIT {
      * Wait until TC transitions from 503 (loading / awaiting license) to 401 (ready).
      */
     private static void waitForTcReady() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
+        final var deadline = System.currentTimeMillis() + TC_READY_TIMEOUT.toMillis();
         while (System.currentTimeMillis() < deadline) {
             final var r = http.send(
                     HttpRequest.newBuilder().uri(URI.create(baseUrl + "/")).GET().build(),
@@ -159,7 +162,7 @@ public class JwtPluginIT {
             }
             TimeUnit.SECONDS.sleep(3);
         }
-        throw new IllegalStateException("TeamCity did not become ready within 3 minutes");
+        throw new IllegalStateException("TeamCity did not become ready within " + TC_READY_TIMEOUT.toMinutes() + " minutes");
     }
 
     private static void dumpTcPluginLog() throws Exception {
