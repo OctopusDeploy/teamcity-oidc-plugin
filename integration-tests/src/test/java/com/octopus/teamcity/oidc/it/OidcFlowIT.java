@@ -37,7 +37,8 @@ public class OidcFlowIT {
     private static final String CADDY_IMAGE = "caddy:2";
     private static final String MSSQL_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest";
 
-    private static final String OCTOPUS_ADMIN_API_KEY = "API-" + "TESTKEY000000000000000000001";
+    private static final String OCTOPUS_ADMIN_API_KEY = generateApiKey();
+
     private static final String OCTOPUS_ADMIN_PASSWORD = "P@ssw0rd123!";
     private static final String MSSQL_PASSWORD = "P@ssw0rd123!";
 
@@ -53,6 +54,13 @@ public class OidcFlowIT {
             + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
 
     private static final Path PLUGIN_ZIP = requirePluginZip();
+
+    private static String generateApiKey() {
+        final var rng = new java.security.SecureRandom();
+        final var sb = new StringBuilder("API-FAKEKEY");
+        for (int i = 0; i < 21; i++) sb.append(rng.nextInt(10));
+        return sb.toString();
+    }
 
     private static Path requirePluginZip() {
         Path zip = Path.of(
