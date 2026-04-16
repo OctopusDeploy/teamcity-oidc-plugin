@@ -34,7 +34,7 @@ public class OidcFlowIT {
     private static final String TC_IMAGE = "jetbrains/teamcity-server:2025.11";
     private static final String AGENT_IMAGE = "jetbrains/teamcity-agent:2025.11";
     private static final String OCTOPUS_IMAGE = "octopusdeploy/octopusdeploy:2024.3";
-    private static final String CADDY_IMAGE = "caddy:latest";
+    private static final String CADDY_IMAGE = "caddy:2";
     private static final String MSSQL_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest";
 
     private static final String OCTOPUS_ADMIN_API_KEY = "API-" + "TESTKEY000000000000000000001";
