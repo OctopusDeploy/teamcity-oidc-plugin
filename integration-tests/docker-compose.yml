@@ -7,13 +7,13 @@
 #
 # Run from the repo root:
 #   REVISION=1.0-SNAPSHOT docker compose -f integration-tests/docker-compose.yml \
-#     up --abort-on-container-exit --exit-code-from integration-tests
+#     up --quiet-pull --abort-on-container-exit --exit-code-from integration-tests
 
 services:
   docker:
     image: docker:27-dind
     privileged: true
-    command: ["--tls=false"]
+    command: ["--tls=false", "--log-level=error"]
     environment:
       DOCKER_TLS_CERTDIR: ""
     healthcheck:

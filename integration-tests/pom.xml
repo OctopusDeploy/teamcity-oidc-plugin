@@ -59,6 +59,13 @@
             <version>2.5.2</version>
             <scope>test</scope>
         </dependency>
+        <!-- Suppress SLF4J "Failed to load class StaticLoggerBinder" warning from Testcontainers -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>1.7.36</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
