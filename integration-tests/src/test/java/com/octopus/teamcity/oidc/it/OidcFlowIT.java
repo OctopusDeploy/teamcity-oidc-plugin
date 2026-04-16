@@ -85,7 +85,12 @@ public class OidcFlowIT {
     private static final Path TC_CACERTS_WITH_TEST_CA;
     static {
         try {
-            TLS = TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost");
+            // Include TESTCONTAINERS_HOST_OVERRIDE (e.g. "docker" in DinD) as a SAN so
+            // that TLS verification succeeds when connecting via the mapped port host.
+            final var tcHostOverride = System.getenv("TESTCONTAINERS_HOST_OVERRIDE");
+            TLS = (tcHostOverride != null && !tcHostOverride.isBlank())
+                    ? TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost", tcHostOverride)
+                    : TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost");
             TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa(TLS.caCert());
         } catch (final Exception e) {
             throw new RuntimeException("Failed to prepare TC runtime files", e);
