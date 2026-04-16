@@ -72,8 +72,125 @@
     </tr>
 </l:settingsGroup>
 
+<%-- Hidden holder; JS moves its contents into TC's editBuildFeatureAdditionalButtons on DOM ready --%>
+<%-- data-build-type-id carries the build type ID safely without inline JS injection --%>
+<span id="jwtTestConnectionBtnHolder" style="display:none;" data-build-type-id="${fn:escapeXml(param.id)}">
+    <input type="button" value="Test Connection" class="btn btn_primary submitButton"
+           onclick="event.stopPropagation(); window.jwtTestOpen();" />
+</span>
+
+<%-- Test Connection modal --%>
+<div id="jwtTestModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center;">
+    <div style="background:#2b2b2b;border:1px solid #555;border-radius:6px;padding:20px;min-width:480px;max-width:600px;font-size:13px;font-family:monospace;">
+        <div style="font-weight:bold;color:#ccc;margin-bottom:14px;font-size:14px;">Test Connection</div>
+        <div id="jwtRow0" style="margin-bottom:6px;color:#888;">&#x25CB; JWT issuance</div>
+        <div id="jwtRow1" style="margin-bottom:6px;color:#888;">&#x25CB; OIDC discovery endpoint</div>
+        <div id="jwtRow2" style="margin-bottom:6px;color:#888;">&#x25CB; JWKS signature verification</div>
+        <hr style="border:none;border-top:1px solid #444;margin:12px 0;"/>
+        <div style="color:#aaa;margin-bottom:6px;">Test token exchange</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input id="jwtServiceUrl" type="text" placeholder="https://octopus.example.com"
+                   style="flex:1;background:#1e1e1e;border:1px solid #555;color:#ccc;padding:4px 6px;border-radius:3px;"
+                   disabled/>
+            <button type="button" id="jwtExchangeBtn" class="btn" onclick="window.jwtTestExchange()" disabled
+                    style="white-space:nowrap;">Try Exchange</button>
+        </div>
+        <div id="jwtRow3" style="margin-top:6px;min-height:18px;color:#888;"></div>
+        <div style="text-align:right;margin-top:14px;">
+            <button type="button" class="btn" onclick="window.jwtTestClose()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script type="text/javascript">
+    let _jwtToken = null;
+    const _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
+
+    window.jwtTestOpen = function() {
+        _jwtToken = null;
+        ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(function(id) {
+            const el = document.getElementById(id);
+            el.textContent = id === 'jwtRow3' ? '' : '○ Pending';
+            el.style.color = '#888';
+        });
+        document.getElementById('jwtServiceUrl').disabled = true;
+        document.getElementById('jwtServiceUrl').value = '';
+        document.getElementById('jwtExchangeBtn').disabled = true;
+        document.getElementById('jwtTestModal').style.display = 'flex';
+        jwtTestRunChecks();
+    }
+
+    window.jwtTestClose = function() {
+        document.getElementById('jwtTestModal').style.display = 'none';
+    }
+
+    window.jwtSetRow = function(id, ok, message) {
+        const el = document.getElementById(id);
+        el.textContent = (ok ? '✓ ' : '✗ ') + message;
+        el.style.color = ok ? '#7ec87e' : '#e06c75';
+    }
+
+    window.jwtPost = function(params) {
+        const body = Object.entries(params)
+            .map(function(e) { return encodeURIComponent(e[0]) + '=' + encodeURIComponent(e[1]); })
+            .join('&');
+        const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
+        const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+        return fetch(_jwtTestUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-TC-CSRF-Token': csrf
+            },
+            body: body
+        }).then(function(r) { return r.json(); });
+    }
+
+    window.jwtTestRunChecks = async function() {
+        const algorithm = document.getElementById('algorithm').value;
+        const ttl = document.getElementById('ttl_minutes').value || '10';
+        const audience = document.getElementById('audience').value;
+        const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
+
+        document.getElementById('jwtRow0').textContent = '⏳ Issuing JWT...';
+        const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+        jwtSetRow('jwtRow0', r1.ok, r1.message);
+        if (!r1.ok) return;
+        _jwtToken = r1.token;
+
+        document.getElementById('jwtRow1').textContent = '⏳ Checking discovery endpoint...';
+        const r2 = await jwtPost({step:'discovery'});
+        jwtSetRow('jwtRow1', r2.ok, r2.message);
+        if (!r2.ok) return;
+
+        document.getElementById('jwtRow2').textContent = '⏳ Verifying JWKS signature...';
+        const r3 = await jwtPost({step:'jwks', token:_jwtToken});
+        jwtSetRow('jwtRow2', r3.ok, r3.message);
+        if (!r3.ok) return;
+
+        document.getElementById('jwtServiceUrl').disabled = false;
+        document.getElementById('jwtExchangeBtn').disabled = false;
+    }
+
+    window.jwtTestExchange = async function() {
+        const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
+        if (!serviceUrl) return;
+        const audience = document.getElementById('audience').value;
+        document.getElementById('jwtExchangeBtn').disabled = true;
+        document.getElementById('jwtRow3').textContent = '⏳ Trying exchange...';
+        document.getElementById('jwtRow3').style.color = '#888';
+        const r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
+        jwtSetRow('jwtRow3', r.ok, r.message);
+        document.getElementById('jwtExchangeBtn').disabled = false;
+    }
+
     $j(document).ready(function() {
+        const placeholder = $j('span#editBuildFeatureAdditionalButtons');
+        if (placeholder.length) {
+            placeholder.empty();
+            placeholder.append($j('span#jwtTestConnectionBtnHolder').children());
+        }
+
         // Initialise claim checkboxes from stored comma-separated value.
         // Blank = all claims enabled, so tick all boxes when the field is empty.
         const ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
