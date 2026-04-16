@@ -219,8 +219,8 @@ public class OidcFlowIT {
 
     @BeforeAll
     static void setup() throws Exception {
-        tcBaseUrl = "http://localhost:" + teamcity.getMappedPort(TC_PORT);
-        octopusBaseUrl = "http://localhost:" + octopus.getMappedPort(8080);
+        tcBaseUrl = "http://" + teamcity.getHost() + ":" + teamcity.getMappedPort(TC_PORT);
+        octopusBaseUrl = "http://" + octopus.getHost() + ":" + octopus.getMappedPort(8080);
         log("Containers up. TC=" + tcBaseUrl + " Octopus=" + octopusBaseUrl);
 
         final var ssl = TlsTrustManager.buildSslContext(TLS.caCert());
@@ -527,7 +527,7 @@ public class OidcFlowIT {
      */
     private static void waitForPluginReady() throws Exception {
         final var deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
-        final var httpsBase = "https://localhost:" + caddy.getMappedPort(443);
+        final var httpsBase = "https://" + caddy.getHost() + ":" + caddy.getMappedPort(443);
         while (System.currentTimeMillis() < deadline) {
             try {
                 final var jwksResponse = tcHttp.send(
@@ -836,7 +836,7 @@ public class OidcFlowIT {
         final var jwksResponse = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(
-                                "https://localhost:" + caddy.getMappedPort(443) + "/.well-known/jwks.json"))
+                                "https://" + caddy.getHost() + ":" + caddy.getMappedPort(443) + "/.well-known/jwks.json"))
                         .GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString()
         );

@@ -50,16 +50,20 @@ public class JwtPluginIT {
     private static final Path PLUGIN_ZIP = requirePluginZip();
 
     private static Path requirePluginZip() {
-        final var zip = Path.of(
+        final var targetDir = Path.of(
                 System.getProperty("project.basedir", "."),
-                "../target/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
+                "../target/"
         ).normalize();
-        if (!zip.toFile().exists()) {
-            throw new IllegalStateException(
-                    "Plugin zip not found: " + zip.toAbsolutePath() +
-                    "\nRun 'mvn package -DskipTests' from the project root first.");
+        try (var stream = java.nio.file.Files.list(targetDir)) {
+            return stream
+                    .filter(p -> p.getFileName().toString().matches("Octopus\\.TeamCity\\.OIDC\\..*\\.zip"))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Plugin zip not found in: " + targetDir.toAbsolutePath() +
+                            "\nRun 'mvn package -DskipTests' from the project root first."));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Could not list target directory: " + targetDir.toAbsolutePath(), e);
         }
-        return zip;
     }
 
     @Container
@@ -73,7 +77,7 @@ public class JwtPluginIT {
             .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
             .withCopyFileToContainer(
                     MountableFile.forHostPath(PLUGIN_ZIP),
-                    "/data/teamcity_server/datadir/plugins/" + System.getProperty("plugin.zip.name", "Octopus.TeamCity.OIDC.1.0-SNAPSHOT") + ".zip"
+                    "/data/teamcity_server/datadir/plugins/" + PLUGIN_ZIP.getFileName()
             )
             /*
              * Wait until TC's maintenance servlet is up (GET /mnt/ returns 200).
@@ -97,7 +101,7 @@ public class JwtPluginIT {
 
     @BeforeAll
     static void setup() throws Exception {
-        baseUrl = "http://localhost:" + teamcity.getMappedPort(TC_PORT);
+        baseUrl = "http://" + teamcity.getHost() + ":" + teamcity.getMappedPort(TC_PORT);
         http = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NEVER) // surface redirects explicitly
                 .connectTimeout(Duration.ofSeconds(10))
