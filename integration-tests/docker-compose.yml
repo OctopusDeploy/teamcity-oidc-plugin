@@ -37,7 +37,7 @@ services:
       - ../:/workspace
       - maven-repo:/root/.m2
     working_dir: /workspace
-    command: mvn verify -pl integration-tests -am -Drevision=${REVISION:-1.0-SNAPSHOT}
+    command: mvn verify -pl integration-tests -Drevision=${REVISION:-1.0-SNAPSHOT}
 
 volumes:
   maven-repo:
