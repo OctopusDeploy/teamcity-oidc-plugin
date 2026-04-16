@@ -521,26 +521,8 @@ public class OidcFlowIT {
     }
 
     /**
-     * Waits until at least one agent is connected, authorized, enabled and has no active build.
-     * After authorization the agent must download plugins from TC before it can run builds;
-     * triggering a build before the agent is idle leaves it stuck in the queue.
-     */
-    /**
-     * Polls the JWKS endpoint until the JWT plugin has generated its own key material.
-     *
-     * TC 2025.11 has built-in OIDC support that serves /.well-known/jwks.json and
-     * /.well-known/openid-configuration immediately (returning 200 with the correct issuer
-     * as soon as the root URL is configured). We must not stop at that — we need to wait
-     * until our plugin's own JWKS keys appear in the response.
-     *
-     * Our plugin generates one RSA key (RS256) and one EC key (ES256).  TC's built-in OIDC
-     * does not generate RSA/EC key pairs on first startup (or returns an empty JWKS).
-     * We treat ≥1 key in the JWKS as the signal that our plugin has finished initialising.
-     */
-    /**
      * Polls until both conditions are true:
-     *   1. JWKS contains at least one key (our plugin has generated key material — TC's built-in
-     *      OIDC may respond with an empty JWKS before our plugin loads).
+     *   1. JWKS contains at least one key — the plugin has generated key material.
      *   2. The OIDC discovery issuer equals TC_HTTPS_BASE — this calls buildServer.getRootUrl()
      *      directly through the plugin's own code path, which is the same call made at build time
      *      in JwtBuildStartContext.updateParameters(). Waiting here ensures the root URL change
