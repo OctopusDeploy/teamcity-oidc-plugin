@@ -221,7 +221,7 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Missing required parameter: serviceUrl");
         }
         serviceUrl = serviceUrl.stripTrailing().replaceAll("/+$", "");
-        if (!JwtKeyManager.isHttpsUrl(serviceUrl) && !isLocalhostUrl(serviceUrl)) {
+        if (!JwtKeyManager.isHttpsUrl(serviceUrl)) {
             throw new TestStepException("serviceUrl must use HTTPS");
         }
 
@@ -254,22 +254,12 @@ public class JwtTestController extends BaseController {
                 .build();
         final var exchangeResp = httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString());
         final var status = exchangeResp.statusCode();
-        final var bodySnippet = exchangeResp.body().length() > 200
-                ? exchangeResp.body().substring(0, 200) : exchangeResp.body();
         if (status < 200 || status >= 300) {
+            final var bodySnippet = exchangeResp.body().length() > 200
+                    ? exchangeResp.body().substring(0, 200) : exchangeResp.body();
             throw new TestStepException("Exchange failed (HTTP " + status + "): " + bodySnippet);
         }
         return "Exchange succeeded (HTTP " + status + ")";
-    }
-
-    /** Allows HTTP for localhost/127.0.0.1 to support local development and testing. */
-    private static boolean isLocalhostUrl(final String url) {
-        try {
-            final var host = URI.create(url).getHost();
-            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host);
-        } catch (final Exception e) {
-            return false;
-        }
     }
 
     private static String encode(final String value) {

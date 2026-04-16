@@ -23,9 +23,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,12 +41,12 @@ public class JwtTestControllerTest {
     @Mock ProjectManager projectManager;
     @Mock ServerPaths serverPaths;
     @Mock CSRFFilter csrfFilter;
+    @Mock HttpClient httpClient;
 
     @TempDir File tempDir;
 
     JwtKeyManager keyManager;
     JwtTestController controller;
-    HttpClient httpClient = HttpClient.newHttpClient();
 
     @BeforeEach
     void setup() {
@@ -237,48 +239,31 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepSucceedsWhenIssuerMatches() throws Exception {
-        // HttpServer.create() binds immediately — port is known before start()
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        final var port = server.getAddress().getPort();
-        final var issuer = "http://localhost:" + port;
-        addContext(server, "/.well-known/openid-configuration",
-            200, "{\"issuer\":\"" + issuer + "\"}");
-        server.start();
-        when(buildServer.getRootUrl()).thenReturn(issuer);
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}"))
+            .when(httpClient).send(any(), any());
 
-        try {
-            final var result = callStep(Map.of("step", "discovery"));
-            assertThat((Boolean) result.get("ok")).isTrue();
-            assertThat(result.getAsString("message")).contains("Discovery endpoint OK");
-        } finally {
-            server.stop(0);
-        }
+        final var result = callStep(Map.of("step", "discovery"));
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("Discovery endpoint OK");
     }
 
     @Test
     void discoveryStepFailsWhenIssuerMismatches() throws Exception {
-        // HttpServer.create() binds immediately — port is known before start()
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/openid-configuration",
-            200, "{\"issuer\":\"https://wrong.example.com\"}");
-        server.start();
-        final var port = server.getAddress().getPort();
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        doReturn(mockResponse(200, "{\"issuer\":\"https://wrong.example.com\"}"))
+            .when(httpClient).send(any(), any());
 
-        try {
-            final var result = callStep(Map.of("step", "discovery"));
-            assertThat((Boolean) result.get("ok")).isFalse();
-            assertThat(result.getAsString("message")).contains("issuer mismatch");
-        } finally {
-            server.stop(0);
-        }
+        final var result = callStep(Map.of("step", "discovery"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("issuer mismatch");
     }
 
     @Test
     void discoveryStepFailsWhenServerUnreachable() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:1"); // nothing listening on port 1
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        doThrow(new IOException("Connection refused")).when(httpClient).send(any(), any());
+
         final var result = callStep(Map.of("step", "discovery"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("Could not reach");
@@ -290,29 +275,17 @@ public class JwtTestControllerTest {
     void jwksStepVerifiesValidRs256Token() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
-        // Issue a real RS256 token
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         final var token = jwtResult.getAsString("token");
-
-        // Serve our JWKS on a local HTTP server
         final var jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/jwks.json", 200, jwksJson);
-        server.start();
-        final var port = server.getAddress().getPort();
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
 
-        try {
-            final var result = callStep(Map.of("step", "jwks", "token", token));
-            assertThat((Boolean) result.get("ok")).isTrue();
-            assertThat(result.getAsString("message")).contains("JWKS OK");
-        } finally {
-            server.stop(0);
-        }
+        doReturn(mockResponse(200, jwksJson)).when(httpClient).send(any(), any());
+        final var result = callStep(Map.of("step", "jwks", "token", token));
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("JWKS OK");
     }
 
     @Test
@@ -324,21 +297,11 @@ public class JwtTestControllerTest {
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
         final var token = jwtResult.getAsString("token");
-
         final var jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/jwks.json", 200, jwksJson);
-        server.start();
-        final var port = server.getAddress().getPort();
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
 
-        try {
-            final var result = callStep(Map.of("step", "jwks", "token", token));
-            assertThat((Boolean) result.get("ok")).isTrue();
-        } finally {
-            server.stop(0);
-        }
+        doReturn(mockResponse(200, jwksJson)).when(httpClient).send(any(), any());
+        final var result = callStep(Map.of("step", "jwks", "token", token));
+        assertThat((Boolean) result.get("ok")).isTrue();
     }
 
     @Test
@@ -351,153 +314,82 @@ public class JwtTestControllerTest {
         ));
         final var token = jwtResult.getAsString("token");
 
-        // Serve an empty JWKS
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/jwks.json", 200, "{\"keys\":[]}");
-        server.start();
-        final var port = server.getAddress().getPort();
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
-
-        try {
-            final var result = callStep(Map.of("step", "jwks", "token", token));
-            assertThat((Boolean) result.get("ok")).isFalse();
-            assertThat(result.getAsString("message")).contains("Key ID not found");
-        } finally {
-            server.stop(0);
-        }
+        doReturn(mockResponse(200, "{\"keys\":[]}")).when(httpClient).send(any(), any());
+        final var result = callStep(Map.of("step", "jwks", "token", token));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Key ID not found");
     }
 
     // ---- step=exchange ----
 
-    @Test
-    void exchangeStepSucceedsWhenTokenEndpointReturns200() throws Exception {
-        // Issue a JWT first (HTTPS rootUrl required for step=jwt)
+    private String issueToken() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
-            "audience", "my-ext-id", "buildTypeId", "buildType:MyBuildType"
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
         ));
-        final var token = jwtResult.getAsString("token");
+        return jwtResult.getAsString("token");
+    }
 
-        // Stand up a mock service that serves discovery + token endpoint
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        final var port = server.getAddress().getPort();
-        final var serviceUrl = "http://localhost:" + port;
-        final var tokenEndpoint = serviceUrl + "/token";
+    @Test
+    void exchangeStepSucceedsWhenTokenEndpointReturns200() throws Exception {
+        final var token = issueToken();
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        final var exchange = mockResponse(200, "{\"access_token\":\"fake-token\",\"token_type\":\"Bearer\"}");
+        doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
 
-        addContext(server, "/.well-known/openid-configuration", 200,
-            "{\"issuer\":\"" + serviceUrl + "\",\"token_endpoint\":\"" + tokenEndpoint + "\"}");
-        addContext(server, "/token", 200,
-            "{\"access_token\":\"fake-token\",\"token_type\":\"Bearer\"}");
-        server.start();
-
-        try {
-            final var result = callStep(Map.of(
-                "step", "exchange",
-                "token", token,
-                "serviceUrl", serviceUrl,
-                "audience", "my-ext-id"
-            ));
-            assertThat((Boolean) result.get("ok")).isTrue();
-            assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
-        } finally {
-            server.stop(0);
-        }
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", token,
+            "serviceUrl", "https://svc.example.com", "audience", "my-ext-id"
+        ));
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
     }
 
     @Test
     void exchangeStepFailsWhenTokenEndpointReturns401() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
-        mockBuildType("MyBuildType");
-        final var jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
-            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        final var token = issueToken();
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        final var tokenResp = mockResponse(401, "{\"error\":\"invalid_token\"}");
+        doReturn(discovery).doReturn(tokenResp).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", token,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
         ));
-        final var token = jwtResult.getAsString("token");
-
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        server.start();
-        final var port = server.getAddress().getPort();
-        final var serviceUrl = "http://localhost:" + port;
-        addContext(server, "/.well-known/openid-configuration", 200,
-            "{\"token_endpoint\":\"" + serviceUrl + "/token\"}");
-        addContext(server, "/token", 401, "{\"error\":\"invalid_token\"}");
-
-        try {
-            final var result = callStep(Map.of(
-                "step", "exchange", "token", token, "serviceUrl", serviceUrl, "audience", "aud"
-            ));
-            assertThat((Boolean) result.get("ok")).isFalse();
-            assertThat(result.getAsString("message")).contains("Exchange failed (HTTP 401)");
-        } finally {
-            server.stop(0);
-        }
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Exchange failed (HTTP 401)");
     }
 
     @Test
     void exchangeStepRewritesTokenEndpointHostnameToMatchServiceUrl() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
-        mockBuildType("MyBuildType");
-        final var jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
-            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
-        final var token = jwtResult.getAsString("token");
-
-        // Service runs on localhost but its discovery doc returns an internal hostname
-        // in token_endpoint — controller must rewrite it to the serviceUrl origin.
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        final var port = server.getAddress().getPort();
-        final var serviceUrl = "http://localhost:" + port;
-        // token_endpoint advertises an unreachable internal hostname
-        addContext(server, "/.well-known/openid-configuration", 200,
+        final var token = issueToken();
+        // discovery doc advertises an internal hostname in token_endpoint
+        final var discovery = mockResponse(200,
             "{\"issuer\":\"http://internal-host\",\"token_endpoint\":\"http://internal-host/token\"}");
-        addContext(server, "/token", 200,
-            "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
-        server.start();
+        final var exchange = mockResponse(200, "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
+        doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
 
-        try {
-            final var result = callStep(Map.of(
-                "step", "exchange", "token", token, "serviceUrl", serviceUrl, "audience", "aud"
-            ));
-            assertThat((Boolean) result.get("ok")).isTrue();
-            assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
-        } finally {
-            server.stop(0);
-        }
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", token,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ));
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
     }
 
     @Test
     void exchangeStepFailsWhenDiscoveryDocMissingTokenEndpoint() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
-        mockBuildType("MyBuildType");
-        final var jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
-            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        final var token = issueToken();
+        doReturn(mockResponse(200, "{\"issuer\":\"http://svc\"}")).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", token,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
         ));
-        final var token = jwtResult.getAsString("token");
-
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/openid-configuration", 200, "{\"issuer\":\"http://svc\"}");
-        server.start();
-        final var port = server.getAddress().getPort();
-
-        try {
-            final var result = callStep(Map.of(
-                "step", "exchange", "token", token,
-                "serviceUrl", "http://localhost:" + port, "audience", "aud"
-            ));
-            assertThat((Boolean) result.get("ok")).isFalse();
-            assertThat(result.getAsString("message")).contains("token_endpoint not found");
-        } finally {
-            server.stop(0);
-        }
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("token_endpoint not found");
     }
 
     // ---- step parameter validation ----
@@ -573,61 +465,36 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksStepFailsWhenJwksEndpointReturnsNon200() throws Exception {
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/jwks.json", 500, "{}");
-        server.start();
-        final var port = server.getAddress().getPort();
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:" + port);
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
+        doReturn(mockResponse(500, "{}")).when(httpClient).send(any(), any());
 
-        try {
-            final var result = callStep(Map.of("step", "jwks", "token", "dummy.token.here"));
-            assertThat((Boolean) result.get("ok")).isFalse();
-            assertThat(result.getAsString("message")).contains("JWKS endpoint returned HTTP 500");
-        } finally {
-            server.stop(0);
-        }
+        final var result = callStep(Map.of("step", "jwks", "token", "dummy.token.here"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("JWKS endpoint returned HTTP 500");
     }
 
     // ---- step=exchange validation ----
 
     @Test
     void exchangeStepFailsWhenTokenParamMissing() throws Exception {
-        final var result = callStep(Map.of("step", "exchange", "serviceUrl", "http://svc.example.com"));
+        final var result = callStep(Map.of("step", "exchange", "serviceUrl", "https://svc.example.com"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("token");
     }
 
     @Test
     void exchangeStepStripsTrailingSlashesFromServiceUrl() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
-        mockBuildType("MyBuildType");
-        final var jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
-            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        final var token = issueToken();
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        final var exchange = mockResponse(200, "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
+        doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", token,
+            "serviceUrl", "https://svc.example.com///", // trailing slashes
+            "audience", "aud"
         ));
-        final var token = jwtResult.getAsString("token");
-
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        final var port = server.getAddress().getPort();
-        final var serviceUrl = "http://localhost:" + port;
-        addContext(server, "/.well-known/openid-configuration", 200,
-            "{\"token_endpoint\":\"" + serviceUrl + "/token\"}");
-        addContext(server, "/token", 200,
-            "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
-        server.start();
-
-        try {
-            final var result = callStep(Map.of(
-                "step", "exchange", "token", token,
-                "serviceUrl", serviceUrl + "///", // trailing slashes
-                "audience", "aud"
-            ));
-            assertThat((Boolean) result.get("ok")).isTrue();
-        } finally {
-            server.stop(0);
-        }
+        assertThat((Boolean) result.get("ok")).isTrue();
     }
 
     @Test
@@ -651,35 +518,25 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepFailsWhenServiceDiscoveryReturnsNon200() throws Exception {
-        final var server =
-            com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
-        addContext(server, "/.well-known/openid-configuration", 404, "not found");
-        server.start();
-        final var port = server.getAddress().getPort();
+        doReturn(mockResponse(404, "not found")).when(httpClient).send(any(), any());
 
-        try {
-            final var result = callStep(Map.of(
-                "step", "exchange", "token", "some.jwt.token",
-                "serviceUrl", "http://localhost:" + port, "audience", "aud"
-            ));
-            assertThat((Boolean) result.get("ok")).isFalse();
-            assertThat(result.getAsString("message")).contains("Service discovery returned HTTP 404");
-        } finally {
-            server.stop(0);
-        }
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", "some.jwt.token",
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Service discovery returned HTTP 404");
     }
 
     // ---- helpers ----
 
-    private static void addContext(final com.sun.net.httpserver.HttpServer server,
-                                   final String path, final int status, final String body) {
-        server.createContext(path, exchange -> {
-            final var bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.close();
-        });
+    @SuppressWarnings("unchecked")
+    private static HttpResponse<String> mockResponse(final int status, final String body) {
+        final HttpResponse<String> resp = mock(HttpResponse.class);
+        // lenient: not every test exercises both statusCode() and body() on the same response
+        lenient().when(resp.statusCode()).thenReturn(status);
+        lenient().when(resp.body()).thenReturn(body);
+        return resp;
     }
 
     JSONObject callStep(final Map<String, String> params) throws Exception {
