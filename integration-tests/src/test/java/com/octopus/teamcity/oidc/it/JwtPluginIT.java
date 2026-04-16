@@ -190,7 +190,7 @@ public class JwtPluginIT {
          * Fix: configure TeamCity guest access for /.well-known/* paths, or implement
          * a RequestInterceptorAdapter that exempts these paths from auth.
          */
-        final var response = get("/.well-known/jwks.json", null);
+        final var response = unauthenticatedGet("/.well-known/jwks.json");
 
         assertThat(response.statusCode())
                 .as("JWKS endpoint must return 200 without authentication — " +
@@ -259,7 +259,7 @@ public class JwtPluginIT {
          * CRITICAL: same requirement as the JWKS endpoint. Cloud providers fetch
          * the discovery document without credentials during OIDC provider setup.
          */
-        final var response = get("/.well-known/openid-configuration", null);
+        final var response = unauthenticatedGet("/.well-known/openid-configuration");
 
         assertThat(response.statusCode())
                 .as("Discovery endpoint must return 200 without authentication. " +
@@ -348,7 +348,7 @@ public class JwtPluginIT {
 
     @Test
     void keyRotationEndpointRequiresPost() throws Exception {
-        final var response = get("/admin/jwtKeyRotate.html", superUserAuthHeader);
+        final var response = authenticatedGet("/admin/jwtKeyRotate.html", superUserAuthHeader);
         // GET must be rejected
         assertThat(response.statusCode()).isEqualTo(405);
     }
@@ -390,13 +390,19 @@ public class JwtPluginIT {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private HttpResponse<String> get(final String path, final String authHeader) throws Exception {
+    private HttpResponse<String> unauthenticatedGet(final String path) throws Exception {
         final var builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
                 .GET();
-        if (authHeader != null) {
-            builder.header("Authorization", authHeader);
-        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** GETs via /httpAuth/ so TeamCity processes Basic auth credentials. */
+    private HttpResponse<String> authenticatedGet(final String path, final String authHeader) throws Exception {
+        final var builder = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + httpAuthPath(path)))
+                .GET();
+        builder.header("Authorization", authHeader);
         return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
@@ -406,9 +412,7 @@ public class JwtPluginIT {
                 .uri(URI.create(baseUrl + httpAuthPath(path)))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body));
-        if (authHeader != null) {
-            builder.header("Authorization", authHeader);
-        }
+        builder.header("Authorization", authHeader);
         return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
@@ -419,7 +423,7 @@ public class JwtPluginIT {
 
     /** Fetches a public path without authentication or /httpAuth/ prefix. */
     private String publicGet(final String path) throws Exception {
-        final var response = get(path, null);
+        final var response = unauthenticatedGet(path);
         assertThat(response.statusCode())
                 .as("GET %s returned unexpected status", path)
                 .isEqualTo(200);
@@ -428,7 +432,7 @@ public class JwtPluginIT {
 
     /** Fetches a public path without auth, returning the full response for header inspection. */
     private HttpResponse<String> publicGetWithHeaders(final String path) throws Exception {
-        return get(path, null);
+        return unauthenticatedGet(path);
     }
 
     private JsonObject fetchDiscoveryDocument() throws Exception {
