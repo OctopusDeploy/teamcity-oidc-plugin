@@ -13,7 +13,7 @@ services:
   docker:
     image: docker:27-dind
     privileged: true
-    command: ["--tls=false", "--log-level=error"]
+    command: ["--tls=false", "--log-level=error", "--ipv6=false"]
     environment:
       DOCKER_TLS_CERTDIR: ""
     healthcheck:
