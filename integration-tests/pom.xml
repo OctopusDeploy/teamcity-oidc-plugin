@@ -32,7 +32,7 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.26.3</version>
+            <version>3.27.7</version>
             <scope>test</scope>
         </dependency>
         <!--
@@ -42,14 +42,14 @@
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>9.41.1</version>
+            <version>10.0.2</version>
             <scope>test</scope>
         </dependency>
         <!-- TLS cert generation at test startup — avoids committing private keys -->
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>1.78.1</version>
+            <version>1.84</version>
             <scope>test</scope>
         </dependency>
         <!-- JSON parsing (already transitive via Nimbus; declared explicitly for compile visibility) -->
