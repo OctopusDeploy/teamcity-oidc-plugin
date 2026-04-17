@@ -6,7 +6,7 @@
 # for it to be healthy before running Maven.
 #
 # Run from the repo root:
-#   REVISION=1.0-SNAPSHOT docker compose -f integration-tests/docker-compose.yml \
+#   REVISION=1.0-SNAPSHOT docker compose --progress quiet -f integration-tests/docker-compose.yml \
 #     up --quiet-pull --abort-on-container-exit --exit-code-from integration-tests
 
 services:
