@@ -5,6 +5,7 @@ step "publish-to-jetbrains-marketplace" {
         action_type = "Octopus.Script"
         channels = ["release"]
         environments = ["production"]
+        is_disabled = true
         properties = {
             Octopus.Action.Script.ScriptBody = <<-EOT
                 set -eu
