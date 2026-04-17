@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.octopus.teamcity.oidc</groupId>
+        <artifactId>teamcity-oidc-plugin</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>integration-tests</artifactId>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>1.20.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.20.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            Nimbus for parsing the JWKS and verifying JWT signatures end-to-end,
+            the same way a cloud provider would.
+        -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>10.0.2</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- TLS cert generation at test startup — avoids committing private keys -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.84</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- JSON parsing (already transitive via Nimbus; declared explicitly for compile visibility) -->
+        <dependency>
+            <groupId>net.minidev</groupId>
+            <artifactId>json-smart</artifactId>
+            <version>2.5.2</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Suppress SLF4J "Failed to load class StaticLoggerBinder" warning from Testcontainers -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>1.7.36</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <skipIfEmpty>true</skipIfEmpty>
+                </configuration>
+            </plugin>
+            <!-- No unit tests in this module -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+            <!--
+                Failsafe runs *IT.java files during the integration-test phase,
+                which is triggered by `mvn verify`. Unit tests (`mvn test`) are unaffected.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <project.basedir>${project.basedir}</project.basedir>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
