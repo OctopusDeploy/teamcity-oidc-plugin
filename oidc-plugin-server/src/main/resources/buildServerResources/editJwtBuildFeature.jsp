@@ -110,7 +110,7 @@
         _jwtToken = null;
         ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(function(id) {
             const el = document.getElementById(id);
-            el.textContent = id === 'jwtRow3' ? '' : '\u25CB Pending';
+            el.textContent = id === 'jwtRow3' ? '' : '○ Pending';
             el.style.color = '#888';
         });
         document.getElementById('jwtServiceUrl').disabled = true;
@@ -126,7 +126,7 @@
 
     window.jwtSetRow = function(id, ok, message) {
         const el = document.getElementById(id);
-        el.textContent = (ok ? '\u2713 ' : '\u2717 ') + message;
+        el.textContent = (ok ? '✓ ' : '✗ ') + message;
         el.style.color = ok ? '#7ec87e' : '#e06c75';
     }
 
@@ -152,18 +152,18 @@
         const audience = document.getElementById('audience').value;
         const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
 
-        document.getElementById('jwtRow0').textContent = '\u23F3 Issuing JWT...';
+        document.getElementById('jwtRow0').textContent = '⏳ Issuing JWT...';
         const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
         jwtSetRow('jwtRow0', r1.ok, r1.message);
         if (!r1.ok) return;
         _jwtToken = r1.token;
 
-        document.getElementById('jwtRow1').textContent = '\u23F3 Checking discovery endpoint...';
+        document.getElementById('jwtRow1').textContent = '⏳ Checking discovery endpoint...';
         const r2 = await jwtPost({step:'discovery'});
         jwtSetRow('jwtRow1', r2.ok, r2.message);
         if (!r2.ok) return;
 
-        document.getElementById('jwtRow2').textContent = '\u23F3 Verifying JWKS signature...';
+        document.getElementById('jwtRow2').textContent = '⏳ Verifying JWKS signature...';
         const r3 = await jwtPost({step:'jwks', token:_jwtToken});
         jwtSetRow('jwtRow2', r3.ok, r3.message);
         if (!r3.ok) return;
@@ -177,7 +177,7 @@
         if (!serviceUrl) return;
         const audience = document.getElementById('audience').value;
         document.getElementById('jwtExchangeBtn').disabled = true;
-        document.getElementById('jwtRow3').textContent = '\u23F3 Trying exchange...';
+        document.getElementById('jwtRow3').textContent = '⏳ Trying exchange...';
         document.getElementById('jwtRow3').style.color = '#888';
         const r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
         jwtSetRow('jwtRow3', r.ok, r.message);
