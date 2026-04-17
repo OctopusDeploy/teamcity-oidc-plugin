@@ -98,10 +98,34 @@
                     <target>21</target>
                 </configuration>
             </plugin>
+            <!--
+                Resolves transitive dependency jar paths as Maven properties.
+                Used to load byte-buddy-agent as an explicit javaagent below,
+                which prevents Mockito from self-attaching at runtime and
+                eliminates the cascade of JVM dynamic-agent WARNING lines.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <goals><goal>properties</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.5</version>
+                <configuration>
+                    <argLine>
+                        -javaagent:${net.bytebuddy:byte-buddy-agent:jar}
+                        -XX:+EnableDynamicAgentLoading
+                        -Xshare:off
+                        -Djava.util.logging.config.file=${project.build.testOutputDirectory}/logging.properties
+                    </argLine>
+                </configuration>
             </plugin>
         </plugins>
     </build>
