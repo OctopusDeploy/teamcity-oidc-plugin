@@ -122,6 +122,7 @@
                     <argLine>
                         -javaagent:${net.bytebuddy:byte-buddy-agent:jar}
                         -XX:+EnableDynamicAgentLoading
+                        -Xshare:off
                         -Djava.util.logging.config.file=${project.build.testOutputDirectory}/logging.properties
                     </argLine>
                 </configuration>
