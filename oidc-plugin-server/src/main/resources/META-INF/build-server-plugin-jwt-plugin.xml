@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd"
+       default-autowire="constructor">
+    <bean id="jwtKeyManager" class="com.octopus.teamcity.oidc.JwtKeyManager"/>
+    <bean id="rotationSettingsManager"
+          factory-bean="jwtKeyManager"
+          factory-method="createRotationSettingsManager"/>
+    <bean id="keyRotationScheduler" class="com.octopus.teamcity.oidc.KeyRotationScheduler"/>
+    <bean id="jwtBuildFeature" class="com.octopus.teamcity.oidc.JwtBuildFeature" />
+    <bean id="jwtBuildStartContext" class="com.octopus.teamcity.oidc.JwtBuildStartContext" init-method="register" />
+    <bean id="jwtPasswordsProvider" class="com.octopus.teamcity.oidc.JwtPasswordsProvider" init-method="register" />
+    <bean id="jwtBuildParametersProvider" class="com.octopus.teamcity.oidc.JwtBuildParametersProvider" init-method="register" />
+    <bean id="jwtBuildFeatureAdminPage" class="com.octopus.teamcity.oidc.JwtBuildFeatureAdminPage"/>
+    <bean id="keyRotationController" class="com.octopus.teamcity.oidc.KeyRotationController"/>
+    <bean id="rotationSettingsController" class="com.octopus.teamcity.oidc.RotationSettingsController"/>
+    <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter"/>
+</beans>
+

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <artifactId>teamcity-oidc-plugin</artifactId>
+        <groupId>com.octopus.teamcity.oidc</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>oidc-plugin-server</artifactId>
+    <packaging>jar</packaging>
+    <dependencies>
+
+        <dependency>
+            <groupId>net.minidev</groupId>
+            <artifactId>json-smart</artifactId>
+            <version>2.6.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jetbrains.teamcity</groupId>
+            <artifactId>server-api</artifactId>
+            <version>${teamcity-version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jetbrains.teamcity</groupId>
+            <artifactId>server-web-api</artifactId>
+            <version>${teamcity-version}</version>
+            <type>war</type>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.0.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.23.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.23.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.teamcity</groupId>
+            <artifactId>tests-support</artifactId>
+            <version>${teamcity-version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <!--
+                    tests-support transitively pulls in TestNG 6.14.3. When TestNG is on
+                    the classpath alongside JUnit, IntelliJ auto-detects it and runs all
+                    tests with RemoteTestNGStarter, which finds zero JUnit @Test methods
+                    and reports "No tests found". Excluding it forces IntelliJ (and Maven
+                    Surefire) to use JUnit 5 exclusively.
+                -->
+                <exclusion>
+                    <groupId>org.testng</groupId>
+                    <artifactId>testng</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!--
+            TC 2025.11's server-web-api transitively pulls in commons-codec:1.2, but
+            EncryptUtil.scramble() calls Base64.encodeBase64String() which was added in 1.4.
+            Force a modern version on the test classpath to satisfy this.
+        -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.21.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                </configuration>
+            </plugin>
+            <!--
+                Resolves transitive dependency jar paths as Maven properties.
+                Used to load byte-buddy-agent as an explicit javaagent below,
+                which prevents Mockito from self-attaching at runtime and
+                eliminates the cascade of JVM dynamic-agent WARNING lines.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <goals><goal>properties</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.5</version>
+                <configuration>
+                    <argLine>
+                        -javaagent:${net.bytebuddy:byte-buddy-agent:jar}
+                        -XX:+EnableDynamicAgentLoading
+                        -Xshare:off
+                        -Djava.util.logging.config.file=${project.build.testOutputDirectory}/logging.properties
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

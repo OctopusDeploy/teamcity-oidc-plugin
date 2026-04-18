@@ -1,0 +1,10 @@
+# Build output
+target/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+/.superpowers

@@ -1,0 +1,150 @@
+package com.octopus.teamcity.oidc;
+
+import com.nimbusds.jose.JOSEException;
+import jetbrains.buildServer.serverSide.ServerPaths;
+import org.apache.commons.io.FileUtils;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermission;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+public class JwtKeyManagerTest {
+
+    @Mock
+    private ServerPaths serverPaths;
+
+    @TempDir
+    private File tempDir;
+
+    @Test
+    public void keyFileIsReadableAndWritableByOwnerOnly() throws IOException {
+        final var pluginDirectory = new File(tempDir, "foobar");
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+        final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
+
+        new JwtKeyManager(serverPaths);
+
+        final var permissions = Files.getPosixFilePermissions(keyFile.toPath());
+        assertThat(permissions).containsExactlyInAnyOrder(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE
+        );
+    }
+
+    @Test
+    public void keyIdIsThumbprintOfPublicKey() throws JOSEException {
+        final var pluginDirectory = new File(tempDir, "foobar");
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var key = keyManager.getRsaKey();
+
+        assertThat(key.getKeyID()).isEqualTo(key.computeThumbprint().toString());
+        assertThat(key.getKeyID()).isNotEqualTo("teamcity");
+    }
+
+    @Test
+    public void testGetRsaKeyReusesFile() throws IOException {
+        final var pluginDirectory = new File(tempDir, "foobar");
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+        final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
+
+        new JwtKeyManager(serverPaths);
+        final var keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+
+        new JwtKeyManager(serverPaths);
+        final var keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
+        assertThat(keyFileContents2).isEqualTo(keyFileContents);
+    }
+
+    @Test
+    public void constructorThrowsRuntimeExceptionWithClearMessageWhenKeyFileIsCorrupt() throws Exception {
+        final var pluginDirectory = new File(tempDir, "corrupt");
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+
+        final var keyDir = new File(pluginDirectory, "JwtBuildFeature");
+        if (!keyDir.mkdirs()) throw new RuntimeException("Unable to create keyDir '" + keyDir + "'");
+        FileUtils.writeStringToFile(new File(keyDir, "rsa-key.json"), "not-valid-json", StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new JwtKeyManager(serverPaths))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("JwtKeyManager");
+    }
+
+    @Test
+    public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var ecKey = keyManager.getEcKey();
+        assertThat(ecKey.getKeyID()).isEqualTo(ecKey.computeThumbprint().toString());
+    }
+
+    @Test
+    public void isHttpsUrlReturnsTrueForHttps() {
+        assertThat(JwtKeyManager.isHttpsUrl("https://example.com")).isTrue();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForHttp() {
+        assertThat(JwtKeyManager.isHttpsUrl("http://example.com")).isFalse();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForNull() {
+        //noinspection ConstantValue
+        assertThat(JwtKeyManager.isHttpsUrl(null)).isFalse();
+    }
+
+    @Test
+    public void normalizeRootUrlStripsTrailingSlash() {
+        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com/")).isEqualTo("https://example.com");
+    }
+
+    @Test
+    public void normalizeRootUrlStripsMultipleTrailingSlashes() {
+        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com///")).isEqualTo("https://example.com");
+    }
+
+    @Test
+    public void normalizeRootUrlLeavesCleanUrlUnchanged() {
+        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com")).isEqualTo("https://example.com");
+    }
+
+    @Test
+    public void normalizeRootUrlReturnsNullForNull() {
+        //noinspection ConstantValue
+        assertThat(JwtKeyManager.normalizeRootUrl(null)).isNull();
+    }
+
+    @Test
+    public void signThrowsForUnsupportedAlgorithm() {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()
+                .subject("test").build();
+
+        assertThatThrownBy(() -> keyManager.sign(claims, "HS256"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("HS256");
+
+        assertThatThrownBy(() -> keyManager.sign(claims, "none"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("none");
+    }
+}
