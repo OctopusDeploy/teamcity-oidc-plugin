@@ -49,7 +49,8 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var descriptor = jwtBuildFeatures.stream().findFirst().orElseThrow();
                 final var params = descriptor.getParameters();
 
-                final var ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
+                final var ttlMinutes = Math.max(1, Math.min(1440,
+                        Integer.parseInt(params.getOrDefault("ttl_minutes", "10"))));
                 final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
                 final var buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
