@@ -95,7 +95,7 @@ public class JwtKeyManager {
         return keys.get().ec();
     }
 
-    public List<JWK> getPublicKeys() {
+    public @NotNull List<JWK> getPublicKeys() {
         final var snapshot = keys.get();
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());

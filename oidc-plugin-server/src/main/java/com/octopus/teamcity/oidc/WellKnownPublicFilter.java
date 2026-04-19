@@ -12,6 +12,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.List;
 import java.util.logging.Logger;
 
 public class WellKnownPublicFilter implements Filter {
@@ -48,7 +49,8 @@ public class WellKnownPublicFilter implements Filter {
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Cache-Control", "max-age=60, stale-while-revalidate=60");
             resp.setHeader("Access-Control-Allow-Origin", "*");
-            final var jwks = new JWKSet(keyManager.getPublicKeys());
+            final var publicKeys = keyManager.getPublicKeys();
+            final var jwks = new JWKSet(publicKeys != null ? publicKeys : List.of());
             LOG.info("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
             resp.getWriter().write(jwks.toString());
             return;
