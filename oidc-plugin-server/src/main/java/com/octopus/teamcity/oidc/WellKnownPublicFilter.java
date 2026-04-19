@@ -48,6 +48,10 @@ public class WellKnownPublicFilter implements Filter {
         }
 
         if (JWKS_PATH.equals(path)) {
+            if (!keyManager.isReady()) {
+                serviceUnavailable(resp);
+                return;
+            }
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Access-Control-Allow-Origin", "*");
             resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
@@ -59,6 +63,10 @@ public class WellKnownPublicFilter implements Filter {
         }
 
         if (OIDC_DISCOVERY_PATH.equals(path)) {
+            if (!keyManager.isReady()) {
+                serviceUnavailable(resp);
+                return;
+            }
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Access-Control-Allow-Origin", "*");
             resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
@@ -110,6 +118,14 @@ public class WellKnownPublicFilter implements Filter {
         doc.put("subject_types_supported", subjectTypes);
         doc.put("claims_supported", claims);
         return doc;
+    }
+
+    private static void serviceUnavailable(final HttpServletResponse resp) throws IOException {
+        resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+        resp.setContentType("application/json;charset=UTF-8");
+        resp.setHeader("Access-Control-Allow-Origin", "*");
+        resp.getWriter().write("{\"error\":\"server_starting\","
+                + "\"error_description\":\"OIDC provider is not yet available — server startup in progress.\"}");
     }
 
     @Override
