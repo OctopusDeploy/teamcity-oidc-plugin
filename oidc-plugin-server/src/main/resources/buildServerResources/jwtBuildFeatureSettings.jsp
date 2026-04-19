@@ -86,11 +86,13 @@
   }
 
   function jwtAdminPost(url, body, onSuccess, onError) {
+    const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
+    const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
     fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-TC-CSRF-Token': BS.CSRF.token
+        'X-TC-CSRF-Token': csrf
       },
       body: body
     })
