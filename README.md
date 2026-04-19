@@ -93,6 +93,8 @@ use it as the audience in the build feature configuration.
 
 To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `MANAGE_SERVER_INSTALLATION` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
 
+> **Note:** Only one generation of retired keys is kept. If you rotate twice in quick succession, tokens signed with the oldest key will fail verification at relying parties. Rotate no more frequently than your token TTL to avoid dropping in-flight tokens.
+
 ## Key Storage and Encryption
 
 Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS).
