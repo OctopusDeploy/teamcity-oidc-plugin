@@ -392,6 +392,35 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void unknownClaimNamesAreIgnoredAndDoNotAppearInToken() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        final var keyManager = new JwtKeyManager(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters())
+                .thenReturn(Map.of("claims", "branch,injected_claim,__proto__"));
+
+        final var branch = mock(Branch.class);
+        when(branch.getName()).thenReturn("refs/heads/main");
+        when(runningBuild.getBranch()).thenReturn(branch);
+
+        final var triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
+        assertThat(jwt.getJWTClaimsSet().getClaim("injected_claim")).isNull();
+        assertThat(jwt.getJWTClaimsSet().getClaim("__proto__")).isNull();
+    }
+
+    @Test
     public void issuerClaimHasTrailingSlashStripped() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111/");

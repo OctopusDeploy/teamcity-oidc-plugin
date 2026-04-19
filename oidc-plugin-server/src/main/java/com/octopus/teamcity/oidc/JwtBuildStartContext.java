@@ -10,6 +10,7 @@ import org.joda.time.DateTime;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 public class JwtBuildStartContext implements BuildStartContextProcessor {
     private static final Logger LOG = Logger.getLogger(JwtBuildStartContext.class.getName());
@@ -66,9 +67,19 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var audience = rawAudience.isBlank() ? buildServerRootUrl : rawAudience;
 
                 final var claimsParam = params.get("claims");
-                final var enabledClaims = (claimsParam == null || claimsParam.isBlank())
+                final Set<String> requestedClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
                         : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
+                final var unknownClaims = requestedClaims.stream()
+                        .filter(c -> !ALL_CUSTOM_CLAIMS.contains(c))
+                        .collect(Collectors.toSet());
+                if (!unknownClaims.isEmpty()) {
+                    LOG.warning("JWT plugin: ignoring unrecognised claim names for build "
+                            + build.getBuildId() + ": " + unknownClaims);
+                }
+                final var enabledClaims = requestedClaims.stream()
+                        .filter(ALL_CUSTOM_CLAIMS::contains)
+                        .collect(Collectors.toSet());
 
                 final var branch = build.getBranch();
                 final var branchName = branch != null ? branch.getName() : "";
