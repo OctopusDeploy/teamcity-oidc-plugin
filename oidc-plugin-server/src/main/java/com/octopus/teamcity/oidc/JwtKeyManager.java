@@ -8,6 +8,8 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import jetbrains.buildServer.serverSide.BuildServerAdapter;
+import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.Encryption;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
@@ -27,9 +29,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class JwtKeyManager {
+public class JwtKeyManager extends BuildServerAdapter {
     private static final Logger LOG = Logger.getLogger(JwtKeyManager.class.getName());
 
     record KeyMaterial(
@@ -41,45 +44,77 @@ public class JwtKeyManager {
 
     private final File keyDirectory;
     private final Encryption encryption;
-    private final AtomicReference<KeyMaterial> keys;
+    private final SBuildServer buildServer;
 
     /**
-     * Production constructor — Spring autowires {@code encryptionManager} (which implements
-     * {@link Encryption}) and uses the server-specific key configured via
-     * {@code TEAMCITY_ENCRYPTION_KEYS}. When no custom key is set the server falls back to its
-     * default scramble strategy; file permissions (0600) remain the primary protection in that
-     * case.
+     * Keys are null until {@link #serverStartup()} fires. All callers must check
+     * {@link #isReady()} or will receive an {@link IllegalStateException}.
      */
-    public JwtKeyManager(@NotNull final ServerPaths serverPaths, @NotNull final Encryption encryption) {
-        this.encryption = encryption;
-        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
-        final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
-        if (!createDirectoryResult)
-            throw new RuntimeException("Failed to create key directory");
+    private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
 
+    /**
+     * Production constructor. Spring autowires {@link Encryption} (resolved to TC's
+     * {@code EncryptionManager}) and {@link ExtensionHolder}. Key loading is deferred to
+     * {@link #serverStartup()} because {@code EncryptionManager} sets its encryption strategy
+     * during TC server startup — after all plugin Spring contexts are initialized — so calling
+     * {@code encrypt()} before that point throws {@code IllegalStateException}.
+     */
+    public JwtKeyManager(@NotNull final ServerPaths serverPaths,
+                         @NotNull final Encryption encryption,
+                         @NotNull final SBuildServer buildServer) {
+        this.encryption = encryption;
+        this.buildServer = buildServer;
+        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
+        if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
+            throw new RuntimeException("Failed to create key directory");
+    }
+
+    /**
+     * Package-private: for unit tests only. Uses {@link EncryptUtil} scramble (no external
+     * dependency on TC's encryption infrastructure) and loads keys immediately since there is
+     * no Spring lifecycle in tests.
+     */
+    JwtKeyManager(@NotNull final ServerPaths serverPaths) {
+        this.encryption = new Encryption() {
+            @Override public String encrypt(String v) { return EncryptUtil.scramble(v); }
+            @Override public String decrypt(String v) { return EncryptUtil.unscramble(v); }
+            @Override public boolean isEncrypted(String v) { return EncryptUtil.isScrambled(v); }
+        };
+        this.buildServer = null;
+        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
+        if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
+            throw new RuntimeException("Failed to create key directory");
         try {
-            this.keys = new AtomicReference<>(new KeyMaterial(
-                    loadOrGenerateRsaKey(),
-                    loadRetiredRsaKey(),
-                    loadOrGenerateEcKey(),
-                    loadRetiredEcKey()
-            ));
+            loadKeys();
         } catch (final IOException | ParseException | JOSEException | IllegalArgumentException e) {
             throw new RuntimeException(
                     "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
         }
     }
 
+    /** Called by Spring {@code init-method} — registers this bean as a {@link BuildServerAdapter}. */
+    public void register() {
+        buildServer.addListener(this);
+        LOG.info("JWT plugin: JwtKeyManager registered as BuildServerListener — keys will load on serverStartup");
+    }
+
     /**
-     * Package-private: for unit tests only. Uses {@link EncryptUtil} scramble so tests have no
-     * external dependency on the TC server's encryption infrastructure.
+     * Called by TC after full server startup, by which time {@code EncryptionManager} has its
+     * encryption strategy set and {@code encrypt()} / {@code decrypt()} are safe to call.
      */
-    JwtKeyManager(@NotNull final ServerPaths serverPaths) {
-        this(serverPaths, new Encryption() {
-            @Override public String encrypt(String value) { return EncryptUtil.scramble(value); }
-            @Override public String decrypt(String value) { return EncryptUtil.unscramble(value); }
-            @Override public boolean isEncrypted(String value) { return EncryptUtil.isScrambled(value); }
-        });
+    @Override
+    public void serverStartup() {
+        try {
+            loadKeys();
+        } catch (final Exception e) {
+            LOG.log(Level.SEVERE, "JWT plugin: failed to load/generate keys on serverStartup — "
+                    + "OIDC endpoints will remain unavailable", e);
+        }
+    }
+
+    /** Returns {@code true} once {@link #serverStartup()} has successfully loaded keys. */
+    public boolean isReady() {
+        return keys.get() != null;
     }
 
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
@@ -88,15 +123,15 @@ public class JwtKeyManager {
     }
 
     public RSAKey getRsaKey() {
-        return keys.get().rsa();
+        return requireReady().rsa();
     }
 
     public ECKey getEcKey() {
-        return keys.get().ec();
+        return requireReady().ec();
     }
 
     public @NotNull List<JWK> getPublicKeys() {
-        final var snapshot = keys.get();
+        final var snapshot = requireReady();
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());
         if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
@@ -106,7 +141,7 @@ public class JwtKeyManager {
     }
 
     public void rotateKey() throws JOSEException, IOException {
-        final var current = keys.get();
+        final var current = requireReady();
         final var newRsa = generateFreshRsaKey();
         final var newEc = generateFreshEcKey();
 
@@ -167,19 +202,36 @@ public class JwtKeyManager {
         return url.replaceAll("/+$", "");
     }
 
+    private KeyMaterial requireReady() {
+        final var k = keys.get();
+        if (k == null) throw new IllegalStateException(
+                "JWT plugin: key manager not yet initialized — server startup is still in progress");
+        return k;
+    }
+
+    private void loadKeys() throws IOException, ParseException, JOSEException {
+        keys.set(new KeyMaterial(
+                loadOrGenerateRsaKey(),
+                loadRetiredRsaKey(),
+                loadOrGenerateEcKey(),
+                loadRetiredEcKey()
+        ));
+        LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
+    }
+
     private RSAKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
-            LOG.info("Read existing RSA key from: " + keyFile);
+            LOG.info("JWT plugin: reading existing RSA key from " + keyFile);
             final var content = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
             final var key = JWK.parse(decryptFromFile(content)).toRSAKey();
             if (isLegacyFormat(content)) {
-                LOG.info("Migrating RSA key to server encryption: " + keyFile);
+                LOG.info("JWT plugin: migrating RSA key to server encryption");
                 saveKeyToFile(key, "rsa-key.json");
             }
             return key;
         }
-        LOG.info("Generate new RSA key to: " + keyFile);
+        LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
         saveKeyToFile(newKey, "rsa-key.json");
         return newKey;
@@ -189,11 +241,11 @@ public class JwtKeyManager {
     private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
         final var f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
-        LOG.info("Read retired RSA key from: " + f);
+        LOG.info("JWT plugin: reading retired RSA key from " + f);
         final var content = FileUtils.readFileToString(f, StandardCharsets.UTF_8);
         final var key = JWK.parse(decryptFromFile(content)).toRSAKey();
         if (isLegacyFormat(content)) {
-            LOG.info("Migrating retired RSA key to server encryption: " + f);
+            LOG.info("JWT plugin: migrating retired RSA key to server encryption");
             saveKeyToFile(key, "retired-rsa-key.json");
         }
         return key;
@@ -202,16 +254,16 @@ public class JwtKeyManager {
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "ec-key.json");
         if (keyFile.exists()) {
-            LOG.info("Read existing EC key from: " + keyFile);
+            LOG.info("JWT plugin: reading existing EC key from " + keyFile);
             final var content = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
             final var key = JWK.parse(decryptFromFile(content)).toECKey();
             if (isLegacyFormat(content)) {
-                LOG.info("Migrating EC key to server encryption: " + keyFile);
+                LOG.info("JWT plugin: migrating EC key to server encryption");
                 saveKeyToFile(key, "ec-key.json");
             }
             return key;
         }
-        LOG.info("Generate new EC key to: " + keyFile);
+        LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
         saveKeyToFile(newKey, "ec-key.json");
         return newKey;
@@ -221,30 +273,26 @@ public class JwtKeyManager {
     private ECKey loadRetiredEcKey() throws IOException, ParseException {
         final var f = new File(keyDirectory, "retired-ec-key.json");
         if (!f.exists()) return null;
-        LOG.info("Read retired EC key from: " + f);
+        LOG.info("JWT plugin: reading retired EC key from " + f);
         final var content = FileUtils.readFileToString(f, StandardCharsets.UTF_8);
         final var key = JWK.parse(decryptFromFile(content)).toECKey();
         if (isLegacyFormat(content)) {
-            LOG.info("Migrating retired EC key to server encryption: " + f);
+            LOG.info("JWT plugin: migrating retired EC key to server encryption");
             saveKeyToFile(key, "retired-ec-key.json");
         }
         return key;
     }
 
     /**
-     * Detects and decrypts a key file's content. If the file was written by an older version of
-     * this plugin (3DES with the TC-wide hardcoded key, prefix {@code zxx}), the content is
-     * decrypted via {@link EncryptUtil} for backward compatibility. All other values are passed to
-     * the server {@link Encryption} instance.
+     * Decrypts a key file's content. Files written by {@link EncryptUtil#scramble} (legacy, prefix
+     * {@code zxx}) are decrypted via {@link EncryptUtil}; all others via the server
+     * {@link Encryption} instance.
      */
     private String decryptFromFile(final String content) {
-        if (isLegacyFormat(content)) {
-            return EncryptUtil.unscramble(content);
-        }
-        return encryption.decrypt(content);
+        return isLegacyFormat(content) ? EncryptUtil.unscramble(content) : encryption.decrypt(content);
     }
 
-    /** Returns {@code true} if the content was written by the legacy {@code EncryptUtil.scramble} (prefix {@code zxx}). */
+    /** Returns {@code true} if the content was written by the legacy {@link EncryptUtil#scramble} (prefix {@code zxx}). */
     private boolean isLegacyFormat(final String content) {
         return !encryption.isEncrypted(content) && EncryptUtil.isScrambled(content);
     }
