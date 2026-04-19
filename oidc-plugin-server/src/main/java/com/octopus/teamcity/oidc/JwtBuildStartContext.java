@@ -113,10 +113,10 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
             } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
-                throw new RuntimeException(e);
+                throw new RuntimeException("JWT plugin: failed to sign token — check the TeamCity server log for details");
             } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
-                throw e;
+                throw new RuntimeException("JWT plugin: unexpected error issuing token — check the TeamCity server log for details");
             }
         }
     }
