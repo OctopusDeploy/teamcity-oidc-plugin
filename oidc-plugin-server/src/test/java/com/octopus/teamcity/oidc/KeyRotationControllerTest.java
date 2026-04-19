@@ -98,6 +98,49 @@ public class KeyRotationControllerTest {
     }
 
     @Test
+    public void warningIncludedWhenRotatingWithinMinGap() throws Exception {
+        // Simulate a very recent previous rotation (1 second ago)
+        settingsManager.updateLastRotatedAt(java.time.Instant.now().minusSeconds(1));
+
+        final var writer = new StringWriter();
+        when(request.getMethod()).thenReturn("POST");
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+
+        final var adminUser = mock(SUser.class);
+        when(adminUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
+
+        try (final var sessionUser = mockStatic(SessionUser.class)) {
+            sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(adminUser);
+            controller().doHandle(request, response);
+        }
+
+        assertThat(writer.toString()).contains("rotated");
+        assertThat(writer.toString()).contains("warning");
+    }
+
+    @Test
+    public void noWarningWhenRotatingAfterMinGap() throws Exception {
+        // Simulate a previous rotation well outside the minimum gap
+        settingsManager.updateLastRotatedAt(
+                java.time.Instant.now().minusSeconds(KeyRotationController.MIN_ROTATION_GAP_SECONDS + 60));
+
+        final var writer = new StringWriter();
+        when(request.getMethod()).thenReturn("POST");
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+
+        final var adminUser = mock(SUser.class);
+        when(adminUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
+
+        try (final var sessionUser = mockStatic(SessionUser.class)) {
+            sessionUser.when(() -> SessionUser.getUser(request)).thenReturn(adminUser);
+            controller().doHandle(request, response);
+        }
+
+        assertThat(writer.toString()).contains("rotated");
+        assertThat(writer.toString()).doesNotContain("warning");
+    }
+
+    @Test
     public void getRequestReturns405MethodNotAllowed() throws Exception {
         when(request.getMethod()).thenReturn("GET");
 
