@@ -135,7 +135,7 @@ public class JwtTestController extends BaseController {
             writeJson(response, false, e.getMessage());
         } catch (final Exception e) {
             LOG.log(Level.WARNING, "JWT plugin: test step '" + step + "' failed", e);
-            writeJson(response, false, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            writeJson(response, false, "An internal error occurred — check the TeamCity server log for details");
         }
         return null;
     }
@@ -147,7 +147,16 @@ public class JwtTestController extends BaseController {
         }
         var algorithm = request.getParameter("algorithm");
         if (algorithm == null || algorithm.isBlank()) algorithm = "RS256";
-        final var ttl = parseTtl(request.getParameter("ttl_minutes"));
+        // Security: TTL is hard-capped at 1 minute regardless of the build feature configuration.
+        //
+        // The exchange step (stepExchange) POSTs this token to an operator-supplied external URL.
+        // If that URL is attacker-controlled, a valid signed JWT is delivered to them. Mitigations:
+        //   1. Only admins with MANAGE_SERVER_INSTALLATION can invoke this endpoint.
+        //   2. Private/link-local addresses are blocked at the network level (checkNotPrivateAddress).
+        //   3. This 1-minute TTL caps the window in which a stolen token could be replayed — even
+        //      if it reaches an attacker, it expires before most automated abuse is practical.
+        // Requiring a non-empty audience does NOT help: an attacker simply supplies one.
+        final var ttl = 1;
         var audience = request.getParameter("audience");
         if (audience == null || audience.isBlank()) audience = rootUrl;
 

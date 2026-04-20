@@ -8,6 +8,8 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import jetbrains.buildServer.serverSide.BuildServerAdapter;
+import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.Encryption;
 import org.apache.commons.io.FileUtils;
@@ -26,9 +28,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class JwtKeyManager {
+public class JwtKeyManager extends BuildServerAdapter {
     private static final Logger LOG = Logger.getLogger(JwtKeyManager.class.getName());
 
     record KeyMaterial(
@@ -40,13 +43,18 @@ public class JwtKeyManager {
 
     private final File keyDirectory;
     private final Encryption encryption;
+    private final SBuildServer buildServer;
+
+    /**
+     * Keys are null until {@link #serverStartup()} fires. All callers must check
+     * {@link #isReady()} or will receive an {@link IllegalStateException}.
+     */
     private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
 
     /**
      * Production constructor — Spring autowires {@code encryptionManager} (which implements
      * {@link Encryption}) and uses the server-specific key configured via
      * {@code TEAMCITY_ENCRYPTION_KEYS}.
-     *
      * <p>Keys are loaded lazily on first use rather than in the constructor. This avoids a
      * Spring initialization ordering problem where TC's {@code EncryptionManager} is injected
      * before its encryption strategy has been configured (which happens during TC's own
@@ -54,11 +62,13 @@ public class JwtKeyManager {
      * {@link #getRsaKey()}, {@link #getEcKey()}, or {@link #getPublicKeys()}, TC is fully
      * started and the encryption strategy is in place.
      */
-    public JwtKeyManager(@NotNull final ServerPaths serverPaths, @NotNull final Encryption encryption) {
+    public JwtKeyManager(@NotNull final ServerPaths serverPaths,
+                         @NotNull final Encryption encryption,
+                         @NotNull final SBuildServer buildServer) {
         this.encryption = encryption;
+        this.buildServer = buildServer;
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
-        final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
-        if (!createDirectoryResult)
+        if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
             throw new RuntimeException("Failed to create key directory");
     }
 
@@ -88,21 +98,46 @@ public class JwtKeyManager {
         }
     }
 
+    /** Called by Spring {@code init-method} — registers this bean as a {@link BuildServerAdapter}. */
+    public void register() {
+        buildServer.addListener(this);
+        LOG.info("JWT plugin: JwtKeyManager registered as BuildServerListener — keys will load on serverStartup");
+    }
+
+    /**
+     * Called by TC after full server startup, by which time {@code EncryptionManager} has its
+     * encryption strategy set and {@code encrypt()} / {@code decrypt()} are safe to call.
+     */
+    @Override
+    public void serverStartup() {
+        try {
+            loadKeys();
+        } catch (final Exception e) {
+            LOG.log(Level.SEVERE, "JWT plugin: failed to load/generate keys on serverStartup — "
+                    + "OIDC endpoints will remain unavailable", e);
+        }
+    }
+
+    /** Returns {@code true} once {@link #serverStartup()} has successfully loaded keys. */
+    public boolean isReady() {
+        return keys.get() != null;
+    }
+
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
     public RotationSettingsManager createRotationSettingsManager() {
         return new RotationSettingsManager(keyDirectory);
     }
 
     public RSAKey getRsaKey() {
-        return getOrLoadKeys().rsa();
+        return requireReady().rsa();
     }
 
     public ECKey getEcKey() {
-        return getOrLoadKeys().ec();
+        return requireReady().ec();
     }
 
-    public List<JWK> getPublicKeys() {
-        final var snapshot = getOrLoadKeys();
+    public @NotNull List<JWK> getPublicKeys() {
+        final var snapshot = requireReady();
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());
         if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
@@ -112,7 +147,7 @@ public class JwtKeyManager {
     }
 
     public void rotateKey() throws JOSEException, IOException {
-        final var current = getOrLoadKeys();
+        final var current = requireReady();
         final var newRsa = generateFreshRsaKey();
         final var newEc = generateFreshEcKey();
 
@@ -173,13 +208,30 @@ public class JwtKeyManager {
         return url.replaceAll("/+$", "");
     }
 
+    private KeyMaterial requireReady() {
+        final var k = keys.get();
+        if (k == null) throw new IllegalStateException(
+                "JWT plugin: key manager not yet initialized — server startup is still in progress");
+        return k;
+    }
+
+    private void loadKeys() throws IOException, ParseException, JOSEException {
+        keys.set(new KeyMaterial(
+                loadOrGenerateRsaKey(),
+                loadRetiredRsaKey(),
+                loadOrGenerateEcKey(),
+                loadRetiredEcKey()
+        ));
+        LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
+    }
+
     private RSAKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing RSA key from: " + keyFile);
             return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
         }
-        LOG.info("Generate new RSA key to: " + keyFile);
+        LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
         saveKeyToFile(newKey, "rsa-key.json");
         return newKey;
@@ -199,7 +251,7 @@ public class JwtKeyManager {
             LOG.info("Read existing EC key from: " + keyFile);
             return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toECKey();
         }
-        LOG.info("Generate new EC key to: " + keyFile);
+        LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
         saveKeyToFile(newKey, "ec-key.json");
         return newKey;

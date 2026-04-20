@@ -210,7 +210,7 @@ public class JwtTestControllerTest {
     }
 
     @Test
-    void jwtStepClampsTtlToOneDayMaximum() throws Exception {
+    void jwtStepAlwaysUses1MinuteTtlRegardlessOfInput() throws Exception {
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "999999",
@@ -221,7 +221,7 @@ public class JwtTestControllerTest {
         final var jwt = SignedJWT.parse(result.getAsString("token"));
         final var ttlSeconds = (jwt.getJWTClaimsSet().getExpirationTime().getTime()
                 - jwt.getJWTClaimsSet().getIssueTime().getTime()) / 1000;
-        assertThat(ttlSeconds).isEqualTo(1440 * 60); // clamped to 24 hours
+        assertThat(ttlSeconds).isEqualTo(60); // always 1 minute for test tokens
     }
 
     @Test
