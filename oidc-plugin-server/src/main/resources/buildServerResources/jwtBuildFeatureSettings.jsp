@@ -112,7 +112,7 @@
 <script>
   (function() {
     try {
-      var raw = atob('${jwksBase64}');
+      const raw = atob('${jwksBase64}');
       document.getElementById('jwtJwksDisplay').textContent = JSON.stringify(JSON.parse(raw), null, 2);
     } catch(e) { /* jwksBase64 empty or invalid — leave blank */ }
   })();
