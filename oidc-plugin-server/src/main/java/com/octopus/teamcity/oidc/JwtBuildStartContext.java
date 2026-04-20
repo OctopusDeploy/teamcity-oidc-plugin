@@ -37,6 +37,10 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
         LOG.info("JWT plugin: JwtBuildStartContext registered as BuildStartContextProcessor");
     }
 
+    private static String sanitize(final String s) {
+        return s == null ? "" : s.replaceAll("[\\r\\n\\t]", "_");
+    }
+
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
         final var build = buildStartContext.getBuild();
@@ -56,7 +60,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
                 final var buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
-                        + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + algorithmName);
+                        + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + sanitize(algorithmName));
 
                 if (!JwtKeyManager.isHttpsUrl(buildServerRootUrl)) {
                     LOG.warning("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
@@ -75,7 +79,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         .collect(Collectors.toSet());
                 if (!unknownClaims.isEmpty()) {
                     LOG.warning("JWT plugin: ignoring unrecognised claim names for build "
-                            + build.getBuildId() + ": " + unknownClaims);
+                            + build.getBuildId() + ": " + unknownClaims.stream().map(JwtBuildStartContext::sanitize).collect(Collectors.toSet()));
                 }
                 final var enabledClaims = requestedClaims.stream()
                         .filter(ALL_CUSTOM_CLAIMS::contains)
@@ -120,7 +124,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
-                        + " (iss=" + buildServerRootUrl + ", aud=" + audience + ", alg=" + algorithmName
+                        + " (iss=" + buildServerRootUrl + ", aud=" + sanitize(audience) + ", alg=" + sanitize(algorithmName)
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
             } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
