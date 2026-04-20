@@ -147,7 +147,7 @@ public class JwtTestController extends BaseController {
         }
         var algorithm = request.getParameter("algorithm");
         if (algorithm == null || algorithm.isBlank()) algorithm = "RS256";
-        final var ttl = parseTtl(request.getParameter("ttl_minutes"));
+        final var ttl = 1; // test tokens are always 1 minute regardless of build feature TTL
         var audience = request.getParameter("audience");
         if (audience == null || audience.isBlank()) audience = rootUrl;
 
