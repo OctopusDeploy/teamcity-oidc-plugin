@@ -86,8 +86,7 @@ public class JwtKeyManager {
                         "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
             }
         }
-   }
-
+    }
 
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
     public RotationSettingsManager createRotationSettingsManager() {
