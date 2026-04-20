@@ -26,7 +26,9 @@ import org.springframework.web.servlet.ModelAndView;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -41,10 +43,17 @@ public class JwtTestController extends BaseController {
     private static final Logger LOG = Logger.getLogger(JwtTestController.class.getName());
     static final String PATH = "/admin/jwtTest.html";
 
+    /** Resolves a hostname to its addresses; injectable so tests can stub DNS. */
+    @FunctionalInterface
+    interface AddressResolver {
+        InetAddress[] resolve(String host) throws UnknownHostException;
+    }
+
     private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
     private final HttpClient httpClient;
     private final CSRFFilter csrfFilter;
+    private final AddressResolver addressResolver;
 
     @Autowired
     public JwtTestController(@NotNull final WebControllerManager controllerManager,
@@ -53,7 +62,7 @@ public class JwtTestController extends BaseController {
                              @NotNull final ExtensionHolder extensionHolder) {
         this(controllerManager, keyManager, buildServer,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
-                new CSRFFilter(extensionHolder));
+                new CSRFFilter(extensionHolder), InetAddress::getAllByName);
     }
 
     JwtTestController(@NotNull final WebControllerManager controllerManager,
@@ -61,10 +70,20 @@ public class JwtTestController extends BaseController {
                       @NotNull final SBuildServer buildServer,
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter) {
+        this(controllerManager, keyManager, buildServer, httpClient, csrfFilter, InetAddress::getAllByName);
+    }
+
+    JwtTestController(@NotNull final WebControllerManager controllerManager,
+                      @NotNull final JwtKeyManager keyManager,
+                      @NotNull final SBuildServer buildServer,
+                      @NotNull final HttpClient httpClient,
+                      @NotNull final CSRFFilter csrfFilter,
+                      @NotNull final AddressResolver addressResolver) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
         this.httpClient = httpClient;
         this.csrfFilter = csrfFilter;
+        this.addressResolver = addressResolver;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: JwtTestController registered at " + PATH);
     }
@@ -116,7 +135,7 @@ public class JwtTestController extends BaseController {
             writeJson(response, false, e.getMessage());
         } catch (final Exception e) {
             LOG.log(Level.WARNING, "JWT plugin: test step '" + step + "' failed", e);
-            writeJson(response, false, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            writeJson(response, false, "An internal error occurred — check the TeamCity server log for details");
         }
         return null;
     }
@@ -128,7 +147,16 @@ public class JwtTestController extends BaseController {
         }
         var algorithm = request.getParameter("algorithm");
         if (algorithm == null || algorithm.isBlank()) algorithm = "RS256";
-        final var ttl = parseTtl(request.getParameter("ttl_minutes"));
+        // Security: TTL is hard-capped at 1 minute regardless of the build feature configuration.
+        //
+        // The exchange step (stepExchange) POSTs this token to an operator-supplied external URL.
+        // If that URL is attacker-controlled, a valid signed JWT is delivered to them. Mitigations:
+        //   1. Only admins with MANAGE_SERVER_INSTALLATION can invoke this endpoint.
+        //   2. Private/link-local addresses are blocked at the network level (checkNotPrivateAddress).
+        //   3. This 1-minute TTL caps the window in which a stolen token could be replayed — even
+        //      if it reaches an attacker, it expires before most automated abuse is practical.
+        // Requiring a non-empty audience does NOT help: an attacker simply supplies one.
+        final var ttl = 1;
         var audience = request.getParameter("audience");
         if (audience == null || audience.isBlank()) audience = rootUrl;
 
@@ -165,6 +193,9 @@ public class JwtTestController extends BaseController {
 
     private String stepDiscovery() throws Exception {
         final var rootUrl = buildServer.getRootUrl();
+        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+        }
         final var url = rootUrl + "/.well-known/openid-configuration";
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
@@ -184,6 +215,9 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Missing required parameter: token");
         }
         final var rootUrl = buildServer.getRootUrl();
+        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+        }
         final var url = rootUrl + "/.well-known/jwks.json";
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
@@ -224,6 +258,7 @@ public class JwtTestController extends BaseController {
         if (!JwtKeyManager.isHttpsUrl(serviceUrl)) {
             throw new TestStepException("serviceUrl must use HTTPS");
         }
+        checkNotPrivateAddress(serviceUrl);
 
         final var discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
         final var discoveryResp = httpGet(discoveryUrl);
@@ -260,6 +295,28 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Exchange failed (HTTP " + status + "): " + bodySnippet);
         }
         return "Exchange succeeded (HTTP " + status + ")";
+    }
+
+    /**
+     * Resolves {@code url}'s hostname and rejects it if any resolved address is a loopback,
+     * link-local, or RFC-1918 / site-local address. Prevents the exchange test step from being
+     * used as an SSRF probe against internal infrastructure.
+     */
+    private void checkNotPrivateAddress(final String url) throws TestStepException {
+        final var host = URI.create(url).getHost();
+        final InetAddress[] addresses;
+        try {
+            addresses = addressResolver.resolve(host);
+        } catch (final UnknownHostException e) {
+            throw new TestStepException("Could not resolve host: " + host);
+        }
+        for (final var addr : addresses) {
+            if (addr.isLoopbackAddress() || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()) {
+                throw new TestStepException(
+                        "serviceUrl resolves to a private or link-local address — not allowed");
+            }
+        }
     }
 
     private static String encode(final String value) {
