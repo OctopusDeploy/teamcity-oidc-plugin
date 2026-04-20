@@ -156,7 +156,7 @@ public class JwtBuildStartContextTest {
     public void tokenTtlIsClamppedToOneDayMaximum() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -395,7 +395,7 @@ public class JwtBuildStartContextTest {
     public void unknownClaimNamesAreIgnoredAndDoNotAppearInToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
