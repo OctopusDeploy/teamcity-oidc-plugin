@@ -69,7 +69,9 @@
     jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
       function(data) {
         const ok = data.status === 'rotated';
-        const msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');
+        const msg = ok
+          ? 'Keys rotated successfully' + (data.warning ? ' \u26a0 ' + data.warning : '')
+          : (data.message || 'Rotation failed');
         jwtShowResult('jwtRotateResult', ok, msg);
         if (ok) {
           const now = new Date();
