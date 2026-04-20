@@ -39,10 +39,22 @@ public class JwtKeyManager {
     ) {}
 
     private final File keyDirectory;
-    private final AtomicReference<KeyMaterial> keys;
+    private final Encryption encryption;
+    private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
 
-    public JwtKeyManager(@NotNull final ServerPaths serverPaths) {
-        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
+    /**
+     * Production constructor — Spring autowires {@code encryptionManager} (which implements
+     * {@link Encryption}) and uses the server-specific key configured via
+     * {@code TEAMCITY_ENCRYPTION_KEYS}.
+     * <p>Keys are loaded lazily on first use rather than in the constructor. This avoids a
+     * Spring initialization ordering problem where TC's {@code EncryptionManager} is injected
+     * before its encryption strategy has been configured (which happens during TC's own
+     * post-construction startup phase). By the time any endpoint or build feature first calls
+     * {@link #getRsaKey()}, {@link #getEcKey()}, or {@link #getPublicKeys()}, TC is fully
+     * started and the encryption strategy is in place.
+     */
+    public JwtKeyManager(@NotNull final ServerPaths serverPaths, @NotNull final Encryption encryption) {
+        this.encryption = encryption;        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
         if (!createDirectoryResult)
             throw new RuntimeException("Failed to create key directory");
@@ -74,17 +86,6 @@ public class JwtKeyManager {
         }
     }
 
-    /**
-     * Package-private: for unit tests only. Uses {@link EncryptUtil} scramble so tests have no
-     * external dependency on the TC server's encryption infrastructure.
-     */
-    JwtKeyManager(@NotNull final ServerPaths serverPaths) {
-        this(serverPaths, new Encryption() {
-            @Override public String encrypt(String value) { return EncryptUtil.scramble(value); }
-            @Override public String decrypt(String value) { return EncryptUtil.unscramble(value); }
-            @Override public boolean isEncrypted(String value) { return EncryptUtil.isScrambled(value); }
-        });
-    }
 
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
     public RotationSettingsManager createRotationSettingsManager() {
@@ -208,7 +209,7 @@ public class JwtKeyManager {
         final var f = new File(keyDirectory, "retired-ec-key.json");
         if (!f.exists()) return null;
         LOG.info("Read retired EC key from: " + f);
-        return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toECKey();
+        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toECKey();
     }
 
     private static RSAKey generateFreshRsaKey() throws JOSEException {
