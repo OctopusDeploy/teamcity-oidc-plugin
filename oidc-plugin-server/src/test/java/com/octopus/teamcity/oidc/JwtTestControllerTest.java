@@ -51,7 +51,7 @@ public class JwtTestControllerTest {
     @BeforeEach
     void setup() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = new JwtKeyManager(serverPaths);
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         // Default: CSRF check passes. lenient() because some tests use GET (CSRF never reached).
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
         // Default: HTTPS root URL. lenient() because not all tests exercise this path.

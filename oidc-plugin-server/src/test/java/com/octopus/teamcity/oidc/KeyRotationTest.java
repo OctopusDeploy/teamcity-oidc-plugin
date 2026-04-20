@@ -34,7 +34,7 @@ public class KeyRotationTest {
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = new JwtKeyManager(serverPaths);
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
     }
 
     @Test

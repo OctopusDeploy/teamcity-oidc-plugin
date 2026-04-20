@@ -10,8 +10,6 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.Encryption;
-import jetbrains.buildServer.serverSide.crypt.EncryptionKeysStorage;
-import jetbrains.buildServer.serverSide.crypt.impl.CustomKeyEncryption;
 import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -67,21 +65,6 @@ public class JwtKeyManager {
             throw new RuntimeException(
                     "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Package-private: for unit tests only. Uses {@link CustomKeyEncryption} with a fixed
-     * in-memory key so tests have no dependency on the TC server's encryption infrastructure.
-     */
-    JwtKeyManager(@NotNull final ServerPaths serverPaths) {
-        this(serverPaths, new CustomKeyEncryption(new EncryptionKeysStorage() {
-            private static final String KEY_ID = "0".repeat(32);
-            private static final byte[] KEY    = new byte[16];
-            private final java.util.Map<String, byte[]> KEYS = java.util.Map.of(KEY_ID, KEY);
-            @Override public java.util.Map<String, byte[]> getKeys() { return KEYS; }
-            @Override public @NotNull String getDefaultKeyId() { return KEY_ID; }
-            @Override public void reloadSettings() {}
-        }));
     }
 
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
