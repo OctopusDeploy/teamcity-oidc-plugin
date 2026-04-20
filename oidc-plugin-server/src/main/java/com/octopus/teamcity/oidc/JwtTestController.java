@@ -135,7 +135,7 @@ public class JwtTestController extends BaseController {
             writeJson(response, false, e.getMessage());
         } catch (final Exception e) {
             LOG.log(Level.WARNING, "JWT plugin: test step '" + step + "' failed", e);
-            writeJson(response, false, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            writeJson(response, false, "An internal error occurred — check the TeamCity server log for details");
         }
         return null;
     }
