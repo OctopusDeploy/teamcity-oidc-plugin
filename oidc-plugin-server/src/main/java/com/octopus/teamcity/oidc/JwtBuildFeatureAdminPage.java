@@ -18,7 +18,7 @@ import java.util.Map;
 
 public class JwtBuildFeatureAdminPage extends AdminPage {
     private static final String PAGE = "jwtBuildFeatureSettings.jsp";
-    private static final String TAB_TITLE = "JWT build feature";
+    private static final String TAB_TITLE = "OIDC / JWT";
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
 
