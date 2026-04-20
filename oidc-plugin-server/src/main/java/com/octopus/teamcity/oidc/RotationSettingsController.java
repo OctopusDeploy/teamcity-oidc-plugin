@@ -82,9 +82,13 @@ public class RotationSettingsController extends BaseController {
         final var current = settingsManager.load();
         settingsManager.save(new RotationSettings(enabled, cronSchedule, current.lastRotatedAt()));
 
-        LOG.info("JWT plugin: rotation settings updated (enabled=" + enabled + ", schedule=" + cronSchedule + ")");
+        LOG.info("JWT plugin: rotation settings updated (enabled=" + enabled + ", schedule=" + sanitize(cronSchedule) + ")");
         writeJson(response, true, "Settings saved");
         return null;
+    }
+
+    private static String sanitize(final String s) {
+        return s == null ? "" : s.replaceAll("[\\r\\n\\t]", "_");
     }
 
     private static void writeJson(final HttpServletResponse response, final boolean ok, final String message) throws IOException {

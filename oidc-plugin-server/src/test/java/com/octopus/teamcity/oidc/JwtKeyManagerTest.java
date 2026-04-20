@@ -35,7 +35,7 @@ public class JwtKeyManagerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
-        new JwtKeyManager(serverPaths);
+        TestJwtKeyManagerFactory.create(serverPaths).getRsaKey();
 
         final var permissions = Files.getPosixFilePermissions(keyFile.toPath());
         assertThat(permissions).containsExactlyInAnyOrder(
@@ -50,7 +50,7 @@ public class JwtKeyManagerTest {
         if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory '" + pluginDirectory + "'");
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
 
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var key = keyManager.getRsaKey();
 
         assertThat(key.getKeyID()).isEqualTo(key.computeThumbprint().toString());
@@ -64,10 +64,10 @@ public class JwtKeyManagerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
-        new JwtKeyManager(serverPaths);
+        TestJwtKeyManagerFactory.create(serverPaths).getRsaKey();
         final var keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
 
-        new JwtKeyManager(serverPaths);
+        TestJwtKeyManagerFactory.create(serverPaths).getRsaKey();
         final var keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(keyFileContents2).isEqualTo(keyFileContents);
     }
@@ -82,7 +82,7 @@ public class JwtKeyManagerTest {
         if (!keyDir.mkdirs()) throw new RuntimeException("Unable to create keyDir '" + keyDir + "'");
         FileUtils.writeStringToFile(new File(keyDir, "rsa-key.json"), "not-valid-json", StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> new JwtKeyManager(serverPaths))
+        assertThatThrownBy(() -> TestJwtKeyManagerFactory.create(serverPaths).getRsaKey())
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("JwtKeyManager");
     }
@@ -90,7 +90,7 @@ public class JwtKeyManagerTest {
     @Test
     public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var ecKey = keyManager.getEcKey();
         assertThat(ecKey.getKeyID()).isEqualTo(ecKey.computeThumbprint().toString());
     }
@@ -109,6 +109,21 @@ public class JwtKeyManagerTest {
     public void isHttpsUrlReturnsFalseForNull() {
         //noinspection ConstantValue
         assertThat(JwtKeyManager.isHttpsUrl(null)).isFalse();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForSchemeOnlyNoHost() {
+        assertThat(JwtKeyManager.isHttpsUrl("https://")).isFalse();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForEmptyPathHost() {
+        assertThat(JwtKeyManager.isHttpsUrl("https:///path")).isFalse();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForMalformedUrl() {
+        assertThat(JwtKeyManager.isHttpsUrl("not a url")).isFalse();
     }
 
     @Test
@@ -135,7 +150,7 @@ public class JwtKeyManagerTest {
     @Test
     public void signThrowsForUnsupportedAlgorithm() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()
                 .subject("test").build();
 

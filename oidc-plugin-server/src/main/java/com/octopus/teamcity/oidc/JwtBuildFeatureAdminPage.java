@@ -18,7 +18,7 @@ import java.util.Map;
 
 public class JwtBuildFeatureAdminPage extends AdminPage {
     private static final String PAGE = "jwtBuildFeatureSettings.jsp";
-    private static final String TAB_TITLE = "JWT build feature";
+    private static final String TAB_TITLE = "OIDC / JWT";
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
 
@@ -43,9 +43,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
 
-        final var jwks = new JWKSet(keyManager.getPublicKeys());
-        final var jwksJson = jwks.toString();
-        model.put("jwks", jwksJson);
+        final var jwksJson = new JWKSet(keyManager.getPublicKeys()).toString();
         model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
 
         final var  settings = settingsManager.load();
