@@ -129,7 +129,14 @@ public class JwtKeyManager {
     }
 
     static boolean isHttpsUrl(@Nullable final String url) {
-        return url != null && url.startsWith("https://");
+        if (url == null) return false;
+        try {
+            final var uri = new java.net.URI(url);
+            return "https".equals(uri.getScheme())
+                    && uri.getHost() != null && !uri.getHost().isEmpty();
+        } catch (final java.net.URISyntaxException e) {
+            return false;
+        }
     }
 
     /** Strips trailing slashes from a root URL. Cloud providers compare issuer by exact string. */

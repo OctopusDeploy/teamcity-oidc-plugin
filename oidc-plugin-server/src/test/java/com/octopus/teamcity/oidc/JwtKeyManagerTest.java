@@ -112,6 +112,21 @@ public class JwtKeyManagerTest {
     }
 
     @Test
+    public void isHttpsUrlReturnsFalseForSchemeOnlyNoHost() {
+        assertThat(JwtKeyManager.isHttpsUrl("https://")).isFalse();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForEmptyPathHost() {
+        assertThat(JwtKeyManager.isHttpsUrl("https:///path")).isFalse();
+    }
+
+    @Test
+    public void isHttpsUrlReturnsFalseForMalformedUrl() {
+        assertThat(JwtKeyManager.isHttpsUrl("not a url")).isFalse();
+    }
+
+    @Test
     public void normalizeRootUrlStripsTrailingSlash() {
         assertThat(JwtKeyManager.normalizeRootUrl("https://example.com/")).isEqualTo("https://example.com");
     }
