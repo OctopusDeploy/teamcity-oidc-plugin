@@ -93,6 +93,19 @@ use it as the audience in the build feature configuration.
 
 To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `MANAGE_SERVER_INSTALLATION` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
 
+> **Note:** Only one generation of retired keys is kept. If you rotate twice in quick succession, tokens signed with the oldest key will fail verification at relying parties. Rotate no more frequently than your token TTL to avoid dropping in-flight tokens.
+
+## Key Storage and Encryption
+
+Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS).
+
+The plugin uses TeamCity's server `Encryption` infrastructure to encrypt key files at rest. The level of protection depends on whether a custom encryption key is configured for the server:
+
+- **With `TEAMCITY_ENCRYPTION_KEYS` set** (recommended): key files are encrypted with AES-256 using a server-specific key. A file read from disk (e.g. in a backup) cannot be decrypted without that key.
+- **Without a custom key**: the server's default scramble strategy is used (obfuscation only); file permissions are the sole meaningful protection.
+
+To configure a custom encryption key, follow the [TeamCity Encryption Settings documentation](https://www.jetbrains.com/help/teamcity/teamcity-configuration-and-maintenance.html#encryption-settings). The `TEAMCITY_ENCRYPTION_KEYS` environment variable is the recommended approach (set via the OS service manager so the key is never written to disk alongside the data it protects).
+
 ## Building
 
 ```
