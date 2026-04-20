@@ -184,6 +184,9 @@ public class JwtTestController extends BaseController {
 
     private String stepDiscovery() throws Exception {
         final var rootUrl = buildServer.getRootUrl();
+        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+        }
         final var url = rootUrl + "/.well-known/openid-configuration";
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
@@ -203,6 +206,9 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Missing required parameter: token");
         }
         final var rootUrl = buildServer.getRootUrl();
+        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+        }
         final var url = rootUrl + "/.well-known/jwks.json";
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
