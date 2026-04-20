@@ -8,7 +8,11 @@ import org.jetbrains.annotations.NotNull;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermission;
 import java.time.Instant;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -61,6 +65,10 @@ public class RotationSettingsManager {
         obj.put("lastRotatedAt", settings.lastRotatedAt() != null ? settings.lastRotatedAt().toString() : null);
         try {
             FileUtils.writeStringToFile(settingsFile, obj.toJSONString(), StandardCharsets.UTF_8);
+            if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+                Files.setPosixFilePermissions(settingsFile.toPath(), Set.of(
+                        PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+            }
         } catch (final IOException e) {
             LOG.log(Level.SEVERE, "JWT plugin: failed to save rotation settings", e);
         }

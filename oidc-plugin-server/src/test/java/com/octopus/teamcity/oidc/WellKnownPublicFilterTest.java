@@ -157,6 +157,29 @@ public class WellKnownPublicFilterTest {
     }
 
     @Test
+    public void jwksResponseIncludesCorsWildcardHeader() throws Exception {
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).setHeader("Access-Control-Allow-Origin", "*");
+    }
+
+    @Test
+    public void discoveryResponseIncludesCorsWildcardHeader() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).setHeader("Access-Control-Allow-Origin", "*");
+    }
+
+    @Test
     public void stripsContextPathBeforeMatching() throws Exception {
         final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn("/tc/.well-known/jwks.json");

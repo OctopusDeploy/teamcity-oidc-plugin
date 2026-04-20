@@ -10,6 +10,7 @@ import org.joda.time.DateTime;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 public class JwtBuildStartContext implements BuildStartContextProcessor {
     private static final Logger LOG = Logger.getLogger(JwtBuildStartContext.class.getName());
@@ -49,7 +50,8 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var descriptor = jwtBuildFeatures.stream().findFirst().orElseThrow();
                 final var params = descriptor.getParameters();
 
-                final var ttlMinutes = Integer.parseInt(params.getOrDefault("ttl_minutes", "10"));
+                final var ttlMinutes = Math.max(1, Math.min(1440,
+                        Integer.parseInt(params.getOrDefault("ttl_minutes", "10"))));
                 final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
                 final var buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
@@ -65,9 +67,19 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var audience = rawAudience.isBlank() ? buildServerRootUrl : rawAudience;
 
                 final var claimsParam = params.get("claims");
-                final var enabledClaims = (claimsParam == null || claimsParam.isBlank())
+                final Set<String> requestedClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
                         : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
+                final var unknownClaims = requestedClaims.stream()
+                        .filter(c -> !ALL_CUSTOM_CLAIMS.contains(c))
+                        .collect(Collectors.toSet());
+                if (!unknownClaims.isEmpty()) {
+                    LOG.warning("JWT plugin: ignoring unrecognised claim names for build "
+                            + build.getBuildId() + ": " + unknownClaims);
+                }
+                final var enabledClaims = requestedClaims.stream()
+                        .filter(ALL_CUSTOM_CLAIMS::contains)
+                        .collect(Collectors.toSet());
 
                 final var branch = build.getBranch();
                 final var branchName = branch != null ? branch.getName() : "";
@@ -112,10 +124,10 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
             } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
-                throw new RuntimeException(e);
+                throw new RuntimeException("JWT plugin: failed to sign token — check the TeamCity server log for details");
             } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected exception in updateParameters for build " + build.getBuildId(), e);
-                throw e;
+                throw new RuntimeException("JWT plugin: unexpected error issuing token — check the TeamCity server log for details");
             }
         }
     }
