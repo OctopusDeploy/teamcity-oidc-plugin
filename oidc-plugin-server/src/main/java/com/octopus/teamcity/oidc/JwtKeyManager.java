@@ -46,6 +46,7 @@ public class JwtKeyManager {
      * Production constructor — Spring autowires {@code encryptionManager} (which implements
      * {@link Encryption}) and uses the server-specific key configured via
      * {@code TEAMCITY_ENCRYPTION_KEYS}.
+     *
      * <p>Keys are loaded lazily on first use rather than in the constructor. This avoids a
      * Spring initialization ordering problem where TC's {@code EncryptionManager} is injected
      * before its encryption strategy has been configured (which happens during TC's own
@@ -54,7 +55,8 @@ public class JwtKeyManager {
      * started and the encryption strategy is in place.
      */
     public JwtKeyManager(@NotNull final ServerPaths serverPaths, @NotNull final Encryption encryption) {
-        this.encryption = encryption;        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
+        this.encryption = encryption;
+        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
         if (!createDirectoryResult)
             throw new RuntimeException("Failed to create key directory");
@@ -84,7 +86,7 @@ public class JwtKeyManager {
                         "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
             }
         }
-    }
+   }
 
 
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
@@ -176,7 +178,7 @@ public class JwtKeyManager {
         final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing RSA key from: " + keyFile);
-            return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
+            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
         }
         LOG.info("Generate new RSA key to: " + keyFile);
         final var newKey = generateFreshRsaKey();
@@ -189,14 +191,14 @@ public class JwtKeyManager {
         final var f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
         LOG.info("Read retired RSA key from: " + f);
-        return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
+        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
     }
 
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "ec-key.json");
         if (keyFile.exists()) {
             LOG.info("Read existing EC key from: " + keyFile);
-            return JWK.parse(EncryptUtil.unscramble(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toECKey();
+            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toECKey();
         }
         LOG.info("Generate new EC key to: " + keyFile);
         final var newKey = generateFreshEcKey();
