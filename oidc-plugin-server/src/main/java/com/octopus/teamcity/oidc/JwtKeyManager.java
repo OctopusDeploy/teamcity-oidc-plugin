@@ -88,18 +88,6 @@ public class JwtKeyManager {
         }
     }
 
-    /**
-     * Package-private: for unit tests only. Uses {@link EncryptUtil} scramble so tests have no
-     * external dependency on the TC server's encryption infrastructure.
-     */
-    JwtKeyManager(@NotNull final ServerPaths serverPaths) {
-        this(serverPaths, new Encryption() {
-            @Override public String encrypt(String value) { return EncryptUtil.scramble(value); }
-            @Override public String decrypt(String value) { return EncryptUtil.unscramble(value); }
-            @Override public boolean isEncrypted(String value) { return EncryptUtil.isScrambled(value); }
-        });
-    }
-
     /** Spring factory-method: creates a {@link RotationSettingsManager} sharing the same key directory. */
     public RotationSettingsManager createRotationSettingsManager() {
         return new RotationSettingsManager(keyDirectory);
