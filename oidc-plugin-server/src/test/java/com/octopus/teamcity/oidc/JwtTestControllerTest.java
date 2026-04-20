@@ -57,7 +57,7 @@ public class JwtTestControllerTest {
     @BeforeEach
     void setup() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = new JwtKeyManager(serverPaths);
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         // Default: CSRF check passes. lenient() because some tests use GET (CSRF never reached).
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
         // Default: HTTPS root URL. lenient() because not all tests exercise this path.
@@ -238,6 +238,14 @@ public class JwtTestControllerTest {
     // ---- step=discovery ----
 
     @Test
+    void discoveryStepFailsWhenRootUrlIsNotHttps() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+        final var result = callStep(Map.of("step", "discovery"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("not HTTPS");
+    }
+
+    @Test
     void discoveryStepSucceedsWhenIssuerMatches() throws Exception {
         doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}"))
             .when(httpClient).send(any(), any());
@@ -267,6 +275,14 @@ public class JwtTestControllerTest {
     }
 
     // ---- step=jwks ----
+
+    @Test
+    void jwksStepFailsWhenRootUrlIsNotHttps() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+        final var result = callStep(Map.of("step", "jwks", "token", "some.jwt.token"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("not HTTPS");
+    }
 
     @Test
     void jwksStepVerifiesValidRs256Token() throws Exception {
