@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.InetAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
 import java.util.Map;
@@ -48,6 +49,11 @@ public class JwtTestControllerTest {
     JwtKeyManager keyManager;
     JwtTestController controller;
 
+    // Stub resolver: returns a known public IP for any hostname so tests don't require real DNS.
+    // SSRF tests that need real address-family checks pass IP-literal URLs instead.
+    private static final JwtTestController.AddressResolver PUBLIC_RESOLVER =
+            host -> new InetAddress[]{InetAddress.getByAddress(new byte[]{93, -72, -40, 34})};
+
     @BeforeEach
     void setup() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
@@ -56,7 +62,7 @@ public class JwtTestControllerTest {
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
         // Default: HTTPS root URL. lenient() because not all tests exercise this path.
         lenient().when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter, PUBLIC_RESOLVER);
     }
 
     // ---- auth ----
@@ -497,6 +503,39 @@ public class JwtTestControllerTest {
         ));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("HTTPS");
+    }
+
+    @Test
+    void exchangeStepBlocksLoopbackAddress() throws Exception {
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", "some.jwt.token",
+            "serviceUrl", "https://127.0.0.1", "audience", "aud"
+        ));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("private");
+    }
+
+    @Test
+    void exchangeStepBlocksRfc1918Address() throws Exception {
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", "some.jwt.token",
+            "serviceUrl", "https://192.168.1.100", "audience", "aud"
+        ));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("private");
+    }
+
+    @Test
+    void exchangeStepBlocksLinkLocalAddress() throws Exception {
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        final var result = callStep(Map.of(
+            "step", "exchange", "token", "some.jwt.token",
+            "serviceUrl", "https://169.254.169.254", "audience", "aud"
+        ));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("private");
     }
 
     @Test
