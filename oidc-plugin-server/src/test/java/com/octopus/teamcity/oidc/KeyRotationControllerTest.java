@@ -39,7 +39,7 @@ public class KeyRotationControllerTest {
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = new JwtKeyManager(serverPaths);
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         settingsManager = new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
         // Default: CSRF check passes. lenient() because some tests never reach doHandle.
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
