@@ -40,12 +40,19 @@ public class JwtKeyManager {
 
     private final File keyDirectory;
     private final Encryption encryption;
-    private final AtomicReference<KeyMaterial> keys;
+    private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
 
     /**
      * Production constructor — Spring autowires {@code encryptionManager} (which implements
      * {@link Encryption}) and uses the server-specific key configured via
      * {@code TEAMCITY_ENCRYPTION_KEYS}.
+     *
+     * <p>Keys are loaded lazily on first use rather than in the constructor. This avoids a
+     * Spring initialization ordering problem where TC's {@code EncryptionManager} is injected
+     * before its encryption strategy has been configured (which happens during TC's own
+     * post-construction startup phase). By the time any endpoint or build feature first calls
+     * {@link #getRsaKey()}, {@link #getEcKey()}, or {@link #getPublicKeys()}, TC is fully
+     * started and the encryption strategy is in place.
      */
     public JwtKeyManager(@NotNull final ServerPaths serverPaths, @NotNull final Encryption encryption) {
         this.encryption = encryption;
@@ -53,17 +60,31 @@ public class JwtKeyManager {
         final var createDirectoryResult = this.keyDirectory.exists() || this.keyDirectory.mkdirs();
         if (!createDirectoryResult)
             throw new RuntimeException("Failed to create key directory");
+    }
 
-        try {
-            this.keys = new AtomicReference<>(new KeyMaterial(
-                    loadOrGenerateRsaKey(),
-                    loadRetiredRsaKey(),
-                    loadOrGenerateEcKey(),
-                    loadRetiredEcKey()
-            ));
-        } catch (final IOException | ParseException | JOSEException | IllegalArgumentException | IllegalStateException e) {
-            throw new RuntimeException(
-                    "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
+    /**
+     * Returns the current key material, loading (and if necessary generating) keys on first call.
+     * Thread-safe: at most one thread will perform the load; subsequent callers read the cached result.
+     */
+    private KeyMaterial getOrLoadKeys() {
+        final var existing = keys.get();
+        if (existing != null) return existing;
+        synchronized (this) {
+            final var doubleCheck = keys.get();
+            if (doubleCheck != null) return doubleCheck;
+            try {
+                final var loaded = new KeyMaterial(
+                        loadOrGenerateRsaKey(),
+                        loadRetiredRsaKey(),
+                        loadOrGenerateEcKey(),
+                        loadRetiredEcKey()
+                );
+                keys.set(loaded);
+                return loaded;
+            } catch (final IOException | ParseException | JOSEException | IllegalArgumentException | IllegalStateException e) {
+                throw new RuntimeException(
+                        "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
+            }
         }
     }
 
@@ -73,15 +94,15 @@ public class JwtKeyManager {
     }
 
     public RSAKey getRsaKey() {
-        return keys.get().rsa();
+        return getOrLoadKeys().rsa();
     }
 
     public ECKey getEcKey() {
-        return keys.get().ec();
+        return getOrLoadKeys().ec();
     }
 
     public List<JWK> getPublicKeys() {
-        final var snapshot = keys.get();
+        final var snapshot = getOrLoadKeys();
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());
         if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
@@ -91,7 +112,7 @@ public class JwtKeyManager {
     }
 
     public void rotateKey() throws JOSEException, IOException {
-        final var current = keys.get();
+        final var current = getOrLoadKeys();
         final var newRsa = generateFreshRsaKey();
         final var newEc = generateFreshEcKey();
 

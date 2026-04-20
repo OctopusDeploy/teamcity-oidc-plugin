@@ -35,7 +35,7 @@ public class JwtKeyManagerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
-        TestJwtKeyManagerFactory.create(serverPaths);
+        TestJwtKeyManagerFactory.create(serverPaths).getRsaKey();
 
         final var permissions = Files.getPosixFilePermissions(keyFile.toPath());
         assertThat(permissions).containsExactlyInAnyOrder(
@@ -64,10 +64,10 @@ public class JwtKeyManagerTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
         final var keyFile = new File(pluginDirectory, "JwtBuildFeature/rsa-key.json");
 
-        TestJwtKeyManagerFactory.create(serverPaths);
+        TestJwtKeyManagerFactory.create(serverPaths).getRsaKey();
         final var keyFileContents = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
 
-        TestJwtKeyManagerFactory.create(serverPaths);
+        TestJwtKeyManagerFactory.create(serverPaths).getRsaKey();
         final var keyFileContents2 = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
         assertThat(keyFileContents2).isEqualTo(keyFileContents);
     }
@@ -82,7 +82,7 @@ public class JwtKeyManagerTest {
         if (!keyDir.mkdirs()) throw new RuntimeException("Unable to create keyDir '" + keyDir + "'");
         FileUtils.writeStringToFile(new File(keyDir, "rsa-key.json"), "not-valid-json", StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> TestJwtKeyManagerFactory.create(serverPaths))
+        assertThatThrownBy(() -> TestJwtKeyManagerFactory.create(serverPaths).getRsaKey())
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("JwtKeyManager");
     }
