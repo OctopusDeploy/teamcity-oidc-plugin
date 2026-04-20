@@ -36,7 +36,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void testRegister() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var  keyManager = new JwtKeyManager(serverPaths);
+        final var  keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
         jwtBuildStartContext.register();
         verify(extensionHolder, times(1)).registerExtension(any(), any(), any());
@@ -45,7 +45,7 @@ public class JwtBuildStartContextTest {
     @Test
     public void doNotUpdateParametersWhenBuildFeatureDisabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var  keyManager = new JwtKeyManager(serverPaths);
+        final var  keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(Collections.emptyList());
@@ -57,7 +57,7 @@ public class JwtBuildStartContextTest {
     public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var  keyManager = new JwtKeyManager(serverPaths);
+        final var  keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -78,7 +78,7 @@ public class JwtBuildStartContextTest {
     public void branchClaimIsTheBranchNameNotAnObjectReference() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -106,7 +106,7 @@ public class JwtBuildStartContextTest {
     public void tokenTtlIsReadFromBuildFeatureParameters() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -131,7 +131,7 @@ public class JwtBuildStartContextTest {
     public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -153,10 +153,35 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void tokenTtlIsClamppedToOneDayMaximum() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("ttl_minutes", "999999"));
+
+        final var triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+        when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var ttlSeconds = (jwt.getJWTClaimsSet().getExpirationTime().getTime()
+                - jwt.getJWTClaimsSet().getIssueTime().getTime()) / 1000;
+        assertThat(ttlSeconds).isEqualTo(1440 * 60);
+    }
+
+    @Test
     public void doesNotInjectTokenWhenRootUrlIsNotHttps() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -172,7 +197,7 @@ public class JwtBuildStartContextTest {
     public void updateParametersWhenBuildFeatureEnabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -192,7 +217,7 @@ public class JwtBuildStartContextTest {
     public void audienceIsConfigurablePerBuildFeature() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -214,7 +239,7 @@ public class JwtBuildStartContextTest {
     public void audienceDefaultsToServerRootUrlWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -236,7 +261,7 @@ public class JwtBuildStartContextTest {
     public void audienceDefaultsToServerRootUrlWhenAudienceParamIsBlank() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -258,7 +283,7 @@ public class JwtBuildStartContextTest {
     public void triggeredByIdClaimIncludedWhenUserIsAvailable() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -283,7 +308,7 @@ public class JwtBuildStartContextTest {
     public void onlyConfiguredClaimsAreIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -312,7 +337,7 @@ public class JwtBuildStartContextTest {
     public void claimsWithWhitespaceAroundCommasAreAllIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -341,7 +366,7 @@ public class JwtBuildStartContextTest {
     public void allClaimsIncludedWhenClaimsParamAbsent() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -367,10 +392,39 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void unknownClaimNamesAreIgnoredAndDoNotAppearInToken() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters())
+                .thenReturn(Map.of("claims", "branch,injected_claim,__proto__"));
+
+        final var branch = mock(Branch.class);
+        when(branch.getName()).thenReturn("refs/heads/main");
+        when(runningBuild.getBranch()).thenReturn(branch);
+
+        final var triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        assertThat(jwt.getJWTClaimsSet().getStringClaim("branch")).isEqualTo("refs/heads/main");
+        assertThat(jwt.getJWTClaimsSet().getClaim("injected_claim")).isNull();
+        assertThat(jwt.getJWTClaimsSet().getClaim("__proto__")).isNull();
+    }
+
+    @Test
     public void issuerClaimHasTrailingSlashStripped() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111/");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
@@ -392,7 +446,7 @@ public class JwtBuildStartContextTest {
     public void jtiClaimIsUniquePerToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var keyManager = new JwtKeyManager(serverPaths);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);

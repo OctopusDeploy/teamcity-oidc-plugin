@@ -24,7 +24,7 @@ public class KeyRotationSchedulerTest {
 
     private JwtKeyManager keyManager() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        return new JwtKeyManager(serverPaths);
+        return TestJwtKeyManagerFactory.create(serverPaths);
     }
 
     private RotationSettingsManager settingsManager() {
