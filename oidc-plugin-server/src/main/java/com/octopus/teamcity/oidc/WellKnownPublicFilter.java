@@ -49,6 +49,7 @@ public class WellKnownPublicFilter implements Filter {
 
         if (JWKS_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
+            resp.setHeader("Access-Control-Allow-Origin", "*");
             resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
                     + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
             final var jwks = new JWKSet(keyManager.getPublicKeys());
@@ -59,6 +60,7 @@ public class WellKnownPublicFilter implements Filter {
 
         if (OIDC_DISCOVERY_PATH.equals(path)) {
             resp.setContentType("application/json;charset=UTF-8");
+            resp.setHeader("Access-Control-Allow-Origin", "*");
             resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
                     + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
             final var issuer = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
