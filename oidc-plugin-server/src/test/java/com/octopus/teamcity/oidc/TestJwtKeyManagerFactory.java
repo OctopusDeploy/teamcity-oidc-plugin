@@ -19,7 +19,7 @@ class TestJwtKeyManagerFactory {
             @Override public void reloadSettings() {}
         });
         final var manager = new JwtKeyManager(serverPaths, customKeyEncryption);
-        manager.serverStartup();
+        manager.notifyTeamCityServerStartupCompleted();
         if (!manager.isReady()) throw new RuntimeException(
                 "JwtKeyManager failed to initialize in test — see log for details");
         return manager;

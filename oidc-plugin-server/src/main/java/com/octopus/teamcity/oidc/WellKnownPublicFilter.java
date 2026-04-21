@@ -127,7 +127,7 @@ public class WellKnownPublicFilter implements Filter {
         resp.setContentType("application/json;charset=UTF-8");
         resp.setHeader("Access-Control-Allow-Origin", "*");
         resp.getWriter().write("{\"error\":\"server_starting\","
-                + "\"error_description\":\"OIDC provider is not yet available — server startup in progress.\"}");
+                + "\"error_description\":\"OIDC provider is not yet available — server startup not yet completed.\"}");
     }
 
     @Override

@@ -43,14 +43,14 @@ public class JwtKeyManager {
     private final Encryption encryption;
 
     /**
-     * Keys are null until {@link #serverStartup()} fires. All callers must check
+     * Keys are null until {@link #notifyTeamCityServerStartupCompleted()} fires. All callers must check
      * {@link #isReady()} or will receive an {@link IllegalStateException}.
      */
     private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
 
     /**
      * Spring autowires {@link Encryption} (resolved to TC's {@code EncryptionManager}). Key
-     * loading is deferred to {@link #serverStartup()} because {@code EncryptionManager} sets its
+     * loading is deferred to {@link #notifyTeamCityServerStartupCompleted()} because {@code EncryptionManager} sets its
      * encryption strategy during TC server startup — after all plugin Spring contexts are
      * initialized — so calling {@code encrypt()} before that point throws
      * {@code IllegalStateException}.
@@ -67,7 +67,7 @@ public class JwtKeyManager {
      * Called by TC after full server startup, by which time {@code EncryptionManager} has its
      * encryption strategy set and {@code encrypt()} / {@code decrypt()} are safe to call.
      */
-    public void serverStartup() {
+    public void notifyTeamCityServerStartupCompleted() {
         try {
             loadKeys();
         } catch (final Exception e) {
@@ -76,7 +76,7 @@ public class JwtKeyManager {
         }
     }
 
-    /** Returns {@code true} once {@link #serverStartup()} has successfully loaded keys. */
+    /** Returns {@code true} once keys are loaded and available. */
     public boolean isReady() {
         return keys.get() != null;
     }

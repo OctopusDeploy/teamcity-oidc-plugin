@@ -22,7 +22,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 public class JwtKeyManagerTest {
 
-    @Mock private ServerPaths serverPaths;
+    @Mock
+    private ServerPaths serverPaths;
 
     @TempDir
     private File tempDir;

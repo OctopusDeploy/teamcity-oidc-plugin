@@ -49,7 +49,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
             model.put("jwks", jwksJson);
             model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
         } else {
-            model.put("jwks", "(server startup in progress — keys not yet loaded)");
+            model.put("jwks", "(server startup in progress — keys not yet available)");
             model.put("jwksBase64", "");
         }
 

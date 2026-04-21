@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.logging.Logger;
 
 /**
- * Listens for TC server startup and triggers {@link JwtKeyManager#serverStartup()} once
+ * Listens for TC server startup and triggers {@link JwtKeyManager#notifyTeamCityServerStartupCompleted()} once
  * {@code EncryptionManager} has its encryption strategy set and key loading is safe.
  */
 public class JwtKeyManagerServerLifecycle extends BuildServerAdapter {
@@ -24,6 +24,6 @@ public class JwtKeyManagerServerLifecycle extends BuildServerAdapter {
 
     @Override
     public void serverStartup() {
-        keyManager.serverStartup();
+        keyManager.notifyTeamCityServerStartupCompleted();
     }
 }
