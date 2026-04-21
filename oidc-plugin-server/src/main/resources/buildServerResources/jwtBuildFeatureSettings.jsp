@@ -69,7 +69,9 @@
     jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
       function(data) {
         const ok = data.status === 'rotated';
-        const msg = ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed');
+        const msg = ok
+          ? 'Keys rotated successfully' + (data.warning ? ' \u26a0 ' + data.warning : '')
+          : (data.message || 'Rotation failed');
         jwtShowResult('jwtRotateResult', ok, msg);
         if (ok) {
           const now = new Date();
@@ -86,11 +88,13 @@
   }
 
   function jwtAdminPost(url, body, onSuccess, onError) {
+    const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
+    const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
     fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-TC-CSRF-Token': BS.CSRF.token
+        'X-TC-CSRF-Token': csrf
       },
       body: body
     })
