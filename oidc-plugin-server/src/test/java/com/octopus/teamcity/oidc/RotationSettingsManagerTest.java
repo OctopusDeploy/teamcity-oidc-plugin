@@ -1,9 +1,13 @@
 package com.octopus.teamcity.oidc;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermission;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +45,18 @@ public class RotationSettingsManagerTest {
 
         final var loaded = mgr.load();
         assertThat(loaded.lastRotatedAt()).isNull();
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void saveRestrictsFilePermissionsTo0600() throws Exception {
+        final var mgr = new RotationSettingsManager(tempDir);
+        mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE, null));
+
+        final var perms = Files.getPosixFilePermissions(
+                new File(tempDir, "rotation-settings.json").toPath());
+        assertThat(perms).containsExactlyInAnyOrder(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
     }
 
     @Test
