@@ -10,7 +10,6 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.Encryption;
-import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
 import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -188,13 +187,7 @@ public class JwtKeyManager {
         final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("JWT plugin: reading existing RSA key from " + keyFile);
-            final var content = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
-            final var key = JWK.parse(decryptFromFile(content)).toRSAKey();
-            if (isLegacyFormat(content)) {
-                LOG.info("JWT plugin: migrating RSA key to server encryption");
-                saveKeyToFile(key, "rsa-key.json");
-            }
-            return key;
+            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
         }
         LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
@@ -207,26 +200,14 @@ public class JwtKeyManager {
         final var f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
         LOG.info("JWT plugin: reading retired RSA key from " + f);
-        final var content = FileUtils.readFileToString(f, StandardCharsets.UTF_8);
-        final var key = JWK.parse(decryptFromFile(content)).toRSAKey();
-        if (isLegacyFormat(content)) {
-            LOG.info("JWT plugin: migrating retired RSA key to server encryption");
-            saveKeyToFile(key, "retired-rsa-key.json");
-        }
-        return key;
+        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
     }
 
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "ec-key.json");
         if (keyFile.exists()) {
             LOG.info("JWT plugin: reading existing EC key from " + keyFile);
-            final var content = FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8);
-            final var key = JWK.parse(decryptFromFile(content)).toECKey();
-            if (isLegacyFormat(content)) {
-                LOG.info("JWT plugin: migrating EC key to server encryption");
-                saveKeyToFile(key, "ec-key.json");
-            }
-            return key;
+            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toECKey();
         }
         LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
@@ -239,27 +220,7 @@ public class JwtKeyManager {
         final var f = new File(keyDirectory, "retired-ec-key.json");
         if (!f.exists()) return null;
         LOG.info("JWT plugin: reading retired EC key from " + f);
-        final var content = FileUtils.readFileToString(f, StandardCharsets.UTF_8);
-        final var key = JWK.parse(decryptFromFile(content)).toECKey();
-        if (isLegacyFormat(content)) {
-            LOG.info("JWT plugin: migrating retired EC key to server encryption");
-            saveKeyToFile(key, "retired-ec-key.json");
-        }
-        return key;
-    }
-
-    /**
-     * Decrypts a key file's content. Files written by {@link EncryptUtil#scramble} (legacy, prefix
-     * {@code zxx}) are decrypted via {@link EncryptUtil}; all others via the server
-     * {@link Encryption} instance.
-     */
-    private String decryptFromFile(final String content) {
-        return isLegacyFormat(content) ? EncryptUtil.unscramble(content) : encryption.decrypt(content);
-    }
-
-    /** Returns {@code true} if the content was written by the legacy {@link EncryptUtil#scramble} (prefix {@code zxx}). */
-    private boolean isLegacyFormat(final String content) {
-        return !encryption.isEncrypted(content) && EncryptUtil.isScrambled(content);
+        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toECKey();
     }
 
     private static RSAKey generateFreshRsaKey() throws JOSEException {
