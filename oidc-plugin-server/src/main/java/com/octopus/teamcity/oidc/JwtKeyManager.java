@@ -69,29 +69,6 @@ public class JwtKeyManager extends BuildServerAdapter {
             throw new RuntimeException("Failed to create key directory");
     }
 
-    /**
-     * Package-private: for unit tests only. Uses {@link EncryptUtil} scramble (no external
-     * dependency on TC's encryption infrastructure) and loads keys immediately since there is
-     * no Spring lifecycle in tests.
-     */
-    JwtKeyManager(@NotNull final ServerPaths serverPaths) {
-        this.encryption = new Encryption() {
-            @Override public String encrypt(String v) { return EncryptUtil.scramble(v); }
-            @Override public String decrypt(String v) { return EncryptUtil.unscramble(v); }
-            @Override public boolean isEncrypted(String v) { return EncryptUtil.isScrambled(v); }
-        };
-        this.buildServer = null;
-        this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
-        if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
-            throw new RuntimeException("Failed to create key directory");
-        try {
-            loadKeys();
-        } catch (final IOException | ParseException | JOSEException | IllegalArgumentException e) {
-            throw new RuntimeException(
-                    "JwtKeyManager failed to load or generate keys from " + keyDirectory + ": " + e.getMessage(), e);
-        }
-    }
-
     /** Called by Spring {@code init-method} — registers this bean as a {@link BuildServerAdapter}. */
     public void register() {
         buildServer.addListener(this);

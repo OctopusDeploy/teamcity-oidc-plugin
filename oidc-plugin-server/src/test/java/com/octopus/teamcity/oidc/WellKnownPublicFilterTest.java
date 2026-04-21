@@ -36,7 +36,7 @@ public class WellKnownPublicFilterTest {
     @BeforeEach
     void setUp() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), buildServer);
+        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths, buildServer), buildServer);
     }
 
     private StringWriter stubResponseWriter() throws Exception {
