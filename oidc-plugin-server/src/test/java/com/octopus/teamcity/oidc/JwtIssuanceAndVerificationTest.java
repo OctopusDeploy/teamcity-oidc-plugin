@@ -42,7 +42,7 @@ public class JwtIssuanceAndVerificationTest {
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = TestJwtKeyManagerFactory.create(serverPaths, buildServer);
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
     }
 
     @Test

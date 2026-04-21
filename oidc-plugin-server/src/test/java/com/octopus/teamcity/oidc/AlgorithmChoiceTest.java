@@ -39,7 +39,7 @@ public class AlgorithmChoiceTest {
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = TestJwtKeyManagerFactory.create(serverPaths, buildServer);
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
     }
 
     private JwtBuildStartContext buildContext() {

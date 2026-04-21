@@ -8,8 +8,6 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import jetbrains.buildServer.serverSide.BuildServerAdapter;
-import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.Encryption;
 import jetbrains.buildServer.serverSide.crypt.EncryptUtil;
@@ -32,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class JwtKeyManager extends BuildServerAdapter {
+public class JwtKeyManager {
     private static final Logger LOG = Logger.getLogger(JwtKeyManager.class.getName());
 
     record KeyMaterial(
@@ -44,7 +42,6 @@ public class JwtKeyManager extends BuildServerAdapter {
 
     private final File keyDirectory;
     private final Encryption encryption;
-    private final SBuildServer buildServer;
 
     /**
      * Keys are null until {@link #serverStartup()} fires. All callers must check
@@ -53,33 +50,24 @@ public class JwtKeyManager extends BuildServerAdapter {
     private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
 
     /**
-     * Production constructor. Spring autowires {@link Encryption} (resolved to TC's
-     * {@code EncryptionManager}) and {@link ExtensionHolder}. Key loading is deferred to
-     * {@link #serverStartup()} because {@code EncryptionManager} sets its encryption strategy
-     * during TC server startup — after all plugin Spring contexts are initialized — so calling
-     * {@code encrypt()} before that point throws {@code IllegalStateException}.
+     * Spring autowires {@link Encryption} (resolved to TC's {@code EncryptionManager}). Key
+     * loading is deferred to {@link #serverStartup()} because {@code EncryptionManager} sets its
+     * encryption strategy during TC server startup — after all plugin Spring contexts are
+     * initialized — so calling {@code encrypt()} before that point throws
+     * {@code IllegalStateException}.
      */
     public JwtKeyManager(@NotNull final ServerPaths serverPaths,
-                         @NotNull final Encryption encryption,
-                         @NotNull final SBuildServer buildServer) {
+                         @NotNull final Encryption encryption) {
         this.encryption = encryption;
-        this.buildServer = buildServer;
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
             throw new RuntimeException("Failed to create key directory");
-    }
-
-    /** Called by Spring {@code init-method} — registers this bean as a {@link BuildServerAdapter}. */
-    public void register() {
-        buildServer.addListener(this);
-        LOG.info("JWT plugin: JwtKeyManager registered as BuildServerListener — keys will load on serverStartup");
     }
 
     /**
      * Called by TC after full server startup, by which time {@code EncryptionManager} has its
      * encryption strategy set and {@code encrypt()} / {@code decrypt()} are safe to call.
      */
-    @Override
     public void serverStartup() {
         try {
             loadKeys();

@@ -43,7 +43,7 @@ public class OidcDiscoveryComplianceTest {
     void fetchDiscoveryDocument() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths, buildServer);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var filter = new WellKnownPublicFilter(keyManager, buildServer);
 
         final var request = mock(HttpServletRequest.class);
