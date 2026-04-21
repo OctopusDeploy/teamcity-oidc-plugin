@@ -43,8 +43,15 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
 
-        final var jwksJson = new JWKSet(keyManager.getPublicKeys()).toString();
-        model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
+        if (keyManager.isReady()) {
+            final var jwks = new JWKSet(keyManager.getPublicKeys());
+            final var jwksJson = jwks.toString();
+            model.put("jwks", jwksJson);
+            model.put("jwksBase64", Base64.getEncoder().encodeToString(jwksJson.getBytes(StandardCharsets.UTF_8)));
+        } else {
+            model.put("jwks", "(server startup in progress — keys not yet available)");
+            model.put("jwksBase64", "");
+        }
 
         final var  settings = settingsManager.load();
         model.put("rotationEnabled", settings.enabled());

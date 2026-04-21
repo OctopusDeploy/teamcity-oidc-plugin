@@ -13,10 +13,15 @@ class TestJwtKeyManagerFactory {
     private static final Map<String, byte[]> KEYS = Map.of(KEY_ID, KEY);
 
     static JwtKeyManager create(@NotNull final ServerPaths serverPaths) {
-        return new JwtKeyManager(serverPaths, new CustomKeyEncryption(new EncryptionKeysStorage() {
+        final var customKeyEncryption = new CustomKeyEncryption(new EncryptionKeysStorage() {
             @Override public Map<String, byte[]> getKeys() { return KEYS; }
             @Override public @NotNull String getDefaultKeyId() { return KEY_ID; }
             @Override public void reloadSettings() {}
-        }));
+        });
+        final var manager = new JwtKeyManager(serverPaths, customKeyEncryption);
+        manager.notifyTeamCityServerStartupCompleted();
+        if (!manager.isReady()) throw new RuntimeException(
+                "JwtKeyManager failed to initialize in test — see log for details");
+        return manager;
     }
 }
