@@ -92,6 +92,20 @@ public class KeyRotationSchedulerTest {
     }
 
     @Test
+    void doesNotRotateImmediatelyOnFreshInstall() throws Exception {
+        // On first install no settings file exists, so load() returns defaults().
+        // defaults() must not cause an immediate rotation — lastRotatedAt should
+        // not be treated as epoch 0 (which would make every cron fire appear overdue).
+        final var km = keyManager();
+        final var mgr = settingsManager(); // no file → load() returns defaults()
+        final var originalKid = km.getRsaKey().getKeyID();
+
+        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+
+        assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
+    }
+
+    @Test
     void shuttingDownStopsExecutor() {
         final var scheduler = new KeyRotationScheduler(buildServer, keyManager(), settingsManager());
         scheduler.serverStartup();
