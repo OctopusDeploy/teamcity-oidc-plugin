@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -104,11 +105,15 @@ public class JwtKeyManager {
         return Collections.unmodifiableList(result);
     }
 
-    public void rotateKey() throws JOSEException, IOException {
+    public synchronized void rotateKey() throws JOSEException, IOException {
         final var current = requireReady();
+        // Generate both new keys before touching the filesystem so a key-generation
+        // failure leaves the current keys intact.
         final var newRsa = generateFreshRsaKey();
         final var newEc = generateFreshEcKey();
 
+        // Write new keys to temp files then rename atomically so no reader ever sees
+        // a partially-written key file, even if the JVM is killed mid-rotation.
         saveKeyToFile(current.rsa(), "retired-rsa-key.json");
         saveKeyToFile(current.ec(), "retired-ec-key.json");
         saveKeyToFile(newRsa, "rsa-key.json");
@@ -240,13 +245,20 @@ public class JwtKeyManager {
     }
 
     private void saveKeyToFile(@NotNull final JWK key, @NotNull final String fileName) throws IOException {
-        final var keyFile = new File(keyDirectory, fileName);
-        FileUtils.writeStringToFile(keyFile, encryption.encrypt(key.toString()), StandardCharsets.UTF_8);
-        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-            Files.setPosixFilePermissions(keyFile.toPath(), Set.of(
-                    PosixFilePermission.OWNER_READ,
-                    PosixFilePermission.OWNER_WRITE
-            ));
+        final var target = new File(keyDirectory, fileName);
+        final var temp = File.createTempFile("key-", ".tmp", keyDirectory);
+        try {
+            FileUtils.writeStringToFile(temp, encryption.encrypt(key.toString()), StandardCharsets.UTF_8);
+            if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+                Files.setPosixFilePermissions(temp.toPath(), Set.of(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE
+                ));
+            }
+            Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (final IOException e) {
+            temp.delete();
+            throw e;
         }
     }
 }
