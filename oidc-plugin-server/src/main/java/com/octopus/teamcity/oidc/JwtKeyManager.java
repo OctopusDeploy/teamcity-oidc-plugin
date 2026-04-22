@@ -69,11 +69,25 @@ public class JwtKeyManager {
      * encryption strategy set and {@code encrypt()} / {@code decrypt()} are safe to call.
      */
     public void notifyTeamCityServerStartupCompleted() {
+        cleanupOrphanedTempFiles();
         try {
             loadKeys();
         } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: failed to load/generate keys on serverStartup — "
                     + "OIDC endpoints will remain unavailable", e);
+        }
+    }
+
+    private void cleanupOrphanedTempFiles() {
+        final var tmpFiles = keyDirectory.listFiles(
+                (dir, name) -> name.startsWith("key-") && name.endsWith(".tmp"));
+        if (tmpFiles == null) return;
+        for (final var f : tmpFiles) {
+            if (f.delete()) {
+                LOG.info("JWT plugin: cleaned up orphaned temp file: " + f.getName());
+            } else {
+                LOG.warning("JWT plugin: failed to delete orphaned temp file: " + f.getName());
+            }
         }
     }
 

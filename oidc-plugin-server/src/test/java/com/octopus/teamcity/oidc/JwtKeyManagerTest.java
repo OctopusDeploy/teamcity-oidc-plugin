@@ -148,6 +148,23 @@ public class JwtKeyManagerTest {
     }
 
     @Test
+    public void startupDeletesTempFilesLeftByPreviousCrash() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        // Pre-create orphaned temp files that a crashed rotation would leave behind
+        final var keyDir = new File(tempDir, "JwtBuildFeature");
+        assertThat(keyDir.mkdirs()).isTrue();
+        final var leftover1 = new File(keyDir, "key-abc123.tmp");
+        final var leftover2 = new File(keyDir, "key-def456.tmp");
+        FileUtils.writeStringToFile(leftover1, "orphaned", StandardCharsets.UTF_8);
+        FileUtils.writeStringToFile(leftover2, "orphaned", StandardCharsets.UTF_8);
+
+        TestJwtKeyManagerFactory.create(serverPaths); // calls notifyTeamCityServerStartupCompleted()
+
+        assertThat(leftover1).doesNotExist();
+        assertThat(leftover2).doesNotExist();
+    }
+
+    @Test
     public void signThrowsForUnsupportedAlgorithm() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
