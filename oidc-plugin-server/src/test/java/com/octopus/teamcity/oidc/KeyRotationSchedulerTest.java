@@ -106,6 +106,24 @@ public class KeyRotationSchedulerTest {
     }
 
     @Test
+    void schedulerStartsImmediatelyWhenServerAlreadyRunning() throws Exception {
+        // When the plugin is hot-deployed into a running TC server, serverStartup() is never
+        // called by TC (that event already fired). The scheduler must start itself in the
+        // constructor when isStarted() is true, so auto-rotation still works.
+        when(buildServer.isStarted()).thenReturn(true);
+        final var km = keyManager();
+        final var mgr = settingsManager();
+        mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
+                Instant.parse("2000-01-01T00:00:00Z")));
+        final var originalKid = km.getRsaKey().getKeyID();
+
+        new KeyRotationScheduler(buildServer, km, mgr); // no serverStartup() call
+
+        Thread.sleep(500);
+        assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
+    }
+
+    @Test
     void shuttingDownStopsExecutor() {
         final var scheduler = new KeyRotationScheduler(buildServer, keyManager(), settingsManager());
         scheduler.serverStartup();
