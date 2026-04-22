@@ -58,11 +58,11 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         Integer.parseInt(params.getOrDefault("ttl_minutes", "10"))));
                 final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
-                final var buildServerRootUrl = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
+                final var buildServerRootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
                         + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + sanitize(algorithmName));
 
-                if (!JwtKeyManager.isHttpsUrl(buildServerRootUrl)) {
+                if (!OidcUrlUtils.isHttpsUrl(buildServerRootUrl)) {
                     LOG.warning("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
                     return;
                 }

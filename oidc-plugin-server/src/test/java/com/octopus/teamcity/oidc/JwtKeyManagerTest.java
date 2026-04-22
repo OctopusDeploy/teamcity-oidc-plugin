@@ -96,58 +96,6 @@ public class JwtKeyManagerTest {
     }
 
     @Test
-    public void isHttpsUrlReturnsTrueForHttps() {
-        assertThat(JwtKeyManager.isHttpsUrl("https://example.com")).isTrue();
-    }
-
-    @Test
-    public void isHttpsUrlReturnsFalseForHttp() {
-        assertThat(JwtKeyManager.isHttpsUrl("http://example.com")).isFalse();
-    }
-
-    @Test
-    public void isHttpsUrlReturnsFalseForNull() {
-        //noinspection ConstantValue
-        assertThat(JwtKeyManager.isHttpsUrl(null)).isFalse();
-    }
-
-    @Test
-    public void isHttpsUrlReturnsFalseForSchemeOnlyNoHost() {
-        assertThat(JwtKeyManager.isHttpsUrl("https://")).isFalse();
-    }
-
-    @Test
-    public void isHttpsUrlReturnsFalseForEmptyPathHost() {
-        assertThat(JwtKeyManager.isHttpsUrl("https:///path")).isFalse();
-    }
-
-    @Test
-    public void isHttpsUrlReturnsFalseForMalformedUrl() {
-        assertThat(JwtKeyManager.isHttpsUrl("not a url")).isFalse();
-    }
-
-    @Test
-    public void normalizeRootUrlStripsTrailingSlash() {
-        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com/")).isEqualTo("https://example.com");
-    }
-
-    @Test
-    public void normalizeRootUrlStripsMultipleTrailingSlashes() {
-        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com///")).isEqualTo("https://example.com");
-    }
-
-    @Test
-    public void normalizeRootUrlLeavesCleanUrlUnchanged() {
-        assertThat(JwtKeyManager.normalizeRootUrl("https://example.com")).isEqualTo("https://example.com");
-    }
-
-    @Test
-    public void normalizeRootUrlReturnsNullForNull() {
-        //noinspection ConstantValue
-        assertThat(JwtKeyManager.normalizeRootUrl(null)).isNull();
-    }
-
-    @Test
     public void signThrowsForUnsupportedAlgorithm() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);

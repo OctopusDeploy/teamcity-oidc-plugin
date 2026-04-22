@@ -448,6 +448,31 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void jwtStepNormalizesIssuerWhenRootUrlHasTrailingSlash() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com/");
+        mockBuildType("MyBuildType");
+        final var result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("https://tc.example.com");
+    }
+
+    @Test
+    void discoveryStepSucceedsWhenRootUrlHasTrailingSlashButIssuerIsNormalized() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com/");
+        doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}"))
+            .when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of("step", "discovery"));
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("Discovery endpoint OK");
+    }
+
+    @Test
     void jwtStepDefaultsAudienceToRootUrl() throws Exception {
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(

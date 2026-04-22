@@ -141,8 +141,8 @@ public class JwtTestController extends BaseController {
     }
 
     private String[] stepJwt(final HttpServletRequest request) throws Exception {
-        final var rootUrl = buildServer.getRootUrl();
-        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+        final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+        if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         var algorithm = request.getParameter("algorithm");
@@ -192,8 +192,8 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepDiscovery() throws Exception {
-        final var rootUrl = buildServer.getRootUrl();
-        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+        final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+        if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         final var url = rootUrl + "/.well-known/openid-configuration";
@@ -214,8 +214,8 @@ public class JwtTestController extends BaseController {
         if (token == null || token.isBlank()) {
             throw new TestStepException("Missing required parameter: token");
         }
-        final var rootUrl = buildServer.getRootUrl();
-        if (!JwtKeyManager.isHttpsUrl(rootUrl)) {
+        final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+        if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         final var url = rootUrl + "/.well-known/jwks.json";
@@ -255,7 +255,7 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("Missing required parameter: serviceUrl");
         }
         serviceUrl = serviceUrl.stripTrailing().replaceAll("/+$", "");
-        if (!JwtKeyManager.isHttpsUrl(serviceUrl)) {
+        if (!OidcUrlUtils.isHttpsUrl(serviceUrl)) {
             throw new TestStepException("serviceUrl must use HTTPS");
         }
         checkNotPrivateAddress(serviceUrl);

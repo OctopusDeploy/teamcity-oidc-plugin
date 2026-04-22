@@ -73,7 +73,7 @@ public class WellKnownPublicFilter implements Filter {
             resp.setHeader("Access-Control-Allow-Origin", "*");
             resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
                     + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
-            final var issuer = JwtKeyManager.normalizeRootUrl(buildServer.getRootUrl());
+            final var issuer = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
             LOG.fine("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
 
             final var doc = getJsonObject(issuer);
