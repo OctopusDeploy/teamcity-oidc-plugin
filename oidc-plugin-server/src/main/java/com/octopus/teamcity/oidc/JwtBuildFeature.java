@@ -67,7 +67,7 @@ public class JwtBuildFeature extends BuildFeature {
     public PropertiesProcessor getParametersProcessor(@NotNull final BuildTypeIdentity buildTypeOrTemplate) {
         return params -> {
             final Collection<InvalidProperty> errors = new ArrayList<>();
-            if (!JwtKeyManager.isHttpsUrl(buildServer.getRootUrl())) {
+            if (!OidcUrlUtils.isHttpsUrl(buildServer.getRootUrl())) {
                 errors.add(new InvalidProperty("root_url",
                         "The TeamCity server root URL must use HTTPS for OIDC token issuance. " +
                                 "Update it in Administration → Global Settings."));
