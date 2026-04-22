@@ -32,10 +32,20 @@ public class KeyRotationScheduler extends BuildServerAdapter {
             return t;
         });
         buildServer.addListener(this);
+        if (buildServer.isStarted()) {
+            // Plugin hot-deployed into a running server — serverStartup() will never fire,
+            // so start the scheduler now. No initial delay needed; TC is already fully up.
+            startScheduler(0);
+        }
     }
 
     @Override
     public void serverStartup() {
+        // Delay by 1 minute to let TC finish initialising before the first rotation check.
+        startScheduler(1);
+    }
+
+    private void startScheduler(final long initialDelayMinutes) {
         LOG.info("JWT plugin: key rotation scheduler starting (hourly check)");
         executor.scheduleAtFixedRate(() -> {
             try {
@@ -43,7 +53,7 @@ public class KeyRotationScheduler extends BuildServerAdapter {
             } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected error during rotation check", e);
             }
-        }, 1, 60, TimeUnit.MINUTES);
+        }, initialDelayMinutes, 60, TimeUnit.MINUTES);
     }
 
     @Override
