@@ -43,7 +43,7 @@ public class KeyRotationScheduler extends BuildServerAdapter {
             } catch (final Exception e) {
                 LOG.log(Level.SEVERE, "JWT plugin: unexpected error during rotation check", e);
             }
-        }, 0, 1, TimeUnit.HOURS);
+        }, 1, 60, TimeUnit.MINUTES);
     }
 
     @Override
