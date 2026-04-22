@@ -176,7 +176,16 @@ public class OidcFlowIT {
             .withCopyFileToContainer(
                     MountableFile.forHostPath(TC_CACERTS_WITH_TEST_CA.toString()),
                     "/opt/java/openjdk/lib/security/cacerts")
-            .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-teamcity"))
+            .withCreateContainerCmdModifier(cmd -> {
+                cmd.withName(CONTAINER_PREFIX + "-teamcity");
+                // Docker's withCopyFileToContainer creates the plugins/ directory as root:root,
+                // which prevents tcuser from creating subdirectories (.tools, .bundledTools).
+                // Fix: start as root, chown the directory, then exec TC as tcuser.
+                cmd.withUser("root");
+                cmd.withCmd("/bin/sh", "-c",
+                        "chown -R tcuser:tcuser /data/teamcity_server/datadir/plugins" +
+                        " && exec runuser -u tcuser -- /run-services.sh");
+            })
             .waitingFor(
                     Wait.forHttp("/mnt/").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5))
             );
