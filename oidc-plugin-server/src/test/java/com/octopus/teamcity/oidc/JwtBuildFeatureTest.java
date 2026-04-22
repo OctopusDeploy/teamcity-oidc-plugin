@@ -124,14 +124,6 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void describeParametersHtmlEscapesAudience() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
-        final var description = feature.describeParameters(Map.of("audience", "<script>alert(1)</script>"));
-        assertThat(description).doesNotContain("<script>");
-        assertThat(description).contains("&lt;script&gt;");
-    }
-
-    @Test
     public void describeParametersOmitsAudienceWhenBlank() {
         final var feature = new JwtBuildFeature(pluginDescriptor, buildServer);
         final var description = feature.describeParameters(Map.of("algorithm", "RS256", "ttl_minutes", "10"));

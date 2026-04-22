@@ -12,7 +12,7 @@
     <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
-            <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : fn:escapeXml(propertiesBean.properties['ttl_minutes'])}" style="width:5em;"/>
+            <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
             <span class="smallNote">How long the JWT is valid for. Default: 10 minutes.</span>
             <span class="error" id="error_ttl_minutes"></span>
         </td>
@@ -20,7 +20,7 @@
     <tr>
         <th><label for="audience">Audience (<code>aud</code>):</label></th>
         <td>
-            <props:textProperty name="audience" value="${fn:escapeXml(propertiesBean.properties['audience'])}" style="width:30em;"/>
+            <props:textProperty name="audience" value="${propertiesBean.properties['audience']}" style="width:30em;"/>
             <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code>).</span>
             <span class="error" id="error_audience"></span>
         </td>

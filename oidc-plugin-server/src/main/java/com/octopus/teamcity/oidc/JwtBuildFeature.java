@@ -4,7 +4,6 @@ import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.springframework.web.util.HtmlUtils;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,7 +42,7 @@ public class JwtBuildFeature extends BuildFeature {
         final var sb = new StringBuilder();
         sb.append("alg: ").append(algorithm).append(", ttl: ").append(ttl).append("m");
         if (audience != null && !audience.isBlank()) {
-            sb.append(", aud: ").append(HtmlUtils.htmlEscape(audience));
+            sb.append(", aud: ").append(audience);
         }
         return sb.toString();
     }
