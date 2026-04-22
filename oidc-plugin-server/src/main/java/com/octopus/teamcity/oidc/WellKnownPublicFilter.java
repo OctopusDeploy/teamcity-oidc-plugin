@@ -59,7 +59,7 @@ public class WellKnownPublicFilter implements Filter {
                     + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
             final var publicKeys = keyManager.getPublicKeys();
             final var jwks = new JWKSet(publicKeys != null ? publicKeys : List.of());
-            LOG.info("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
+            LOG.fine("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
             resp.getWriter().write(jwks.toString());
             return;
         }
