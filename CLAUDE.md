@@ -84,6 +84,12 @@ docker ps --format "{{.Names}}" | grep "jwt-it-" | xargs docker rm -f
 
 Also kill the background Maven process.
 
+## Code style
+
+**Java:** Always use `final var` for local variables.
+
+**JavaScript:** Always use `const` for variables that are not reassigned, `let` otherwise. Never use `var`.
+
 ## TeamCity's built-in escaping
 
 TeamCity automatically HTML-escapes output in several rendering contexts:
