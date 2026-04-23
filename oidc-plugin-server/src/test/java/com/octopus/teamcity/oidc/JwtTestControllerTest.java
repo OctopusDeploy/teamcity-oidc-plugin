@@ -117,6 +117,7 @@ public class JwtTestControllerTest {
     private void mockBuildType(final String externalId) {
         final var buildType = mock(SBuildType.class);
         when(buildType.getExternalId()).thenReturn(externalId);
+        when(buildType.getProjectId()).thenReturn("project1");
         when(buildServer.getProjectManager()).thenReturn(projectManager);
         when(projectManager.findBuildTypeByExternalId(externalId)).thenReturn(buildType);
     }
@@ -609,7 +610,8 @@ public class JwtTestControllerTest {
         when(resp.getWriter()).thenReturn(new PrintWriter(sw));
 
         final var admin = mock(SUser.class);
-        when(admin.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)).thenReturn(true);
+        when(admin.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
+        lenient().when(admin.isPermissionGrantedForProject(any(), eq(Permission.EDIT_PROJECT))).thenReturn(true);
 
         try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(req)).thenReturn(admin);

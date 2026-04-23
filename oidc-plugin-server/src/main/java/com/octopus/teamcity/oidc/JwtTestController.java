@@ -103,7 +103,7 @@ public class JwtTestController extends BaseController {
         response.setContentType("application/json;charset=UTF-8");
 
         final var user = SessionUser.getUser(request);
-        if (user == null || !user.isPermissionGrantedGlobally(Permission.MANAGE_SERVER_INSTALLATION)) {
+        if (user == null || !user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             writeJson(response, false, "Access denied");
             return null;
@@ -116,7 +116,7 @@ public class JwtTestController extends BaseController {
         }
         try {
             if ("jwt".equals(step)) {
-                final var result = stepJwt(request); // [message, serializedToken]
+                final var result = stepJwt(request, user); // [message, serializedToken]
                 final var json = new JSONObject();
                 json.put("ok", true);
                 json.put("message", result[0]);
@@ -140,7 +140,7 @@ public class JwtTestController extends BaseController {
         return null;
     }
 
-    private String[] stepJwt(final HttpServletRequest request) throws Exception {
+    private String[] stepJwt(final HttpServletRequest request, final SUser user) throws Exception {
         final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
@@ -151,9 +151,10 @@ public class JwtTestController extends BaseController {
         //
         // The exchange step (stepExchange) POSTs this token to an operator-supplied external URL.
         // If that URL is attacker-controlled, a valid signed JWT is delivered to them. Mitigations:
-        //   1. Only admins with MANAGE_SERVER_INSTALLATION can invoke this endpoint.
-        //   2. Private/link-local addresses are blocked at the network level (checkNotPrivateAddress).
-        //   3. This 1-minute TTL caps the window in which a stolen token could be replayed — even
+        //   1. Only admins with CHANGE_SERVER_SETTINGS can invoke this endpoint.
+        //   2. The user must also have EDIT_PROJECT permission for the build type's project.
+        //   3. Private/link-local addresses are blocked at the network level (checkNotPrivateAddress).
+        //   4. This 1-minute TTL caps the window in which a stolen token could be replayed — even
         //      if it reaches an attacker, it expires before most automated abuse is practical.
         // Requiring a non-empty audience does NOT help: an attacker simply supplies one.
         final var ttl = 1;
@@ -171,6 +172,9 @@ public class JwtTestController extends BaseController {
         final var buildType = buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
         if (buildType == null) {
             throw new TestStepException("Build type not found: " + buildTypeId);
+        }
+        if (!user.isPermissionGrantedForProject(buildType.getProjectId(), Permission.EDIT_PROJECT)) {
+            throw new TestStepException("Access denied for project: " + buildType.getProjectId());
         }
         final var subject = buildType.getExternalId();
 
