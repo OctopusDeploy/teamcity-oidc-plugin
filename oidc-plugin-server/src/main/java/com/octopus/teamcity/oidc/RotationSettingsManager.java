@@ -4,6 +4,7 @@ import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.apache.commons.io.FileUtils;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.scheduling.support.CronExpression;
 
 import java.io.File;
 import java.io.IOException;
@@ -40,9 +41,14 @@ public class RotationSettingsManager {
             final var defaults = RotationSettings.defaults();
             final var enabledValue = obj.get("enabled");
             final var enabled = enabledValue instanceof Boolean ? (Boolean) enabledValue : defaults.enabled();
-            final var schedule = obj.containsKey("cronSchedule")
+            final var rawSchedule = obj.containsKey("cronSchedule")
                     ? (String) obj.get("cronSchedule")
                     : defaults.cronSchedule();
+            final var schedule = isValidCron(rawSchedule) ? rawSchedule : defaults.cronSchedule();
+            if (!schedule.equals(rawSchedule)) {
+                LOG.warning("JWT plugin: invalid cronSchedule '" + rawSchedule
+                        + "' in rotation-settings.json — falling back to default: " + defaults.cronSchedule());
+            }
             final var lastRotatedAt = obj.containsKey("lastRotatedAt") && obj.get("lastRotatedAt") != null
                     ? Instant.parse((String) obj.get("lastRotatedAt"))
                     : null;
@@ -71,6 +77,15 @@ public class RotationSettingsManager {
                                   @NotNull final String cronSchedule) {
         final var current = load();
         save(new RotationSettings(enabled, cronSchedule, current.lastRotatedAt()));
+    }
+
+    private static boolean isValidCron(final String expression) {
+        try {
+            CronExpression.parse(expression);
+            return true;
+        } catch (final IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public synchronized void save(@NotNull final RotationSettings settings) {
