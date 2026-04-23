@@ -11,6 +11,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class JwtBuildStartContext implements BuildStartContextProcessor {
@@ -19,6 +20,8 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
     private final ExtensionHolder extensionHolder;
     private final SBuildServer buildServer;
     private final JwtKeyManager keyManager;
+
+    private static final Pattern CLAIMS_SPLIT = Pattern.compile("\\s*,\\s*");
 
     private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of(
             "branch", "build_type_external_id", "project_external_id",
@@ -74,7 +77,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var claimsParam = params.get("claims");
                 final Set<String> requestedClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
-                        : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
+                        : new HashSet<>(Arrays.asList(CLAIMS_SPLIT.split(claimsParam)));
                 final var unknownClaims = requestedClaims.stream()
                         .filter(c -> !ALL_CUSTOM_CLAIMS.contains(c))
                         .collect(Collectors.toSet());
