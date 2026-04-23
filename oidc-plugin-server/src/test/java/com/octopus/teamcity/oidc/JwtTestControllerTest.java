@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -66,6 +67,14 @@ public class JwtTestControllerTest {
         // Default: HTTPS root URL. lenient() because not all tests exercise this path.
         lenient().when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
         controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter, PUBLIC_RESOLVER);
+    }
+
+    // ---- lifecycle ----
+
+    @Test
+    void destroyClosesHttpClient() throws Exception {
+        controller.destroy();
+        verify(httpClient).close();
     }
 
     // ---- auth ----
@@ -128,40 +137,43 @@ public class JwtTestControllerTest {
     @Test
     void jwtStepRS256ReturnsSignedToken() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
             "audience", "https://tc.example.com", "buildTypeId", "buildType:MyBuildType"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        assertThat(result.getAsString("token")).isNotBlank();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        assertThat(result.getAsString("tokenRef")).isNotBlank();
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
     }
 
     @Test
     void jwtStepES256ReturnsSignedToken() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "ES256", "ttl_minutes", "10",
             "audience", "https://tc.example.com", "buildTypeId", "buildType:MyBuildType"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.ES256);
     }
 
     @Test
     void jwtStepUsesBuildTypeExternalIdAsSubject() throws Exception {
         mockBuildType("MyProject_MyBuild");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
             "audience", "aud", "buildTypeId", "buildType:MyProject_MyBuild"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("MyProject_MyBuild");
         assertThat(result.getAsString("message")).contains("sub: MyProject_MyBuild");
     }
@@ -169,13 +181,14 @@ public class JwtTestControllerTest {
     @Test
     void jwtStepAcceptsBuildTypeIdWithoutPrefix() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
             "audience", "aud", "buildTypeId", "MyBuildType"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("MyBuildType");
     }
 
@@ -233,13 +246,14 @@ public class JwtTestControllerTest {
     @Test
     void jwtStepAlwaysUses1MinuteTtlRegardlessOfInput() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "999999",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         final var ttlSeconds = (jwt.getJWTClaimsSet().getExpirationTime().getTime()
                 - jwt.getJWTClaimsSet().getIssueTime().getTime()) / 1000;
         assertThat(ttlSeconds).isEqualTo(60); // always 1 minute for test tokens
@@ -328,101 +342,98 @@ public class JwtTestControllerTest {
     @Test
     void jwksStepFailsWhenRootUrlIsNotHttps() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
-        final var result = callStep(Map.of("step", "jwks", "token", "some.jwt.token"));
+        final var result = callStep(Map.of("step", "jwks"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("not HTTPS");
     }
 
     @Test
     void jwksStepVerifiesValidRs256Token() throws Exception {
+        final var session = createMockSession();
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
-        final var token = jwtResult.getAsString("token");
+        ), session);
+        final var tokenRef = jwtResult.getAsString("tokenRef");
         final var jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
 
         doReturn(mockResponse(200, jwksJson)).when(httpClient).send(any(), any());
-        final var result = callStep(Map.of("step", "jwks", "token", token));
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
         assertThat((Boolean) result.get("ok")).isTrue();
         assertThat(result.getAsString("message")).contains("JWKS OK");
     }
 
     @Test
     void jwksStepVerifiesValidEs256Token() throws Exception {
+        final var session = createMockSession();
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "ES256", "ttl_minutes", "5",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
-        final var token = jwtResult.getAsString("token");
+        ), session);
+        final var tokenRef = jwtResult.getAsString("tokenRef");
         final var jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
 
         doReturn(mockResponse(200, jwksJson)).when(httpClient).send(any(), any());
-        final var result = callStep(Map.of("step", "jwks", "token", token));
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
         assertThat((Boolean) result.get("ok")).isTrue();
     }
 
     @Test
     void jwksStepFailsWhenKidNotInJwks() throws Exception {
+        final var session = createMockSession();
         mockBuildType("MyBuildType");
         final var jwtResult = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
-        final var token = jwtResult.getAsString("token");
+        ), session);
+        final var tokenRef = jwtResult.getAsString("tokenRef");
 
         doReturn(mockResponse(200, "{\"keys\":[]}")).when(httpClient).send(any(), any());
-        final var result = callStep(Map.of("step", "jwks", "token", token));
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("Key ID not found");
     }
 
     // ---- step=exchange ----
 
-    private String issueToken() throws Exception {
-        mockBuildType("MyBuildType");
-        final var jwtResult = callStep(Map.of(
-            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
-            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
-        return jwtResult.getAsString("token");
-    }
-
     @Test
     void exchangeStepSucceedsWhenTokenEndpointReturns200() throws Exception {
-        final var token = issueToken();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
         final var exchange = mockResponse(200, "{\"access_token\":\"fake-token\",\"token_type\":\"Bearer\"}");
         doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of(
-            "step", "exchange", "token", token,
+            "step", "exchange", "tokenRef", tokenRef,
             "serviceUrl", "https://svc.example.com", "audience", "my-ext-id"
-        ));
+        ), session);
         assertThat((Boolean) result.get("ok")).isTrue();
         assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
     }
 
     @Test
     void exchangeStepFailsWhenTokenEndpointReturns401() throws Exception {
-        final var token = issueToken();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
         final var tokenResp = mockResponse(401, "{\"error\":\"invalid_token\"}");
         doReturn(discovery).doReturn(tokenResp).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of(
-            "step", "exchange", "token", token,
+            "step", "exchange", "tokenRef", tokenRef,
             "serviceUrl", "https://svc.example.com", "audience", "aud"
-        ));
+        ), session);
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("Exchange failed (HTTP 401)");
     }
 
     @Test
     void exchangeStepRewritesTokenEndpointHostnameToMatchServiceUrl() throws Exception {
-        final var token = issueToken();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         // discovery doc advertises an internal hostname in token_endpoint
         final var discovery = mockResponse(200,
             "{\"issuer\":\"http://internal-host\",\"token_endpoint\":\"http://internal-host/token\"}");
@@ -430,22 +441,23 @@ public class JwtTestControllerTest {
         doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of(
-            "step", "exchange", "token", token,
+            "step", "exchange", "tokenRef", tokenRef,
             "serviceUrl", "https://svc.example.com", "audience", "aud"
-        ));
+        ), session);
         assertThat((Boolean) result.get("ok")).isTrue();
         assertThat(result.getAsString("message")).contains("Exchange succeeded (HTTP 200)");
     }
 
     @Test
     void exchangeStepFailsWhenDiscoveryDocMissingTokenEndpoint() throws Exception {
-        final var token = issueToken();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         doReturn(mockResponse(200, "{\"issuer\":\"http://svc\"}")).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of(
-            "step", "exchange", "token", token,
+            "step", "exchange", "tokenRef", tokenRef,
             "serviceUrl", "https://svc.example.com", "audience", "aud"
-        ));
+        ), session);
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("token_endpoint not found");
     }
@@ -471,26 +483,28 @@ public class JwtTestControllerTest {
     @Test
     void jwtStepDefaultsAlgorithmToRS256() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "audience", "aud", "buildTypeId", "buildType:MyBuildType"
             // no algorithm param
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
     }
 
     @Test
     void jwtStepIncludesNbfEqualToIat() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getJWTClaimsSet().getNotBeforeTime()).isNotNull();
         assertThat(jwt.getJWTClaimsSet().getNotBeforeTime())
                 .isEqualTo(jwt.getJWTClaimsSet().getIssueTime());
@@ -500,13 +514,14 @@ public class JwtTestControllerTest {
     void jwtStepNormalizesIssuerWhenRootUrlHasTrailingSlash() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com/");
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256",
             "audience", "aud", "buildTypeId", "buildType:MyBuildType"
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("https://tc.example.com");
     }
 
@@ -524,30 +539,26 @@ public class JwtTestControllerTest {
     @Test
     void jwtStepDefaultsAudienceToRootUrl() throws Exception {
         mockBuildType("MyBuildType");
+        final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "buildTypeId", "buildType:MyBuildType"
             // no audience param
-        ));
+        ), session);
 
         assertThat((Boolean) result.get("ok")).isTrue();
-        final var jwt = SignedJWT.parse(result.getAsString("token"));
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
         assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly("https://tc.example.com");
     }
 
     // ---- step=jwks validation ----
 
     @Test
-    void jwksStepFailsWhenTokenParamMissing() throws Exception {
-        final var result = callStep(Map.of("step", "jwks"));
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("token");
-    }
-
-    @Test
     void jwksStepFailsWhenJwksEndpointReturnsNon200() throws Exception {
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         doReturn(mockResponse(500, "{}")).when(httpClient).send(any(), any());
 
-        final var result = callStep(Map.of("step", "jwks", "token", "dummy.token.here"));
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("JWKS endpoint returned HTTP 500");
     }
@@ -555,39 +566,34 @@ public class JwtTestControllerTest {
     // ---- step=exchange validation ----
 
     @Test
-    void exchangeStepFailsWhenTokenParamMissing() throws Exception {
-        final var result = callStep(Map.of("step", "exchange", "serviceUrl", "https://svc.example.com"));
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("token");
-    }
-
-    @Test
     void exchangeStepStripsTrailingSlashesFromServiceUrl() throws Exception {
-        final var token = issueToken();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
         final var exchange = mockResponse(200, "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
         doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of(
-            "step", "exchange", "token", token,
+            "step", "exchange", "tokenRef", tokenRef,
             "serviceUrl", "https://svc.example.com///", // trailing slashes
             "audience", "aud"
-        ));
+        ), session);
         assertThat((Boolean) result.get("ok")).isTrue();
     }
 
     @Test
     void exchangeStepFailsWhenServiceUrlParamMissing() throws Exception {
-        final var result = callStep(Map.of("step", "exchange", "token", "some.jwt.token"));
+        // serviceUrl check happens before session lookup
+        final var result = callStep(Map.of("step", "exchange"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("serviceUrl");
     }
 
     @Test
     void exchangeStepFailsWhenServiceUrlIsHttp() throws Exception {
+        // HTTPS check happens before session lookup
         final var result = callStep(Map.of(
             "step", "exchange",
-            "token", "some.jwt.token",
             "serviceUrl", "http://external.example.com",
             "audience", "aud"
         ));
@@ -597,9 +603,10 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepBlocksLoopbackAddress() throws Exception {
+        // Private address check happens before session lookup
         controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
         final var result = callStep(Map.of(
-            "step", "exchange", "token", "some.jwt.token",
+            "step", "exchange",
             "serviceUrl", "https://127.0.0.1", "audience", "aud"
         ));
         assertThat((Boolean) result.get("ok")).isFalse();
@@ -610,7 +617,7 @@ public class JwtTestControllerTest {
     void exchangeStepBlocksRfc1918Address() throws Exception {
         controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
         final var result = callStep(Map.of(
-            "step", "exchange", "token", "some.jwt.token",
+            "step", "exchange",
             "serviceUrl", "https://192.168.1.100", "audience", "aud"
         ));
         assertThat((Boolean) result.get("ok")).isFalse();
@@ -621,7 +628,7 @@ public class JwtTestControllerTest {
     void exchangeStepBlocksLinkLocalAddress() throws Exception {
         controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
         final var result = callStep(Map.of(
-            "step", "exchange", "token", "some.jwt.token",
+            "step", "exchange",
             "serviceUrl", "https://169.254.169.254", "audience", "aud"
         ));
         assertThat((Boolean) result.get("ok")).isFalse();
@@ -630,14 +637,119 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepFailsWhenServiceDiscoveryReturnsNon200() throws Exception {
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
         doReturn(mockResponse(404, "not found")).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of(
-            "step", "exchange", "token", "some.jwt.token",
+            "step", "exchange", "tokenRef", tokenRef,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ), session);
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Service discovery returned HTTP 404");
+    }
+
+    // ---- session token tests ----
+
+    @Test
+    void jwtStepReturnsTokenRefNotRawToken() throws Exception {
+        mockBuildType("MyBuildType");
+        final var session = createMockSession();
+        final var result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ), session);
+
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.get("token")).as("raw token must NOT be returned to browser").isNull();
+        final var tokenRef = result.getAsString("tokenRef");
+        assertThat(tokenRef).isNotBlank();
+        assertThat(session.getAttribute(JwtTestController.SESSION_TOKEN_PREFIX + tokenRef))
+                .as("token must be stored in session").isNotNull();
+    }
+
+    @Test
+    void jwksStepUsesTokenFromSession() throws Exception {
+        final var session = createMockSession();
+        mockBuildType("MyBuildType");
+        final var jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ), session);
+        final var tokenRef = jwtResult.getAsString("tokenRef");
+
+        final var jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
+        doReturn(mockResponse(200, jwksJson)).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("JWKS OK");
+    }
+
+    @Test
+    void jwksStepRemovesTokenFromSessionAfterVerification() throws Exception {
+        final var session = createMockSession();
+        mockBuildType("MyBuildType");
+        final var jwtResult = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ), session);
+        final var tokenRef = jwtResult.getAsString("tokenRef");
+        final var jwksJson = new com.nimbusds.jose.jwk.JWKSet(keyManager.getPublicKeys()).toString();
+        doReturn(mockResponse(200, jwksJson)).when(httpClient).send(any(), any());
+
+        callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
+
+        assertThat(session.getAttribute(JwtTestController.SESSION_TOKEN_PREFIX + tokenRef))
+                .as("token must be removed from session after use").isNull();
+    }
+
+    @Test
+    void exchangeStepRemovesTokenFromSessionAfterUse() throws Exception {
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        final var exchangeResp = mockResponse(200, "{\"access_token\":\"ok\"}");
+        doReturn(discovery).doReturn(exchangeResp).when(httpClient).send(any(), any());
+
+        callStep(Map.of("step", "exchange", "tokenRef", tokenRef,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"), session);
+
+        assertThat(session.getAttribute(JwtTestController.SESSION_TOKEN_PREFIX + tokenRef))
+                .as("token must be removed from session after use").isNull();
+    }
+
+    @Test
+    void jwksStepFailsWhenNoSessionTokenForRef() throws Exception {
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", "nonexistent-guid"));
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("No active test token");
+    }
+
+    @Test
+    void exchangeStepUsesTokenFromSession() throws Exception {
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        final var exchange = mockResponse(200, "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
+        doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of(
+            "step", "exchange", "tokenRef", tokenRef,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ), session);
+        assertThat((Boolean) result.get("ok")).isTrue();
+    }
+
+    @Test
+    void exchangeStepFailsWhenNoSessionTokenForRef() throws Exception {
+        final var result = callStep(Map.of(
+            "step", "exchange", "tokenRef", "nonexistent-guid",
             "serviceUrl", "https://svc.example.com", "audience", "aud"
         ));
         assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("Service discovery returned HTTP 404");
+        assertThat(result.getAsString("message")).contains("No active test token");
     }
 
     // ---- helpers ----
@@ -652,11 +764,19 @@ public class JwtTestControllerTest {
     }
 
     JSONObject callStep(final Map<String, String> params) throws Exception {
-        return callStep(params, true);
+        return callStep(params, true, createMockSession());
     }
 
     JSONObject callStep(final Map<String, String> params, final boolean editProject) throws Exception {
-        final var req = mockPost(params);
+        return callStep(params, editProject, createMockSession());
+    }
+
+    JSONObject callStep(final Map<String, String> params, final HttpSession session) throws Exception {
+        return callStep(params, true, session);
+    }
+
+    JSONObject callStep(final Map<String, String> params, final boolean editProject, final HttpSession session) throws Exception {
+        final var req = mockPost(params, session);
         final var resp = mock(HttpServletResponse.class);
         final var sw = new StringWriter();
         when(resp.getWriter()).thenReturn(new PrintWriter(sw));
@@ -674,9 +794,41 @@ public class JwtTestControllerTest {
     }
 
     HttpServletRequest mockPost(final Map<String, String> params) {
+        return mockPost(params, createMockSession());
+    }
+
+    HttpServletRequest mockPost(final Map<String, String> params, final HttpSession session) {
         final var req = mock(HttpServletRequest.class);
         lenient().when(req.getMethod()).thenReturn("POST");
         params.forEach((k, v) -> lenient().when(req.getParameter(k)).thenReturn(v));
+        lenient().when(req.getSession()).thenReturn(session);
         return req;
+    }
+
+    private HttpSession createMockSession() {
+        final var store = new java.util.HashMap<String, Object>();
+        final var session = mock(HttpSession.class);
+        lenient().doAnswer(i -> store.get(i.getArgument(0, String.class))).when(session).getAttribute(anyString());
+        lenient().doAnswer(i -> { store.put(i.getArgument(0, String.class), i.getArgument(1)); return null; })
+                .when(session).setAttribute(anyString(), any());
+        lenient().doAnswer(i -> { store.remove(i.getArgument(0, String.class)); return null; })
+                .when(session).removeAttribute(anyString());
+        return session;
+    }
+
+    private SignedJWT parseSessionToken(final HttpSession session, final String tokenRef) throws Exception {
+        final var raw = (String) session.getAttribute(JwtTestController.SESSION_TOKEN_PREFIX + tokenRef);
+        assertThat(raw).as("session token for ref " + tokenRef).isNotNull();
+        return SignedJWT.parse(raw);
+    }
+
+    private String issueTokenRef(final HttpSession session) throws Exception {
+        mockBuildType("MyBuildType");
+        final var result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "5",
+            "audience", "aud", "buildTypeId", "buildType:MyBuildType"
+        ), session);
+        assertThat((Boolean) result.get("ok")).isTrue();
+        return result.getAsString("tokenRef");
     }
 }

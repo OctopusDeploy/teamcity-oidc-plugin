@@ -80,6 +80,17 @@ public class RotationSettingsManagerTest {
     }
 
     @Test
+    void fallsBackToDefaultScheduleWhenStoredCronIsInvalid() throws Exception {
+        // Write a settings file with a syntactically invalid cron expression
+        final var file = new File(tempDir, "rotation-settings.json");
+        java.nio.file.Files.writeString(file.toPath(),
+                "{\"enabled\":true,\"cronSchedule\":\"not-a-cron\",\"lastRotatedAt\":null}");
+
+        final var loaded = new RotationSettingsManager(tempDir).load();
+        assertThat(loaded.cronSchedule()).isEqualTo(RotationSettings.DEFAULT_SCHEDULE);
+    }
+
+    @Test
     void saveIsVisibleAfterReload() {
         final var mgr = new RotationSettingsManager(tempDir);
         mgr.save(new RotationSettings(true, "0 0 4 * * *", null));

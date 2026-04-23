@@ -189,7 +189,7 @@ public class JwtKeyManager {
         final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("JWT plugin: reading existing RSA key from " + keyFile);
-            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
+            return parseRsaKey(keyFile);
         }
         LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
@@ -202,14 +202,14 @@ public class JwtKeyManager {
         final var f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
         LOG.info("JWT plugin: reading retired RSA key from " + f);
-        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
+        return parseRsaKey(f);
     }
 
     private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "ec-key.json");
         if (keyFile.exists()) {
             LOG.info("JWT plugin: reading existing EC key from " + keyFile);
-            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toECKey();
+            return parseEcKey(keyFile);
         }
         LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
@@ -222,7 +222,23 @@ public class JwtKeyManager {
         final var f = new File(keyDirectory, "retired-ec-key.json");
         if (!f.exists()) return null;
         LOG.info("JWT plugin: reading retired EC key from " + f);
-        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toECKey();
+        return parseEcKey(f);
+    }
+
+    private RSAKey parseRsaKey(final File file) throws IOException, ParseException {
+        final var jwk = JWK.parse(encryption.decrypt(FileUtils.readFileToString(file, StandardCharsets.UTF_8)));
+        if (!(jwk instanceof RSAKey rsaKey)) {
+            throw new IOException("Expected RSA key in " + file.getName() + " but found key type: " + jwk.getKeyType());
+        }
+        return rsaKey;
+    }
+
+    private ECKey parseEcKey(final File file) throws IOException, ParseException {
+        final var jwk = JWK.parse(encryption.decrypt(FileUtils.readFileToString(file, StandardCharsets.UTF_8)));
+        if (!(jwk instanceof ECKey ecKey)) {
+            throw new IOException("Expected EC key in " + file.getName() + " but found key type: " + jwk.getKeyType());
+        }
+        return ecKey;
     }
 
     private static RSAKey generateFreshRsaKey() throws JOSEException {
