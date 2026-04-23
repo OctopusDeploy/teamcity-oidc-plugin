@@ -193,6 +193,17 @@ public class JwtTestController extends BaseController {
         final var jwt = keyManager.sign(claims, algorithm);
         final var serialized = jwt.serialize();
         final var tokenRef = UUID.randomUUID().toString();
+        // Store the signed JWT in the HTTP session rather than returning it to the browser,
+        // so the raw bearer credential never travels over the wire to the client.
+        // The browser receives only this UUID reference; subsequent steps look it up and
+        // remove it on read (consume-once).
+        //
+        // Multi-node HA note: HttpSession is node-local in TeamCity. This works correctly
+        // because TC's HA setup already requires sticky sessions at the load balancer
+        // (NodeResponsibility.CAN_PROCESS_USER_DATA_MODIFICATION_REQUESTS). All three
+        // sequential test-connection POSTs from the same browser tab are guaranteed to land
+        // on the same node. If a node switch somehow occurred mid-flow, the user would see
+        // "No active test token — please click 'Test Connection' again" and could retry.
         request.getSession().setAttribute(SESSION_TOKEN_PREFIX + tokenRef, serialized);
         final var message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
         return new String[]{message, tokenRef};
