@@ -341,15 +341,6 @@ public class JwtTestController extends BaseController {
         }
     }
 
-    private static int parseTtl(final String value) {
-        try {
-            final var ttl = (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
-            return Math.max(1, Math.min(ttl, 1440));
-        } catch (final NumberFormatException e) {
-            return 10;
-        }
-    }
-
     private static void writeJson(final HttpServletResponse response, final boolean ok, final String message) throws IOException {
         final var json = new JSONObject();
         json.put("ok", ok);
