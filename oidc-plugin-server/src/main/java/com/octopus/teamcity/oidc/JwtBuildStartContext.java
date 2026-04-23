@@ -5,7 +5,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
 import org.jetbrains.annotations.NotNull;
-import org.joda.time.DateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import java.util.*;
 import java.util.logging.Level;
@@ -91,15 +92,15 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var triggeredBy = build.getTriggeredBy();
                 final var user = triggeredBy.getUser();
 
-                final var now = new DateTime();
+                final var now = Instant.now();
                 final var claimsBuilder = new JWTClaimsSet.Builder()
                         .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
                         .subject(build.getBuildTypeExternalId())
                         .audience(List.of(audience))
                         .issuer(buildServerRootUrl)
-                        .issueTime(now.toDate())
-                        .notBeforeTime(now.toDate())
-                        .expirationTime(now.plusMinutes(ttlMinutes).toDate());
+                        .issueTime(Date.from(now))
+                        .notBeforeTime(Date.from(now))
+                        .expirationTime(Date.from(now.plus(ttlMinutes, ChronoUnit.MINUTES)));
 
                 if (enabledClaims.contains("branch")) {
                     claimsBuilder.claim("branch", branchName);
