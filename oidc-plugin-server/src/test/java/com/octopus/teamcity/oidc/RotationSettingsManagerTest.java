@@ -66,6 +66,20 @@ public class RotationSettingsManagerTest {
     }
 
     @Test
+    void saveEnabledAndSchedulePreservesLastRotatedAt() {
+        final var mgr = new RotationSettingsManager(tempDir);
+        final var original = Instant.parse("2026-01-01T03:00:00Z");
+        mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE, original));
+
+        mgr.save(false, "0 0 4 * * *");
+
+        final var loaded = mgr.load();
+        assertThat(loaded.enabled()).isFalse();
+        assertThat(loaded.cronSchedule()).isEqualTo("0 0 4 * * *");
+        assertThat(loaded.lastRotatedAt()).isEqualTo(original);
+    }
+
+    @Test
     void saveIsVisibleAfterReload() {
         final var mgr = new RotationSettingsManager(tempDir);
         mgr.save(new RotationSettings(true, "0 0 4 * * *", null));

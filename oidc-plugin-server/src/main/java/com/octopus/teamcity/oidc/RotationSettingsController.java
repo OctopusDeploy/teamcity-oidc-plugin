@@ -79,8 +79,7 @@ public class RotationSettingsController extends BaseController {
         }
 
         final var enabled = "true".equalsIgnoreCase(request.getParameter("enabled"));
-        final var current = settingsManager.load();
-        settingsManager.save(new RotationSettings(enabled, cronSchedule, current.lastRotatedAt()));
+        settingsManager.save(enabled, cronSchedule);
 
         LOG.info("JWT plugin: rotation settings updated (enabled=" + enabled + ", schedule=" + sanitize(cronSchedule) + ")");
         writeJson(response, true, "Settings saved");

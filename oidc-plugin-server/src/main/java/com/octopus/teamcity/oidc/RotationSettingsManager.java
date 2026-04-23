@@ -58,6 +58,18 @@ public class RotationSettingsManager {
         save(new RotationSettings(current.enabled(), current.cronSchedule(), lastRotatedAt));
     }
 
+    /**
+     * Atomically updates the enabled flag and cron schedule while preserving the current
+     * {@code lastRotatedAt} value. Using this method avoids the load→save race where a
+     * concurrent {@link #updateLastRotatedAt} call between a separate load and save would
+     * have its timestamp silently overwritten.
+     */
+    public synchronized void save(final boolean enabled,
+                                  @NotNull final String cronSchedule) {
+        final var current = load();
+        save(new RotationSettings(enabled, cronSchedule, current.lastRotatedAt()));
+    }
+
     public synchronized void save(@NotNull final RotationSettings settings) {
         final var obj = new JSONObject();
         obj.put("enabled", settings.enabled());
