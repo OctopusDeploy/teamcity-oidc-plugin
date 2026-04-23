@@ -211,6 +211,23 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void jwtStepFailsWhenUserLacksProjectPermission() throws Exception {
+        // Only stub what is actually reached before the permission check throws.
+        final var buildType = mock(SBuildType.class);
+        when(buildType.getProjectId()).thenReturn("project1");
+        when(buildServer.getProjectManager()).thenReturn(projectManager);
+        when(projectManager.findBuildTypeByExternalId("MyBuildType")).thenReturn(buildType);
+
+        final var result = callStep(
+            Map.of("step", "jwt", "algorithm", "RS256", "audience", "aud", "buildTypeId", "buildType:MyBuildType"),
+            /* editProject= */ false
+        );
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Access denied");
+    }
+
+    @Test
     void jwtStepAlwaysUses1MinuteTtlRegardlessOfInput() throws Exception {
         mockBuildType("MyBuildType");
         final var result = callStep(Map.of(
@@ -604,6 +621,10 @@ public class JwtTestControllerTest {
     }
 
     JSONObject callStep(final Map<String, String> params) throws Exception {
+        return callStep(params, true);
+    }
+
+    JSONObject callStep(final Map<String, String> params, final boolean editProject) throws Exception {
         final var req = mockPost(params);
         final var resp = mock(HttpServletResponse.class);
         final var sw = new StringWriter();
@@ -611,7 +632,7 @@ public class JwtTestControllerTest {
 
         final var admin = mock(SUser.class);
         when(admin.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)).thenReturn(true);
-        lenient().when(admin.isPermissionGrantedForProject(any(), eq(Permission.EDIT_PROJECT))).thenReturn(true);
+        lenient().when(admin.isPermissionGrantedForProject(any(), eq(Permission.EDIT_PROJECT))).thenReturn(editProject);
 
         try (final var su = mockStatic(SessionUser.class)) {
             su.when(() -> SessionUser.getUser(req)).thenReturn(admin);

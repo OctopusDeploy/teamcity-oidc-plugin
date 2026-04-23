@@ -148,13 +148,11 @@ public class JwtTestController extends BaseController {
         var algorithm = request.getParameter("algorithm");
         if (algorithm == null || algorithm.isBlank()) algorithm = "RS256";
         // Security: TTL is hard-capped at 1 minute regardless of the build feature configuration.
-        //
         // The exchange step (stepExchange) POSTs this token to an operator-supplied external URL.
         // If that URL is attacker-controlled, a valid signed JWT is delivered to them. Mitigations:
-        //   1. Only admins with CHANGE_SERVER_SETTINGS can invoke this endpoint.
-        //   2. The user must also have EDIT_PROJECT permission for the build type's project.
-        //   3. Private/link-local addresses are blocked at the network level (checkNotPrivateAddress).
-        //   4. This 1-minute TTL caps the window in which a stolen token could be replayed — even
+        //   1. Only admins with CHANGE_SERVER_SETTINGS can invoke this endpoint (enforced in doHandle).
+        //   2. Private/link-local addresses are blocked at the network level (checkNotPrivateAddress).
+        //   3. This 1-minute TTL caps the window in which a stolen token could be replayed — even
         //      if it reaches an attacker, it expires before most automated abuse is practical.
         // Requiring a non-empty audience does NOT help: an attacker simply supplies one.
         final var ttl = 1;
@@ -173,6 +171,8 @@ public class JwtTestController extends BaseController {
         if (buildType == null) {
             throw new TestStepException("Build type not found: " + buildTypeId);
         }
+        // Mitigation 4: user must have project-level EDIT_PROJECT for the build type's project,
+        // preventing a server-settings admin from issuing test JWTs for projects they can't edit.
         if (!user.isPermissionGrantedForProject(buildType.getProjectId(), Permission.EDIT_PROJECT)) {
             throw new TestStepException("Access denied for project: " + buildType.getProjectId());
         }
