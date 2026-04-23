@@ -45,12 +45,7 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
         if (!emulationMode) {
             return Map.of();
         }
-        try {
-            if (build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
-                return Map.of();
-            }
-        } catch (final Exception e) {
-            LOG.fine("JWT plugin: could not check build features in emulation mode: " + e.getMessage());
+        if (build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
             return Map.of();
         }
         return Map.of(JwtPasswordsProvider.JWT_PARAMETER_NAME, "");
@@ -59,12 +54,8 @@ public class JwtBuildParametersProvider extends AbstractBuildParametersProvider 
     @NotNull
     @Override
     public Collection<String> getParametersAvailableOnAgent(@NotNull final SBuild build) {
-        try {
-            if (!build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
-                return List.of(JwtPasswordsProvider.JWT_PARAMETER_NAME);
-            }
-        } catch (final Exception e) {
-            LOG.fine("JWT plugin: could not check build features for agent parameters: " + e.getMessage());
+        if (!build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
+            return List.of(JwtPasswordsProvider.JWT_PARAMETER_NAME);
         }
         return List.of();
     }
