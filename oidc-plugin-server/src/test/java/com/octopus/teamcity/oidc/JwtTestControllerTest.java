@@ -65,6 +65,14 @@ public class JwtTestControllerTest {
         controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter, PUBLIC_RESOLVER);
     }
 
+    // ---- lifecycle ----
+
+    @Test
+    void destroyClosesHttpClient() throws Exception {
+        controller.destroy();
+        verify(httpClient).close();
+    }
+
     // ---- auth ----
 
     @Test
