@@ -89,6 +89,16 @@ public class JwtTestController extends BaseController {
         LOG.info("JWT plugin: JwtTestController registered at " + PATH);
     }
 
+    /** Called by Spring when the plugin is unloaded. Closes the HttpClient to release its selector thread. */
+    public void destroy() {
+        try {
+            httpClient.close();
+        } catch (final Exception e) {
+            LOG.log(Level.WARNING, "JWT plugin: error closing HttpClient", e);
+        }
+        LOG.info("JWT plugin: JwtTestController HTTP client closed");
+    }
+
     @Override
     protected ModelAndView doHandle(@NotNull final HttpServletRequest request,
                                     @NotNull final HttpServletResponse response) throws IOException {
