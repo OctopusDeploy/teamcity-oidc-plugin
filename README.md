@@ -91,7 +91,7 @@ use it as the audience in the build feature configuration.
 
 ## Key Rotation
 
-To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `MANAGE_SERVER_INSTALLATION` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
+To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `CHANGE_SERVER_SETTINGS` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
 
 > **Note:** Only one generation of retired keys is kept. If you rotate twice in quick succession, tokens signed with the oldest key will fail verification at relying parties. Rotate no more frequently than your token TTL to avoid dropping in-flight tokens.
 
