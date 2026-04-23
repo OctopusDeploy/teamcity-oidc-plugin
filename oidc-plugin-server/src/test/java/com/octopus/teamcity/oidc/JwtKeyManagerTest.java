@@ -88,6 +88,46 @@ public class JwtKeyManagerTest {
     }
 
     @Test
+    public void throwsWhenRsaKeyFileContainsEcKey() throws Exception {
+        final var pluginDirectory = new File(tempDir, "swapped");
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+
+        // Generate a valid key set so both files exist with real encrypted content.
+        TestJwtKeyManagerFactory.create(serverPaths);
+
+        // Replace rsa-key.json with the contents of ec-key.json.
+        final var keyDir = new File(pluginDirectory, "JwtBuildFeature");
+        final var rsaFile = new File(keyDir, "rsa-key.json");
+        final var ecFile  = new File(keyDir, "ec-key.json");
+        FileUtils.copyFile(ecFile, rsaFile);
+
+        assertThatThrownBy(() -> TestJwtKeyManagerFactory.create(serverPaths).getRsaKey())
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("JwtKeyManager");
+    }
+
+    @Test
+    public void throwsWhenEcKeyFileContainsRsaKey() throws Exception {
+        final var pluginDirectory = new File(tempDir, "swapped2");
+        if (!pluginDirectory.mkdirs()) throw new RuntimeException("Unable to create pluginDirectory");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(pluginDirectory);
+
+        // Generate a valid key set so both files exist with real encrypted content.
+        TestJwtKeyManagerFactory.create(serverPaths);
+
+        // Replace ec-key.json with the contents of rsa-key.json.
+        final var keyDir = new File(pluginDirectory, "JwtBuildFeature");
+        final var rsaFile = new File(keyDir, "rsa-key.json");
+        final var ecFile  = new File(keyDir, "ec-key.json");
+        FileUtils.copyFile(rsaFile, ecFile);
+
+        assertThatThrownBy(() -> TestJwtKeyManagerFactory.create(serverPaths).getEcKey())
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("JwtKeyManager");
+    }
+
+    @Test
     public void ecKeyIdIsThumbprintOfPublicKey() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
