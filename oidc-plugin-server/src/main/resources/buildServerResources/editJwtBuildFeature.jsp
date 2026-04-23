@@ -103,11 +103,11 @@
 </div>
 
 <script type="text/javascript">
-    let _jwtToken = null;
+    let _jwtTokenRef = null;
     const _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
 
     window.jwtTestOpen = function() {
-        _jwtToken = null;
+        _jwtTokenRef = null;
         ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(function(id) {
             const el = document.getElementById(id);
             el.textContent = id === 'jwtRow3' ? '' : '○ Pending';
@@ -156,7 +156,7 @@
         const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
         jwtSetRow('jwtRow0', r1.ok, r1.message);
         if (!r1.ok) return;
-        _jwtToken = r1.token;
+        _jwtTokenRef = r1.tokenRef;
 
         document.getElementById('jwtRow1').textContent = '⏳ Checking discovery endpoint...';
         const r2 = await jwtPost({step:'discovery'});
@@ -164,7 +164,7 @@
         if (!r2.ok) return;
 
         document.getElementById('jwtRow2').textContent = '⏳ Verifying JWKS signature...';
-        const r3 = await jwtPost({step:'jwks', token:_jwtToken});
+        const r3 = await jwtPost({step:'jwks', tokenRef:_jwtTokenRef});
         jwtSetRow('jwtRow2', r3.ok, r3.message);
         if (!r3.ok) return;
 
@@ -179,7 +179,7 @@
         document.getElementById('jwtExchangeBtn').disabled = true;
         document.getElementById('jwtRow3').textContent = '⏳ Trying exchange...';
         document.getElementById('jwtRow3').style.color = '#888';
-        const r = await jwtPost({step:'exchange', token:_jwtToken, serviceUrl:serviceUrl, audience:audience});
+        const r = await jwtPost({step:'exchange', tokenRef:_jwtTokenRef, serviceUrl:serviceUrl, audience:audience});
         jwtSetRow('jwtRow3', r.ok, r.message);
         document.getElementById('jwtExchangeBtn').disabled = false;
     }

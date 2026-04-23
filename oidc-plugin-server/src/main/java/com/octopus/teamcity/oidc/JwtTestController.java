@@ -42,6 +42,7 @@ import java.util.logging.Logger;
 public class JwtTestController extends BaseController {
     private static final Logger LOG = Logger.getLogger(JwtTestController.class.getName());
     static final String PATH = "/admin/jwtTest.html";
+    static final String SESSION_TOKEN_PREFIX = "jwt.test.token.";
 
     /** Resolves a hostname to its addresses; injectable so tests can stub DNS. */
     @FunctionalInterface
@@ -116,11 +117,11 @@ public class JwtTestController extends BaseController {
         }
         try {
             if ("jwt".equals(step)) {
-                final var result = stepJwt(request, user); // [message, serializedToken]
+                final var result = stepJwt(request, user); // [message, tokenRef]
                 final var json = new JSONObject();
                 json.put("ok", true);
                 json.put("message", result[0]);
-                json.put("token", result[1]);
+                json.put("tokenRef", result[1]);
                 response.getWriter().write(json.toJSONString());
             } else {
                 final var message = switch (step) {
@@ -191,8 +192,10 @@ public class JwtTestController extends BaseController {
 
         final var jwt = keyManager.sign(claims, algorithm);
         final var serialized = jwt.serialize();
+        final var tokenRef = UUID.randomUUID().toString();
+        request.getSession().setAttribute(SESSION_TOKEN_PREFIX + tokenRef, serialized);
         final var message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
-        return new String[]{message, serialized};
+        return new String[]{message, tokenRef};
     }
 
     private String stepDiscovery() throws Exception {
@@ -214,14 +217,17 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepJwks(final HttpServletRequest request) throws Exception {
-        final var token = request.getParameter("token");
-        if (token == null || token.isBlank()) {
-            throw new TestStepException("Missing required parameter: token");
-        }
         final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
+        final var tokenRef = request.getParameter("tokenRef");
+        final var token = tokenRef != null
+                ? (String) request.getSession().getAttribute(SESSION_TOKEN_PREFIX + tokenRef) : null;
+        if (token == null) {
+            throw new TestStepException("No active test token — please click 'Test Connection' again");
+        }
+        request.getSession().removeAttribute(SESSION_TOKEN_PREFIX + tokenRef);
         final var url = rootUrl + "/.well-known/jwks.json";
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
@@ -249,12 +255,8 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepExchange(final HttpServletRequest request) throws Exception {
-        final var token = request.getParameter("token");
         var serviceUrl = request.getParameter("serviceUrl");
         final var audience = request.getParameter("audience");
-        if (token == null || token.isBlank()) {
-            throw new TestStepException("Missing required parameter: token");
-        }
         if (serviceUrl == null || serviceUrl.isBlank()) {
             throw new TestStepException("Missing required parameter: serviceUrl");
         }
@@ -263,6 +265,13 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("serviceUrl must use HTTPS");
         }
         checkNotPrivateAddress(serviceUrl);
+        final var tokenRef = request.getParameter("tokenRef");
+        final var token = tokenRef != null
+                ? (String) request.getSession().getAttribute(SESSION_TOKEN_PREFIX + tokenRef) : null;
+        if (token == null) {
+            throw new TestStepException("No active test token — please click 'Test Connection' again");
+        }
+        request.getSession().removeAttribute(SESSION_TOKEN_PREFIX + tokenRef);
 
         final var discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
         final var discoveryResp = httpGet(discoveryUrl);
