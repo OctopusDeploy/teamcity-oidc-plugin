@@ -1,8 +1,9 @@
 package com.octopus.teamcity.oidc;
 
-import com.nimbusds.jose.shaded.gson.JsonArray;
-import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -84,7 +85,7 @@ public class KeyRotationTest {
 
     // --- helpers ---
 
-    private JsonArray jwksKeys() throws Exception {
+    private JSONArray jwksKeys() throws Exception {
         final var filter = new WellKnownPublicFilter(keyManager, mock(jetbrains.buildServer.serverSide.SBuildServer.class));
         final var request = mock(HttpServletRequest.class);
         final var response = mock(HttpServletResponse.class);
@@ -93,13 +94,14 @@ public class KeyRotationTest {
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
         when(request.getContextPath()).thenReturn("");
         filter.doFilter(request, response, mock(FilterChain.class));
-        return JsonParser.parseString(writer.toString()).getAsJsonObject().get("keys").getAsJsonArray();
+        final var parsed = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(writer.toString());
+        return (JSONArray) parsed.get("keys");
     }
 
-    private List<String> kidsIn(final JsonArray keys) {
+    private List<String> kidsIn(final JSONArray keys) {
         final var kids = new ArrayList<String>();
         for (var i = 0; i < keys.size(); i++) {
-            kids.add(keys.get(i).getAsJsonObject().get("kid").getAsString());
+            kids.add((String) ((JSONObject) keys.get(i)).get("kid"));
         }
         return kids;
     }
