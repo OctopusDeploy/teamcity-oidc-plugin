@@ -48,7 +48,10 @@ public class RotationSettingsManager {
                     : null;
             return new RotationSettings(enabled, schedule, lastRotatedAt);
         } catch (final Exception e) {
-            LOG.log(Level.WARNING, "JWT plugin: failed to load rotation settings, using defaults", e);
+            LOG.log(Level.SEVERE, "JWT plugin: failed to load rotation settings from "
+                    + settingsFile.getAbsolutePath()
+                    + " — file may be corrupt. Auto-rotation is disabled until the file is repaired or deleted."
+                    + " Using safe defaults (auto-rotation disabled).", e);
             return RotationSettings.defaults();
         }
     }
