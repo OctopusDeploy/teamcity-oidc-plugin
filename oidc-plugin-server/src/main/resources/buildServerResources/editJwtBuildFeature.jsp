@@ -29,10 +29,11 @@
         <th><label for="algorithm">Signing algorithm:</label></th>
         <td>
             <props:selectProperty name="algorithm">
-                <props:option value="RS256" selected="${empty propertiesBean.properties['algorithm'] || propertiesBean.properties['algorithm'] == 'RS256'}">RS256 (RSA, default)</props:option>
+                <props:option value="RS256" selected="${empty propertiesBean.properties['algorithm'] || propertiesBean.properties['algorithm'] == 'RS256'}">RS256 (RSA-2048, default)</props:option>
+                <props:option value="RS384" selected="${propertiesBean.properties['algorithm'] == 'RS384'}">RS384 (RSA-3072)</props:option>
                 <props:option value="ES256" selected="${propertiesBean.properties['algorithm'] == 'ES256'}">ES256 (ECDSA P-256)</props:option>
             </props:selectProperty>
-            <span class="smallNote">ES256 produces smaller tokens and is widely supported by cloud providers.</span>
+            <span class="smallNote">ES256 produces smaller tokens and is widely supported by cloud providers. RS384 uses a 3072-bit RSA key.</span>
         </td>
     </tr>
     <tr>

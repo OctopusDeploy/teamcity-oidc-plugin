@@ -119,7 +119,7 @@ public class KeyRotationSchedulerTest {
 
         new KeyRotationScheduler(buildServer, km, mgr); // no serverStartup() call
 
-        Thread.sleep(500);
+        Thread.sleep(3000);
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 

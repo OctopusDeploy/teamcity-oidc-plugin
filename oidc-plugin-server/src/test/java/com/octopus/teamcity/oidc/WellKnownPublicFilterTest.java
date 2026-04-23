@@ -80,7 +80,7 @@ public class WellKnownPublicFilterTest {
     }
 
     @Test
-    public void jwksContainsBothRsaAndEcPublicKeys() throws Exception {
+    public void jwksContainsRsa2048Rsa3072AndEcPublicKeys() throws Exception {
         final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
         when(request.getContextPath()).thenReturn("");
@@ -89,14 +89,14 @@ public class WellKnownPublicFilterTest {
 
         final var keys = JsonParser.parseString(writer.toString()).getAsJsonObject()
                 .get("keys").getAsJsonArray();
-        assertThat(keys).hasSize(2);
-        boolean hasRsa = false, hasEc = false;
+        assertThat(keys).hasSize(3);
+        int rsaCount = 0; boolean hasEc = false;
         for (var i = 0; i < keys.size(); i++) {
             final var kty = keys.get(i).getAsJsonObject().get("kty").getAsString();
-            if ("RSA".equals(kty)) hasRsa = true;
+            if ("RSA".equals(kty)) rsaCount++;
             if ("EC".equals(kty)) hasEc = true;
         }
-        assertThat(hasRsa).isTrue();
+        assertThat(rsaCount).isEqualTo(2);
         assertThat(hasEc).isTrue();
     }
 

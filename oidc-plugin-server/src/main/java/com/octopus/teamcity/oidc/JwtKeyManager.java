@@ -37,7 +37,9 @@ public class JwtKeyManager {
             RSAKey rsa,
             @Nullable RSAKey retiredRsa,
             ECKey ec,
-            @Nullable ECKey retiredEc
+            @Nullable ECKey retiredEc,
+            RSAKey rsa3072,
+            @Nullable RSAKey retiredRsa3072
     ) {}
 
     private final File keyDirectory;
@@ -105,6 +107,10 @@ public class JwtKeyManager {
         return requireReady().rsa();
     }
 
+    public RSAKey getRsa3072Key() {
+        return requireReady().rsa3072();
+    }
+
     public ECKey getEcKey() {
         return requireReady().ec();
     }
@@ -114,6 +120,8 @@ public class JwtKeyManager {
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsa().toPublicJWK());
         if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
+        result.add(snapshot.rsa3072().toPublicJWK());
+        if (snapshot.retiredRsa3072() != null) result.add(snapshot.retiredRsa3072().toPublicJWK());
         result.add(snapshot.ec().toPublicJWK());
         if (snapshot.retiredEc() != null) result.add(snapshot.retiredEc().toPublicJWK());
         return Collections.unmodifiableList(result);
@@ -121,19 +129,22 @@ public class JwtKeyManager {
 
     public synchronized void rotateKey() throws JOSEException, IOException {
         final var current = requireReady();
-        // Generate both new keys before touching the filesystem so a key-generation
+        // Generate all new keys before touching the filesystem so a key-generation
         // failure leaves the current keys intact.
         final var newRsa = generateFreshRsaKey();
+        final var newRsa3072 = generateFreshRsa3072Key();
         final var newEc = generateFreshEcKey();
 
         // Write new keys to temp files then rename atomically so no reader ever sees
         // a partially-written key file, even if the JVM is killed mid-rotation.
         saveKeyToFile(current.rsa(), "retired-rsa-key.json");
+        saveKeyToFile(current.rsa3072(), "retired-rsa3072-key.json");
         saveKeyToFile(current.ec(), "retired-ec-key.json");
         saveKeyToFile(newRsa, "rsa-key.json");
+        saveKeyToFile(newRsa3072, "rsa3072-key.json");
         saveKeyToFile(newEc, "ec-key.json");
 
-        keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec()));
+        keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec(), newRsa3072, current.rsa3072()));
     }
 
     /**
@@ -159,9 +170,16 @@ public class JwtKeyManager {
                     .keyID(rsaKey.getKeyID())
                     .build();
             signer = new RSASSASigner(rsaKey);
+        } else if ("RS384".equals(algorithm)) {
+            final var rsaKey = getRsa3072Key();
+            header = new JWSHeader.Builder(JWSAlgorithm.RS384)
+                    .type(JOSEObjectType.JWT)
+                    .keyID(rsaKey.getKeyID())
+                    .build();
+            signer = new RSASSASigner(rsaKey);
         } else {
             throw new IllegalArgumentException(
-                    "Unsupported signing algorithm: \"" + algorithm + "\". Supported values: RS256, ES256");
+                    "Unsupported signing algorithm: \"" + algorithm + "\". Supported values: RS256, RS384, ES256");
         }
         final var jwt = new SignedJWT(header, claims);
         jwt.sign(signer);
@@ -180,7 +198,9 @@ public class JwtKeyManager {
                 loadOrGenerateRsaKey(),
                 loadRetiredRsaKey(),
                 loadOrGenerateEcKey(),
-                loadRetiredEcKey()
+                loadRetiredEcKey(),
+                loadOrGenerateRsa3072Key(),
+                loadRetiredRsa3072Key()
         ));
         LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
     }
@@ -231,6 +251,34 @@ public class JwtKeyManager {
                 .algorithm(JWSAlgorithm.RS256)
                 .keyIDFromThumbprint(true)
                 .generate();
+    }
+
+    private static RSAKey generateFreshRsa3072Key() throws JOSEException {
+        return new RSAKeyGenerator(3072)
+                .keyUse(KeyUse.SIGNATURE)
+                .algorithm(JWSAlgorithm.RS384)
+                .keyIDFromThumbprint(true)
+                .generate();
+    }
+
+    private RSAKey loadOrGenerateRsa3072Key() throws IOException, ParseException, JOSEException {
+        final var keyFile = new File(keyDirectory, "rsa3072-key.json");
+        if (keyFile.exists()) {
+            LOG.info("JWT plugin: reading existing RSA-3072 key from " + keyFile);
+            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
+        }
+        LOG.info("JWT plugin: generating new RSA-3072 key to " + keyFile);
+        final var newKey = generateFreshRsa3072Key();
+        saveKeyToFile(newKey, "rsa3072-key.json");
+        return newKey;
+    }
+
+    @Nullable
+    private RSAKey loadRetiredRsa3072Key() throws IOException, ParseException {
+        final var f = new File(keyDirectory, "retired-rsa3072-key.json");
+        if (!f.exists()) return null;
+        LOG.info("JWT plugin: reading retired RSA-3072 key from " + f);
+        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
     }
 
     private static ECKey generateFreshEcKey() throws JOSEException {
