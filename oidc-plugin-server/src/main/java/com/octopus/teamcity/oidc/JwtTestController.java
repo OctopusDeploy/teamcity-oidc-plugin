@@ -332,11 +332,25 @@ public class JwtTestController extends BaseController {
     }
 
     /**
+     * System property that, when set to {@code true}, disables the private-address check in
+     * {@link #checkNotPrivateAddress}. Intended for local development/manual testing where the
+     * target service (e.g. Octopus Deploy) runs in a Docker network alongside TeamCity.
+     * <strong>Never set this in production.</strong>
+     */
+    static final String ALLOW_PRIVATE_EXCHANGE_PROPERTY = "teamcity.oidc.allowPrivateExchangeUrls";
+
+    /**
      * Resolves {@code url}'s hostname and rejects it if any resolved address is a loopback,
      * link-local, or RFC-1918 / site-local address. Prevents the exchange test step from being
      * used as an SSRF probe against internal infrastructure.
+     * <p>
+     * The check is skipped when the system property {@value #ALLOW_PRIVATE_EXCHANGE_PROPERTY}
+     * is {@code true} — useful for local testing with Docker-hosted services.
      */
     private void checkNotPrivateAddress(final String url) throws TestStepException {
+        if (Boolean.getBoolean(ALLOW_PRIVATE_EXCHANGE_PROPERTY)) {
+            return;
+        }
         final var host = URI.create(url).getHost();
         final InetAddress[] addresses;
         try {
