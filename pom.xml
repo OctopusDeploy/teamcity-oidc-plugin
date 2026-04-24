@@ -37,11 +37,6 @@
             <artifactId>nimbus-jose-jwt</artifactId>
             <version>10.9</version>
         </dependency>
-        <dependency>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <version>3.15.0</version>
-        </dependency>
     </dependencies>
     <build>
         <plugins>
