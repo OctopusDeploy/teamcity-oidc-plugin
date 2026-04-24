@@ -224,7 +224,7 @@ public class JwtTestController extends BaseController {
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
-        final var url = rootUrl + "/.well-known/openid-configuration";
+        final var url = buildUrl(rootUrl, "/.well-known/openid-configuration");
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
             throw new TestStepException("Discovery endpoint returned HTTP " + resp.statusCode());
@@ -249,7 +249,7 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("No active test token — please click 'Test Connection' again");
         }
         request.getSession().removeAttribute(SESSION_TOKEN_PREFIX + tokenRef);
-        final var url = rootUrl + "/.well-known/jwks.json";
+        final var url = buildUrl(rootUrl, "/.well-known/jwks.json");
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
             throw new TestStepException("JWKS endpoint returned HTTP " + resp.statusCode());
@@ -351,6 +351,16 @@ public class JwtTestController extends BaseController {
                         "serviceUrl resolves to a private or link-local address — not allowed");
             }
         }
+    }
+
+    /**
+     * Builds a URL by decomposing {@code rootUrl} into its URI components and
+     * appending {@code path}. This ignores any query string or fragment on the root URL, which
+     * plain string concatenation would not — e.g. {@code "https://tc.example.com?v=1" + "/..."}.
+     */
+    private static String buildUrl(final String rootUrl, final String path) {
+        final var base = URI.create(rootUrl);
+        return base.getScheme() + "://" + base.getAuthority() + base.getPath() + path;
     }
 
     private static String encode(final String value) {

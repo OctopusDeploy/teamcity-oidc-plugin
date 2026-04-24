@@ -29,8 +29,11 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
+
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -304,6 +307,35 @@ public class JwtTestControllerTest {
         final var result = callStep(Map.of("step", "discovery"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("Could not reach");
+    }
+
+    @Test
+    void discoveryUrlStripsQueryStringFromRootUrl() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com?v=1");
+        doReturn(mockResponse(200, "{}")).when(httpClient).send(any(), any());
+
+        callStep(Map.of("step", "discovery"));
+
+        final var captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any());
+        assertThat(captor.getValue().uri().toString())
+                .isEqualTo("https://tc.example.com/.well-known/openid-configuration");
+    }
+
+    @Test
+    void jwksUrlStripsQueryStringFromRootUrl() throws Exception {
+        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com?v=1");
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+        // Empty JWKS: parse succeeds, key lookup fails after send() — we only care the URL was right.
+        doReturn(mockResponse(200, "{\"keys\":[]}")).when(httpClient).send(any(), any());
+
+        callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
+
+        final var captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(captor.capture(), any());
+        assertThat(captor.getValue().uri().toString())
+                .isEqualTo("https://tc.example.com/.well-known/jwks.json");
     }
 
     // ---- step=jwks ----
