@@ -325,11 +325,12 @@ public class JwtTestControllerTest {
     @Test
     void jwksUrlStripsQueryStringFromRootUrl() throws Exception {
         when(buildServer.getRootUrl()).thenReturn("https://tc.example.com?v=1");
-        // Provide an empty JWKS so JWKSet.parse succeeds; the token is intentionally invalid
-        // so SignedJWT.parse fails, but httpClient.send() is captured before that point.
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+        // Empty JWKS: parse succeeds, key lookup fails after send() — we only care the URL was right.
         doReturn(mockResponse(200, "{\"keys\":[]}")).when(httpClient).send(any(), any());
 
-        callStep(Map.of("step", "jwks", "token", "any.non.blank.value"));
+        callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
 
         final var captor = ArgumentCaptor.forClass(HttpRequest.class);
         verify(httpClient).send(captor.capture(), any());
