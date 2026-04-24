@@ -165,7 +165,10 @@ public class OidcFlowIT {
             .withNetwork(network)
             .withNetworkAliases(TC_INTERNAL_ALIAS)
             .withExposedPorts(TC_PORT)
-            .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
+            .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false"
+                    // octopus-tls resolves to a Docker-internal (site-local) IP — bypass the
+                    // private-address SSRF check so Try Exchange can reach it in this test env.
+                    + " -Dteamcity.oidc.allowPrivateExchangeUrls=true")
             // Copy the plugin zip via the Docker API so it works with a remote (DinD) daemon.
             // withFileSystemBind would fail because the DinD daemon can't see paths inside
             // the Maven container's /tmp.
