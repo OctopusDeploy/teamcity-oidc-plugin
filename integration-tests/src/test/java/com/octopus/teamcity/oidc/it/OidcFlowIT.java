@@ -39,6 +39,7 @@ public class OidcFlowIT {
 
     private static final String TC_INTERNAL_ALIAS = "teamcity";
     private static final String CADDY_ALIAS = "teamcity-tls";
+    private static final String OCTOPUS_CADDY_ALIAS = "octopus-tls";
     private static final String TC_HTTPS_BASE = "https://teamcity-tls";
 
     private static final String BUILD_CONFIG_EXTERNAL_ID = "OidcTest_Build";
@@ -89,8 +90,8 @@ public class OidcFlowIT {
             // that TLS verification succeeds when connecting via the mapped port host.
             final var tcHostOverride = System.getenv("TESTCONTAINERS_HOST_OVERRIDE");
             TLS = (tcHostOverride != null && !tcHostOverride.isBlank())
-                    ? TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost", tcHostOverride)
-                    : TlsCertificateGenerator.generate(CADDY_ALIAS, "localhost");
+                    ? TlsCertificateGenerator.generate(CADDY_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost", tcHostOverride)
+                    : TlsCertificateGenerator.generate(CADDY_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost");
             TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa(TLS.caCert());
         } catch (final Exception e) {
             throw new RuntimeException("Failed to prepare TC runtime files", e);
@@ -201,8 +202,8 @@ public class OidcFlowIT {
     @Container
     static final GenericContainer<?> caddy = new GenericContainer<>(CADDY_IMAGE)
             .withNetwork(network)
-            .withNetworkAliases(CADDY_ALIAS)
-            .withExposedPorts(443)
+            .withNetworkAliases(CADDY_ALIAS, OCTOPUS_CADDY_ALIAS)
+            .withExposedPorts(443, 8443)
             .withCopyFileToContainer(
                     MountableFile.forClasspathResource("Caddyfile"),
                     "/etc/caddy/Caddyfile"
@@ -938,6 +939,8 @@ public class OidcFlowIT {
 
         final int caddyPort = caddy.getMappedPort(443);
         final var httpsUrl = "https://teamcity-tls:" + caddyPort;
+        // TC runs inside Docker — use the internal Caddy port (8443), not the host-mapped port.
+        final var octopusTlsUrl = "https://octopus-tls:8443";
         // superUserAuthHeader is "Basic <base64(:token)>" — decode and split on ":" to get the token
         final var superUserToken = superUserAuthHeader.replace("Basic ", "");
         final var decodedToken = new String(Base64.getDecoder().decode(superUserToken)).split(":", 2)[1];
@@ -951,14 +954,14 @@ public class OidcFlowIT {
         System.out.printf( "║  Password:    %-51s║%n", decodedToken);
         System.out.println("║                                                                  ║");
         System.out.printf( "║  Octopus (browser): %-47s║%n", octopusBaseUrl);
-        System.out.printf( "║  Octopus (Try Exchange URL): %-38s║%n", "http://octopus:8080");
+        System.out.printf( "║  Octopus (Try Exchange URL): %-38s║%n", octopusTlsUrl);
         System.out.printf( "║  API key:     %-51s║%n", OCTOPUS_ADMIN_API_KEY);
         System.out.printf( "║  Octopus ExternalId (JWT aud): %-35s║%n", octopusExternalId);
         System.out.println("║                                                                  ║");
-        System.out.println("║  /etc/hosts:  127.0.0.1  teamcity-tls                           ║");
-        System.out.println("║  Cert warning: accept in browser (self-signed CA)               ║");
+        System.out.println("║  /etc/hosts:  127.0.0.1  teamcity-tls  octopus-tls               ║");
+        System.out.println("║  Cert warning: accept in browser (self-signed CA)                ║");
         System.out.println("║                                                                  ║");
-        System.out.println("║  Press Ctrl+C to stop all containers                            ║");
+        System.out.println("║  Press Ctrl+C to stop all containers                             ║");
         System.out.println("╚══════════════════════════════════════════════════════════════════╝");
         System.out.println();
 
