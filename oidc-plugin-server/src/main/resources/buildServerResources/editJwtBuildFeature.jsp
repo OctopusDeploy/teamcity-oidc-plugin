@@ -176,11 +176,22 @@
     window.jwtTestExchange = async function() {
         const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
         if (!serviceUrl) return;
+        const algorithm = document.getElementById('algorithm').value;
+        const ttl = document.getElementById('ttl_minutes').value || '10';
         const audience = document.getElementById('audience').value;
+        const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
         document.getElementById('jwtExchangeBtn').disabled = true;
-        document.getElementById('jwtRow3').textContent = '⏳ Trying exchange...';
+        document.getElementById('jwtRow3').textContent = '\u23f3 Issuing fresh JWT for exchange...';
         document.getElementById('jwtRow3').style.color = '#888';
-        const r = await jwtPost({step:'exchange', tokenRef:_jwtTokenRef, serviceUrl:serviceUrl, audience:audience});
+        // Issue a fresh token each time — the 1-minute TTL may have expired since
+        // the initial Test Connection checks ran.
+        const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+        if (!r1.ok) {
+            jwtSetRow('jwtRow3', false, 'Could not issue JWT: ' + r1.message);
+            document.getElementById('jwtExchangeBtn').disabled = false;
+            return;
+        }
+        const r = await jwtPost({step:'exchange', tokenRef:r1.tokenRef, serviceUrl:serviceUrl, audience:audience});
         jwtSetRow('jwtRow3', r.ok, r.message);
         document.getElementById('jwtExchangeBtn').disabled = false;
     }
