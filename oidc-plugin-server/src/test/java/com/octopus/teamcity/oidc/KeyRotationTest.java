@@ -17,7 +17,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,15 +93,16 @@ public class KeyRotationTest {
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
         when(request.getContextPath()).thenReturn("");
         filter.doFilter(request, response, mock(FilterChain.class));
-        final var parsed = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(writer.toString());
-        return (JSONArray) parsed.get("keys");
+        return (JSONArray) parseJsonObject(writer.toString()).get("keys");
     }
 
     private List<String> kidsIn(final JSONArray keys) {
-        final var kids = new ArrayList<String>();
-        for (var i = 0; i < keys.size(); i++) {
-            kids.add((String) ((JSONObject) keys.get(i)).get("kid"));
-        }
-        return kids;
+        return keys.stream()
+                .map(k -> ((JSONObject) k).getAsString("kid"))
+                .toList();
+    }
+
+    private static JSONObject parseJsonObject(final String json) throws Exception {
+        return (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(json);
     }
 }

@@ -97,7 +97,7 @@ public class WellKnownPublicFilterTest {
         assertThat(keys).hasSize(2);
         boolean hasRsa = false, hasEc = false;
         for (var i = 0; i < keys.size(); i++) {
-            final var kty = (String) ((JSONObject) keys.get(i)).get("kty");
+            final var kty = ((JSONObject) keys.get(i)).getAsString("kty");
             if ("RSA".equals(kty)) hasRsa = true;
             if ("EC".equals(kty)) hasEc = true;
         }
@@ -129,8 +129,8 @@ public class WellKnownPublicFilterTest {
         filter.doFilter(request, response, chain);
 
         final var json = parseJson(writer.toString());
-        assertThat((String) json.get("issuer")).isEqualTo("https://teamcity.example.com");
-        assertThat((String) json.get("jwks_uri")).isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
+        assertThat(json.getAsString("issuer")).isEqualTo("https://teamcity.example.com");
+        assertThat(json.getAsString("jwks_uri")).isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
     }
 
     @Test
@@ -144,7 +144,7 @@ public class WellKnownPublicFilterTest {
 
         final var json = parseJson(writer.toString());
         assertThat(json.containsKey("authorization_endpoint")).isTrue();
-        assertThat((String) json.get("authorization_endpoint"))
+        assertThat(json.getAsString("authorization_endpoint"))
                 .startsWith("https://teamcity.example.com");
     }
 

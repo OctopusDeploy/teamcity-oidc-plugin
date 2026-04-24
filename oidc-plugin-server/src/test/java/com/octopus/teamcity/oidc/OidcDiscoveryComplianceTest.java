@@ -17,7 +17,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,19 +63,19 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void issuerIsPresent() {
         assertThat(discoveryDocument.containsKey("issuer")).isTrue();
-        assertThat((String) discoveryDocument.get("issuer")).isEqualTo("https://teamcity.example.com");
+        assertThat(discoveryDocument.getAsString("issuer")).isEqualTo("https://teamcity.example.com");
     }
 
     @Test
     public void issuerDoesNotHaveTrailingSlash() {
         // Cloud providers (GCP, AWS) compare issuer exactly — a trailing slash causes validation failure
-        assertThat((String) discoveryDocument.get("issuer")).doesNotEndWith("/");
+        assertThat(discoveryDocument.getAsString("issuer")).doesNotEndWith("/");
     }
 
     @Test
     public void jwksUriIsPresent() {
         assertThat(discoveryDocument.containsKey("jwks_uri")).isTrue();
-        assertThat((String) discoveryDocument.get("jwks_uri"))
+        assertThat(discoveryDocument.getAsString("jwks_uri"))
                 .isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
     }
 
@@ -151,20 +150,18 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void jwksUriUsesHttps() {
         // Cloud providers reject non-HTTPS JWKS URIs
-        assertThat((String) discoveryDocument.get("jwks_uri")).startsWith("https://");
+        assertThat(discoveryDocument.getAsString("jwks_uri")).startsWith("https://");
     }
 
     @Test
     public void jwksUriSuffix() {
-        assertThat((String) discoveryDocument.get("jwks_uri"))
+        assertThat(discoveryDocument.getAsString("jwks_uri"))
                 .endsWith(WellKnownPublicFilter.JWKS_PATH);
     }
 
     // --- helper ---
 
     private List<String> toStringList(final JSONArray array) {
-        final List<String> result = new ArrayList<>();
-        array.forEach(e -> result.add((String) e));
-        return result;
+        return array.stream().map(Object::toString).toList();
     }
 }
