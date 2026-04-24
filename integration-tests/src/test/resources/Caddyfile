@@ -2,3 +2,8 @@
     tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
     reverse_proxy teamcity:8111
 }
+
+:8443 {
+    tls /etc/caddy/tls/server.crt /etc/caddy/tls/server.key
+    reverse_proxy octopus:8080
+}
