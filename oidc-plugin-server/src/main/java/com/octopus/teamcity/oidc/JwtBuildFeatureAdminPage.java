@@ -42,7 +42,12 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     @Override
     public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
+        populateModel(model, keyManager, settingsManager);
+    }
 
+    static void populateModel(@NotNull final Map<String, Object> model,
+                              @NotNull final JwtKeyManager keyManager,
+                              @NotNull final RotationSettingsManager settingsManager) {
         if (keyManager.isReady()) {
             final var jwks = new JWKSet(keyManager.getPublicKeys());
             final var jwksJson = jwks.toString();
@@ -53,7 +58,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
             model.put("jwksBase64", "");
         }
 
-        final var  settings = settingsManager.load();
+        final var settings = settingsManager.load();
         model.put("rotationEnabled", settings.enabled());
         model.put("cronSchedule", settings.cronSchedule());
 
@@ -65,12 +70,12 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
 
         if (settings.enabled()) {
             try {
-                final var  cron = CronExpression.parse(settings.cronSchedule());
-                final var  lastInstant = settings.lastRotatedAt() != null
+                final var cron = CronExpression.parse(settings.cronSchedule());
+                final var lastInstant = settings.lastRotatedAt() != null
                         ? settings.lastRotatedAt()
                         : java.time.Instant.EPOCH;
-                final var  last = lastInstant.atZone(ZoneOffset.UTC).toLocalDateTime();
-                final var  next = cron.next(last);
+                final var last = lastInstant.atZone(ZoneOffset.UTC).toLocalDateTime();
+                final var next = cron.next(last);
                 model.put("nextDue", next != null
                         ? FMT.format(next.atZone(ZoneOffset.UTC).toInstant()) + " UTC"
                         : null);
