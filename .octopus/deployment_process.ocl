@@ -86,3 +86,24 @@ step "dummy-step-to-allow-deployments-to-test" {
         worker_pool = "hosted-ubuntu"
     }
 }
+
+step "notify-slack-on-failure" {
+    condition = "Failure"
+    name = "Notify slack on failure"
+
+    action {
+        properties = {
+            Octopus.Action.Template.Id = "ActionTemplates-1565"
+            Octopus.Action.Template.Version = "6"
+            ssn_Channel = "#{Slack.Channel.DeploymentFailure}"
+            ssn_Color = "danger"
+            ssn_HookUrl = "#{Slack.FailureWebhook}"
+            ssn_IconUrl = "https://octopus.com/content/resources/favicon.png"
+            ssn_Message = "The *TeamCity OIDC Plugin* release `#{Octopus.Release.Number}` <#{Octopus.Web.ServerUri}#{Octopus.Web.DeploymentLink}|failed to deploy> to #{Octopus.Environment.Name}. Please investigate!"
+            ssn_Title = "Deployment failed!"
+            ssn_TreatInputAsMarkdown = "True"
+            ssn_Username = "Octopus Deploy"
+        }
+        worker_pool = "hosted-ubuntu"
+    }
+}

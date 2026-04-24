@@ -443,6 +443,31 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
+    public void tokenTtlDefaultsTo10MinutesWhenTtlParamIsNotNumeric() throws Exception {
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+
+        when(buildStartContext.getBuild()).thenReturn(runningBuild);
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
+        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("ttl_minutes", "not-a-number"));
+
+        final var triggeredBy = mock(TriggeredBy.class);
+        when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+        when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        jwtBuildStartContext.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        final var ttlSeconds = (jwt.getJWTClaimsSet().getExpirationTime().getTime()
+                - jwt.getJWTClaimsSet().getIssueTime().getTime()) / 1000;
+        assertThat(ttlSeconds).isEqualTo(10 * 60);
+    }
+
+    @Test
     public void jtiClaimIsUniquePerToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");

@@ -11,6 +11,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class JwtBuildStartContext implements BuildStartContextProcessor {
@@ -19,6 +20,8 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
     private final ExtensionHolder extensionHolder;
     private final SBuildServer buildServer;
     private final JwtKeyManager keyManager;
+
+    private static final Pattern CLAIMS_SPLIT = Pattern.compile("\\s*,\\s*");
 
     private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of(
             "branch", "build_type_external_id", "project_external_id",
@@ -55,8 +58,16 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var descriptor = jwtBuildFeatures.stream().findFirst().orElseThrow();
                 final var params = descriptor.getParameters();
 
-                final var ttlMinutes = Math.max(1, Math.min(1440,
-                        Integer.parseInt(params.getOrDefault("ttl_minutes", "10"))));
+                final var ttlRaw = params.getOrDefault("ttl_minutes", "10");
+                int ttlMinutes;
+                try {
+                    ttlMinutes = Math.max(1, Math.min(1440, Integer.parseInt(ttlRaw)));
+                } catch (final NumberFormatException e) {
+                    LOG.warning("JWT plugin: invalid ttl_minutes value '" + sanitize(ttlRaw)
+                            + "' for build " + build.getBuildId()
+                            + " — check the build feature configuration. Using default of 10 minutes.");
+                    ttlMinutes = 10;
+                }
                 final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
                 final var buildServerRootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
@@ -74,7 +85,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var claimsParam = params.get("claims");
                 final Set<String> requestedClaims = (claimsParam == null || claimsParam.isBlank())
                         ? ALL_CUSTOM_CLAIMS
-                        : new HashSet<>(Arrays.asList(claimsParam.split("\\s*,\\s*")));
+                        : new HashSet<>(Arrays.asList(CLAIMS_SPLIT.split(claimsParam)));
                 final var unknownClaims = requestedClaims.stream()
                         .filter(c -> !ALL_CUSTOM_CLAIMS.contains(c))
                         .collect(Collectors.toSet());

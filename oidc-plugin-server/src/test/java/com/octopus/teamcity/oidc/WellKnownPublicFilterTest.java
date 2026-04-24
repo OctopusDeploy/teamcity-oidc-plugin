@@ -1,8 +1,10 @@
 package com.octopus.teamcity.oidc;
 
-import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +45,10 @@ public class WellKnownPublicFilterTest {
         final var writer = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
         return writer;
+    }
+
+    private static JSONObject parseJson(final String body) throws Exception {
+        return (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(body);
     }
 
     @Test
@@ -87,10 +93,9 @@ public class WellKnownPublicFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        final var keys = JsonParser.parseString(writer.toString()).getAsJsonObject()
-                .get("keys").getAsJsonArray();
-        final var algs = keys.asList().stream()
-                .map(k -> k.getAsJsonObject().get("alg").getAsString())
+        final var keys = (JSONArray) parseJson(writer.toString()).get("keys");
+        final var algs = keys.stream()
+                .map(k -> ((JSONObject) k).getAsString("alg"))
                 .toList();
         assertThat(algs).containsExactlyInAnyOrder("RS256", "RS384", "ES256");
     }
@@ -103,10 +108,9 @@ public class WellKnownPublicFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        final var keys = JsonParser.parseString(writer.toString()).getAsJsonObject()
-                .get("keys").getAsJsonArray();
+        final var keys = (JSONArray) parseJson(writer.toString()).get("keys");
         for (var i = 0; i < keys.size(); i++) {
-            assertThat(keys.get(i).getAsJsonObject().has("d")).isFalse();
+            assertThat(((JSONObject) keys.get(i)).containsKey("d")).isFalse();
         }
     }
 
@@ -119,9 +123,9 @@ public class WellKnownPublicFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        final var json = JsonParser.parseString(writer.toString()).getAsJsonObject();
-        assertThat(json.get("issuer").getAsString()).isEqualTo("https://teamcity.example.com");
-        assertThat(json.get("jwks_uri").getAsString()).isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
+        final var json = parseJson(writer.toString());
+        assertThat(json.getAsString("issuer")).isEqualTo("https://teamcity.example.com");
+        assertThat(json.getAsString("jwks_uri")).isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
     }
 
     @Test
@@ -133,9 +137,9 @@ public class WellKnownPublicFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        final var json = JsonParser.parseString(writer.toString()).getAsJsonObject();
-        assertThat(json.has("authorization_endpoint")).isTrue();
-        assertThat(json.get("authorization_endpoint").getAsString())
+        final var json = parseJson(writer.toString());
+        assertThat(json.containsKey("authorization_endpoint")).isTrue();
+        assertThat(json.getAsString("authorization_endpoint"))
                 .startsWith("https://teamcity.example.com");
     }
 

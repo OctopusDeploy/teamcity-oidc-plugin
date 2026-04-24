@@ -12,6 +12,7 @@ public record RotationSettings(
         String cronSchedule,
         @Nullable Instant lastRotatedAt
 ) {
+    /** 3 AM on the 1st of every third month (quarterly). */
     static final String DEFAULT_SCHEDULE = "0 0 3 1 */3 *";
 
     static RotationSettings defaults() {

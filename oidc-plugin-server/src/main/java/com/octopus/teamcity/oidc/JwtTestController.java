@@ -42,6 +42,7 @@ import java.util.logging.Logger;
 public class JwtTestController extends BaseController {
     private static final Logger LOG = Logger.getLogger(JwtTestController.class.getName());
     static final String PATH = "/admin/jwtTest.html";
+    static final String SESSION_TOKEN_PREFIX = "jwt.test.token.";
 
     /** Resolves a hostname to its addresses; injectable so tests can stub DNS. */
     @FunctionalInterface
@@ -88,6 +89,16 @@ public class JwtTestController extends BaseController {
         LOG.info("JWT plugin: JwtTestController registered at " + PATH);
     }
 
+    /** Called by Spring when the plugin is unloaded. Closes the HttpClient to release its selector thread. */
+    public void destroy() {
+        try {
+            httpClient.close();
+        } catch (final Exception e) {
+            LOG.log(Level.WARNING, "JWT plugin: error closing HttpClient", e);
+        }
+        LOG.info("JWT plugin: JwtTestController HTTP client closed");
+    }
+
     @Override
     protected ModelAndView doHandle(@NotNull final HttpServletRequest request,
                                     @NotNull final HttpServletResponse response) throws IOException {
@@ -116,11 +127,11 @@ public class JwtTestController extends BaseController {
         }
         try {
             if ("jwt".equals(step)) {
-                final var result = stepJwt(request, user); // [message, serializedToken]
+                final var result = stepJwt(request, user); // [message, tokenRef]
                 final var json = new JSONObject();
                 json.put("ok", true);
                 json.put("message", result[0]);
-                json.put("token", result[1]);
+                json.put("tokenRef", result[1]);
                 response.getWriter().write(json.toJSONString());
             } else {
                 final var message = switch (step) {
@@ -191,8 +202,21 @@ public class JwtTestController extends BaseController {
 
         final var jwt = keyManager.sign(claims, algorithm);
         final var serialized = jwt.serialize();
+        final var tokenRef = UUID.randomUUID().toString();
+        // Store the signed JWT in the HTTP session rather than returning it to the browser,
+        // so the raw bearer credential never travels over the wire to the client.
+        // The browser receives only this UUID reference; subsequent steps look it up and
+        // remove it on read (consume-once).
+        //
+        // Multi-node HA note: HttpSession is node-local in TeamCity. This works correctly
+        // because TC's HA setup already requires sticky sessions at the load balancer
+        // (NodeResponsibility.CAN_PROCESS_USER_DATA_MODIFICATION_REQUESTS). All three
+        // sequential test-connection POSTs from the same browser tab are guaranteed to land
+        // on the same node. If a node switch somehow occurred mid-flow, the user would see
+        // "No active test token — please click 'Test Connection' again" and could retry.
+        request.getSession().setAttribute(SESSION_TOKEN_PREFIX + tokenRef, serialized);
         final var message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
-        return new String[]{message, serialized};
+        return new String[]{message, tokenRef};
     }
 
     private String stepDiscovery() throws Exception {
@@ -200,7 +224,7 @@ public class JwtTestController extends BaseController {
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
-        final var url = rootUrl + "/.well-known/openid-configuration";
+        final var url = buildUrl(rootUrl, "/.well-known/openid-configuration");
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
             throw new TestStepException("Discovery endpoint returned HTTP " + resp.statusCode());
@@ -214,15 +238,18 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepJwks(final HttpServletRequest request) throws Exception {
-        final var token = request.getParameter("token");
-        if (token == null || token.isBlank()) {
-            throw new TestStepException("Missing required parameter: token");
-        }
         final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
         }
-        final var url = rootUrl + "/.well-known/jwks.json";
+        final var tokenRef = request.getParameter("tokenRef");
+        final var token = tokenRef != null
+                ? (String) request.getSession().getAttribute(SESSION_TOKEN_PREFIX + tokenRef) : null;
+        if (token == null) {
+            throw new TestStepException("No active test token — please click 'Test Connection' again");
+        }
+        request.getSession().removeAttribute(SESSION_TOKEN_PREFIX + tokenRef);
+        final var url = buildUrl(rootUrl, "/.well-known/jwks.json");
         final var resp = httpGet(url);
         if (resp.statusCode() != 200) {
             throw new TestStepException("JWKS endpoint returned HTTP " + resp.statusCode());
@@ -249,12 +276,8 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepExchange(final HttpServletRequest request) throws Exception {
-        final var token = request.getParameter("token");
         var serviceUrl = request.getParameter("serviceUrl");
         final var audience = request.getParameter("audience");
-        if (token == null || token.isBlank()) {
-            throw new TestStepException("Missing required parameter: token");
-        }
         if (serviceUrl == null || serviceUrl.isBlank()) {
             throw new TestStepException("Missing required parameter: serviceUrl");
         }
@@ -263,6 +286,13 @@ public class JwtTestController extends BaseController {
             throw new TestStepException("serviceUrl must use HTTPS");
         }
         checkNotPrivateAddress(serviceUrl);
+        final var tokenRef = request.getParameter("tokenRef");
+        final var token = tokenRef != null
+                ? (String) request.getSession().getAttribute(SESSION_TOKEN_PREFIX + tokenRef) : null;
+        if (token == null) {
+            throw new TestStepException("No active test token — please click 'Test Connection' again");
+        }
+        request.getSession().removeAttribute(SESSION_TOKEN_PREFIX + tokenRef);
 
         final var discoveryUrl = serviceUrl + "/.well-known/openid-configuration";
         final var discoveryResp = httpGet(discoveryUrl);
@@ -323,6 +353,16 @@ public class JwtTestController extends BaseController {
         }
     }
 
+    /**
+     * Builds a URL by decomposing {@code rootUrl} into its URI components and
+     * appending {@code path}. This ignores any query string or fragment on the root URL, which
+     * plain string concatenation would not — e.g. {@code "https://tc.example.com?v=1" + "/..."}.
+     */
+    private static String buildUrl(final String rootUrl, final String path) {
+        final var base = URI.create(rootUrl);
+        return base.getScheme() + "://" + base.getAuthority() + base.getPath() + path;
+    }
+
     private static String encode(final String value) {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
@@ -338,15 +378,6 @@ public class JwtTestController extends BaseController {
         } catch (final IOException e) {
             throw new TestStepException("Could not reach " + url + " — "
                     + e.getClass().getSimpleName() + ": " + e.getMessage());
-        }
-    }
-
-    private static int parseTtl(final String value) {
-        try {
-            final var ttl = (value != null && !value.isBlank()) ? Integer.parseInt(value) : 10;
-            return Math.max(1, Math.min(ttl, 1440));
-        } catch (final NumberFormatException e) {
-            return 10;
         }
     }
 
