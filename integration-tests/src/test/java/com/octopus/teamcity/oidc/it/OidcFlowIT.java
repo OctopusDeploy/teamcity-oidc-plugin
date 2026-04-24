@@ -183,7 +183,12 @@ public class OidcFlowIT {
                 // Fix: start as root, chown the directory, then exec TC as tcuser.
                 cmd.withUser("root");
                 cmd.withCmd("/bin/sh", "-c",
-                        "chown -R tcuser:tcuser /data/teamcity_server/datadir/plugins" +
+                        // Make the custom cacerts world-readable (withCopyFileToContainer
+                        // copies with the host file's mode; if it's 0600 the tcuser JVM
+                        // can't read it, causing SSLContext to initialise with no trust
+                        // anchors and all outbound TLS connections to fail).
+                        "chmod 644 /opt/java/openjdk/lib/security/cacerts" +
+                        " && chown -R tcuser:tcuser /data/teamcity_server/datadir/plugins" +
                         " && exec runuser -u tcuser -- /run-services.sh");
             })
             .waitingFor(
