@@ -40,7 +40,7 @@
         <th><label>Claims to include:</label></th>
         <td>
             <%-- Hidden field holds the comma-separated value that TC saves; JS keeps it in sync --%>
-            <input type="hidden" id="claims" name="claims" value="${fn:escapeXml(propertiesBean.properties['claims'])}"/>
+            <props:hiddenProperty name="claims" id="claims"/>
             <table style="border-collapse:collapse;">
                 <tr>
                     <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="branch"/> branch</label></td>
