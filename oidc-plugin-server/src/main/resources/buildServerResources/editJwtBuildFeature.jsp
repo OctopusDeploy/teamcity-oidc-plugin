@@ -127,7 +127,7 @@
 
     window.jwtSetRow = function(id, ok, message) {
         const el = document.getElementById(id);
-        el.textContent = (ok ? '✓ ' : '✗ ') + message;
+        el.textContent = (ok ? '\u2713 ' : '\u2717 ') + message;
         el.style.color = ok ? '#7ec87e' : '#e06c75';
     }
 
