@@ -1,9 +1,9 @@
 package com.octopus.teamcity.oidc;
 
-import com.nimbusds.jose.shaded.gson.JsonArray;
-import com.nimbusds.jose.shaded.gson.JsonObject;
-import com.nimbusds.jose.shaded.gson.JsonParser;
 import jetbrains.buildServer.serverSide.ServerPaths;
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,7 +17,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,7 +36,7 @@ public class OidcDiscoveryComplianceTest {
 
     @TempDir File tempDir;
 
-    private JsonObject discoveryDocument;
+    private JSONObject discoveryDocument;
 
     @BeforeEach
     void fetchDiscoveryDocument() throws Exception {
@@ -56,50 +55,50 @@ public class OidcDiscoveryComplianceTest {
 
         filter.doFilter(request, response, chain);
 
-        discoveryDocument = JsonParser.parseString(writer.toString()).getAsJsonObject();
+        discoveryDocument = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(writer.toString());
     }
 
     // --- Required fields (OIDC Discovery spec section 3) ---
 
     @Test
     public void issuerIsPresent() {
-        assertThat(discoveryDocument.has("issuer")).isTrue();
-        assertThat(discoveryDocument.get("issuer").getAsString()).isEqualTo("https://teamcity.example.com");
+        assertThat(discoveryDocument.containsKey("issuer")).isTrue();
+        assertThat(discoveryDocument.getAsString("issuer")).isEqualTo("https://teamcity.example.com");
     }
 
     @Test
     public void issuerDoesNotHaveTrailingSlash() {
         // Cloud providers (GCP, AWS) compare issuer exactly — a trailing slash causes validation failure
-        assertThat(discoveryDocument.get("issuer").getAsString()).doesNotEndWith("/");
+        assertThat(discoveryDocument.getAsString("issuer")).doesNotEndWith("/");
     }
 
     @Test
     public void jwksUriIsPresent() {
-        assertThat(discoveryDocument.has("jwks_uri")).isTrue();
-        assertThat(discoveryDocument.get("jwks_uri").getAsString())
+        assertThat(discoveryDocument.containsKey("jwks_uri")).isTrue();
+        assertThat(discoveryDocument.getAsString("jwks_uri"))
                 .isEqualTo("https://teamcity.example.com/.well-known/jwks.json");
     }
 
     @Test
     public void responseTypesSupportedIsPresent() {
         // Required by spec
-        assertThat(discoveryDocument.has("response_types_supported")).isTrue();
-        final var types = toStringList(discoveryDocument.get("response_types_supported").getAsJsonArray());
+        assertThat(discoveryDocument.containsKey("response_types_supported")).isTrue();
+        final var types = toStringList((JSONArray) discoveryDocument.get("response_types_supported"));
         assertThat(types).contains("id_token");
     }
 
     @Test
     public void subjectTypesSupportedIsPresent() {
         // Required by spec
-        assertThat(discoveryDocument.has("subject_types_supported")).isTrue();
-        final var types = toStringList(discoveryDocument.get("subject_types_supported").getAsJsonArray());
+        assertThat(discoveryDocument.containsKey("subject_types_supported")).isTrue();
+        final var types = toStringList((JSONArray) discoveryDocument.get("subject_types_supported"));
         assertThat(types).contains("public");
     }
 
     @Test
     public void idTokenSigningAlgValuesSupportedIsPresent() {
         // Required by spec
-        assertThat(discoveryDocument.has("id_token_signing_alg_values_supported")).isTrue();
+        assertThat(discoveryDocument.containsKey("id_token_signing_alg_values_supported")).isTrue();
     }
 
     // --- Algorithm advertisement ---
@@ -107,7 +106,7 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void advertisesRS256() {
         final var algs = toStringList(
-                discoveryDocument.get("id_token_signing_alg_values_supported").getAsJsonArray());
+                (JSONArray) discoveryDocument.get("id_token_signing_alg_values_supported"));
         assertThat(algs).contains("RS256");
     }
 
@@ -115,7 +114,7 @@ public class OidcDiscoveryComplianceTest {
     public void advertisesES256() {
         // Critical: cloud providers reject ES256 tokens if ES256 isn't advertised here
         final var algs = toStringList(
-                discoveryDocument.get("id_token_signing_alg_values_supported").getAsJsonArray());
+                (JSONArray) discoveryDocument.get("id_token_signing_alg_values_supported"));
         assertThat(algs).contains("ES256");
     }
 
@@ -124,18 +123,18 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void claimsSupportedIsPresent() {
         // Recommended by spec; some cloud provider setup wizards require it
-        assertThat(discoveryDocument.has("claims_supported")).isTrue();
+        assertThat(discoveryDocument.containsKey("claims_supported")).isTrue();
     }
 
     @Test
     public void claimsSupportedIncludesStandardClaims() {
-        final var claims = toStringList(discoveryDocument.get("claims_supported").getAsJsonArray());
+        final var claims = toStringList((JSONArray) discoveryDocument.get("claims_supported"));
         assertThat(claims).contains("sub", "iss", "aud", "iat", "exp");
     }
 
     @Test
     public void claimsSupportedIncludesCustomBuildClaims() {
-        final var claims = toStringList(discoveryDocument.get("claims_supported").getAsJsonArray());
+        final var claims = toStringList((JSONArray) discoveryDocument.get("claims_supported"));
         assertThat(claims).contains("branch", "build_type_external_id", "project_external_id",
                 "triggered_by", "build_number");
     }
@@ -151,20 +150,18 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void jwksUriUsesHttps() {
         // Cloud providers reject non-HTTPS JWKS URIs
-        assertThat(discoveryDocument.get("jwks_uri").getAsString()).startsWith("https://");
+        assertThat(discoveryDocument.getAsString("jwks_uri")).startsWith("https://");
     }
 
     @Test
     public void jwksUriSuffix() {
-        assertThat(discoveryDocument.get("jwks_uri").getAsString())
+        assertThat(discoveryDocument.getAsString("jwks_uri"))
                 .endsWith(WellKnownPublicFilter.JWKS_PATH);
     }
 
     // --- helper ---
 
-    private List<String> toStringList(final JsonArray array) {
-        final List<String> result = new ArrayList<>();
-        array.forEach(e -> result.add(e.getAsString()));
-        return result;
+    private List<String> toStringList(final JSONArray array) {
+        return array.stream().map(Object::toString).toList();
     }
 }
