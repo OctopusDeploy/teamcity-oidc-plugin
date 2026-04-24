@@ -637,6 +637,25 @@ public class JwtTestControllerTest {
     }
 
     @Test
+    void exchangeStepAllowsPrivateAddressWhenSystemPropertySet() throws Exception {
+        System.setProperty(JwtTestController.ALLOW_PRIVATE_EXCHANGE_PROPERTY, "true");
+        try {
+            controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+            // Private-address check is bypassed; HTTPS is still required.
+            // Call fails later because no tokenRef was supplied — not due to the address check.
+            final var result = callStep(Map.of(
+                "step", "exchange",
+                "serviceUrl", "https://127.0.0.1", "audience", "aud"
+            ));
+            assertThat((Boolean) result.get("ok")).isFalse();
+            assertThat(result.getAsString("message")).doesNotContain("private");
+            assertThat(result.getAsString("message")).contains("token");
+        } finally {
+            System.clearProperty(JwtTestController.ALLOW_PRIVATE_EXCHANGE_PROPERTY);
+        }
+    }
+
+    @Test
     void exchangeStepFailsWhenServiceDiscoveryReturnsNon200() throws Exception {
         final var session = createMockSession();
         final var tokenRef = issueTokenRef(session);
