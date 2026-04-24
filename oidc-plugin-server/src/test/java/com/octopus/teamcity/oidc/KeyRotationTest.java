@@ -93,12 +93,14 @@ public class KeyRotationTest {
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
         when(request.getContextPath()).thenReturn("");
         filter.doFilter(request, response, mock(FilterChain.class));
-        return (JSONArray) parseJsonObject(writer.toString()).get("keys");
+        final var jsonObject = parseJsonObject(writer.toString());
+        return (JSONArray) jsonObject.get("keys");
     }
 
     private List<String> kidsIn(final JSONArray keys) {
         return keys.stream()
-                .map(k -> ((JSONObject) k).getAsString("kid"))
+                .map(k -> (JSONObject)k)
+                .map(k -> k.getAsString("kid"))
                 .toList();
     }
 
