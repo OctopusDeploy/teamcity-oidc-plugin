@@ -89,15 +89,10 @@ public class WellKnownPublicFilterTest {
 
         final var keys = JsonParser.parseString(writer.toString()).getAsJsonObject()
                 .get("keys").getAsJsonArray();
-        assertThat(keys).hasSize(3);
-        int rsaCount = 0; boolean hasEc = false;
-        for (var i = 0; i < keys.size(); i++) {
-            final var kty = keys.get(i).getAsJsonObject().get("kty").getAsString();
-            if ("RSA".equals(kty)) rsaCount++;
-            if ("EC".equals(kty)) hasEc = true;
-        }
-        assertThat(rsaCount).isEqualTo(2);
-        assertThat(hasEc).isTrue();
+        final var algs = keys.asList().stream()
+                .map(k -> k.getAsJsonObject().get("alg").getAsString())
+                .toList();
+        assertThat(algs).containsExactlyInAnyOrder("RS256", "RS384", "ES256");
     }
 
     @Test
