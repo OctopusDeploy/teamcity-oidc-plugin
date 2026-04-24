@@ -96,6 +96,7 @@ public class WellKnownPublicFilter implements Filter {
     private static JSONObject getJsonObject(final String issuer) {
         final var algs = new JSONArray();
         algs.add("RS256");
+        algs.add("RS384");
         algs.add("ES256");
 
         final var responseTypes = new JSONArray();

@@ -3,6 +3,7 @@ package com.octopus.teamcity.oidc;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
+import com.nimbusds.jose.jwk.KeyType;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
@@ -81,10 +82,25 @@ public class AlgorithmChoiceTest {
     }
 
     @Test
-    public void jwksIncludesBothRsaAndEcPublicKeys() {
+    public void usesRS384WhenConfigured() throws Exception {
+        final var context = buildContext();
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("algorithm", "RS384"));
+
+        final var jwtCaptor = ArgumentCaptor.forClass(String.class);
+        context.updateParameters(buildStartContext);
+        verify(buildStartContext).addSharedParameter(eq("jwt.token"), jwtCaptor.capture());
+
+        final var jwt = SignedJWT.parse(jwtCaptor.getValue());
+        assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS384);
+        assertThat(jwt.verify(new RSASSAVerifier(keyManager.getRsa3072Key().toPublicJWK()))).isTrue();
+    }
+
+    @Test
+    public void jwksIncludesRsa2048Rsa3072AndEcPublicKeys() {
         final var keys = keyManager.getPublicKeys();
-        assertThat(keys).hasSize(2);
+        assertThat(keys).hasSize(3);
         assertThat(keys.stream().anyMatch(k -> k.getAlgorithm() != null && k.getAlgorithm().getName().equals("RS256"))).isTrue();
+        assertThat(keys.stream().anyMatch(k -> k.getAlgorithm() != null && k.getAlgorithm().getName().equals("RS384"))).isTrue();
         assertThat(keys.stream().anyMatch(k -> k.getAlgorithm() != null && k.getAlgorithm().getName().equals("ES256"))).isTrue();
     }
 

@@ -130,8 +130,11 @@ public class JwtBuildFeatureAdminPageTest {
     }
 
     @Test
-    void nextDueIsNullForInvalidCronExpression() {
+    void nextDueFallsBackToDefaultScheduleWhenStoredCronIsInvalid() {
+        // RotationSettingsManager.load() sanitises invalid cron expressions to the default schedule,
+        // so populateModel always receives a valid cron and nextDue is always computed.
         settingsManager.save(new RotationSettings(true, "not a cron", Instant.parse("2000-01-01T00:00:00Z")));
-        assertThat(model().get("nextDue")).isNull();
+        assertThat(model().get("nextDue")).isNotNull();
+        assertThat(model().get("nextDue").toString()).endsWith("UTC");
     }
 }

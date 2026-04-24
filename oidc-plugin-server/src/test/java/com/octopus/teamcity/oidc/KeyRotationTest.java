@@ -51,35 +51,45 @@ public class KeyRotationTest {
     @Test
     public void jwksContainsCurrentAndRetiredKeysAfterRotation() throws Exception {
         final var originalRsa = keyManager.getRsaKey();
+        final var originalRsa3072 = keyManager.getRsa3072Key();
         final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
         final var newRsa = keyManager.getRsaKey();
+        final var newRsa3072 = keyManager.getRsa3072Key();
         final var newEc = keyManager.getEcKey();
 
         final var keys = jwksKeys();
-        assertThat(keys).hasSize(4);
-        assertThat(kidsIn(keys)).contains(originalRsa.getKeyID(), newRsa.getKeyID(),
-                                           originalEc.getKeyID(), newEc.getKeyID());
+        assertThat(keys).hasSize(6);
+        assertThat(kidsIn(keys)).contains(
+                originalRsa.getKeyID(), newRsa.getKeyID(),
+                originalRsa3072.getKeyID(), newRsa3072.getKeyID(),
+                originalEc.getKeyID(), newEc.getKeyID());
     }
 
     @Test
     public void rotatingAgainRetiresPreviousRetiredKeys() throws Exception {
         final var rsa1 = keyManager.getRsaKey();
+        final var rsa3072_1 = keyManager.getRsa3072Key();
         final var ec1 = keyManager.getEcKey();
 
         keyManager.rotateKey();
         final var rsa2 = keyManager.getRsaKey();
+        final var rsa3072_2 = keyManager.getRsa3072Key();
         final var ec2 = keyManager.getEcKey();
 
         keyManager.rotateKey();
         final var rsa3 = keyManager.getRsaKey();
+        final var rsa3072_3 = keyManager.getRsa3072Key();
         final var ec3 = keyManager.getEcKey();
 
         final var keys = jwksKeys();
-        assertThat(keys).hasSize(4);
-        assertThat(kidsIn(keys)).doesNotContain(rsa1.getKeyID(), ec1.getKeyID());
-        assertThat(kidsIn(keys)).contains(rsa2.getKeyID(), rsa3.getKeyID(), ec2.getKeyID(), ec3.getKeyID());
+        assertThat(keys).hasSize(6);
+        assertThat(kidsIn(keys)).doesNotContain(rsa1.getKeyID(), rsa3072_1.getKeyID(), ec1.getKeyID());
+        assertThat(kidsIn(keys)).contains(
+                rsa2.getKeyID(), rsa3.getKeyID(),
+                rsa3072_2.getKeyID(), rsa3072_3.getKeyID(),
+                ec2.getKeyID(), ec3.getKeyID());
     }
 
     // --- helpers ---

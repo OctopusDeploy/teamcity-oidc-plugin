@@ -67,7 +67,7 @@ Configurable per build feature instance:
 |---|---|
 | Token lifetime | How long the JWT is valid (default: 10 minutes) |
 | Audience | Value for the `aud` claim. Cloud providers often require a specific value (e.g. `api://AzureADTokenExchange`) |
-| Signing algorithm | RS256 (RSA, default) or ES256 (ECDSA P-256) |
+| Signing algorithm | RS256 (RSA-2048, default), RS384 (RSA-3072), or ES256 (ECDSA P-256) |
 | Claims to include | Select which optional claims to include in the token |
 
 ## Test Connection

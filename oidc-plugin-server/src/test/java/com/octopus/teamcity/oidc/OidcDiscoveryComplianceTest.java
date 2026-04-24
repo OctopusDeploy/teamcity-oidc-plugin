@@ -118,6 +118,13 @@ public class OidcDiscoveryComplianceTest {
         assertThat(algs).contains("ES256");
     }
 
+    @Test
+    public void advertisesRS384() {
+        final var algs = toStringList(
+                (JSONArray) discoveryDocument.get("id_token_signing_alg_values_supported"));
+        assertThat(algs).contains("RS384");
+    }
+
     // --- Recommended fields ---
 
     @Test
