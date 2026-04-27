@@ -12,6 +12,8 @@ public class JwtBuildFeature extends BuildFeature {
 
     static final String FEATURE_TYPE = "oidc-plugin";
 
+    private static volatile SBuildServer staticServer;
+
     private final PluginDescriptor pluginDescriptor;
     private final SBuildServer buildServer;
 
@@ -19,6 +21,12 @@ public class JwtBuildFeature extends BuildFeature {
                            @NotNull final SBuildServer buildServer) {
         this.pluginDescriptor = pluginDescriptor;
         this.buildServer = buildServer;
+        staticServer = buildServer;
+    }
+
+    /** Used by the edit JSP to check root URL without Spring context access. */
+    public static boolean isRootUrlHttps() {
+        return staticServer != null && OidcUrlUtils.isHttpsUrl(staticServer.getRootUrl());
     }
 
     @NotNull
