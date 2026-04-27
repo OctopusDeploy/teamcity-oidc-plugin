@@ -21,7 +21,7 @@
         <th><label for="audience">Audience (<code>aud</code>):</label></th>
         <td>
             <props:textProperty name="audience" value="${propertiesBean.properties['audience']}" style="width:30em;"/>
-            <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Azure).</span>
+            <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Entra ID).</span>
             <span class="error" id="error_audience"></span>
         </td>
     </tr>
