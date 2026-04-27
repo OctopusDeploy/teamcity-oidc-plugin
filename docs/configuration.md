@@ -41,7 +41,6 @@ Reference the token in build steps as `%jwt.token%`. It is injected as a masked 
 ## Cloud provider setup guides
 
 - [AWS](aws.md) — IAM OIDC federation, trust policy, using the token with the AWS CLI/SDK
-- [Azure](azure.md) — workload identity federation, federated credentials, Azure CLI login
-- [Terraform Cloud](terraform-cloud.md) — HCP Terraform OIDC workload identity
+- [Azure](azure.md) — workload identity federation, federated credentials, Azure PowerShell login
 - [Octopus Deploy](octopus-deploy.md) — OIDC identity setup for Octopus Deploy
 

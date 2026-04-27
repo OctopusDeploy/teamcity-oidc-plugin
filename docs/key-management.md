@@ -23,7 +23,7 @@ Automatic rotation can be configured via a cron schedule in the plugin settings.
 
 ## Key storage and encryption
 
-Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS).
+Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS). On non-POSIX filesystems (e.g. Windows), permission restriction is skipped and the file is created with default OS permissions. If permission setting fails on a POSIX filesystem, the write is aborted and the existing keys are unchanged.
 
 The plugin uses TeamCity's `Encryption` infrastructure to encrypt key files at rest:
 

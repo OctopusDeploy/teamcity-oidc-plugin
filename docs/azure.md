@@ -8,6 +8,14 @@ TeamCity can authenticate to Azure using [workload identity federation](https://
 
 In the Azure Portal, go to **Microsoft Entra ID → App registrations → New registration**. Note the **Application (client) ID** and **Directory (tenant) ID** — you will need both in your build steps.
 
+### 1a. Alternative: user-assigned managed identity
+
+If you prefer a managed identity over an app registration, federated credentials work the same way. Go to **Managed Identities → Create** (or use an existing user-assigned managed identity). Note the **Client ID** — this is used in place of an application client ID in your build steps. You can find the **Directory (tenant) ID** under **Microsoft Entra ID → Overview**.
+
+Open the managed identity and go to **Federated credentials → Add credential**. Fill in the same fields as described in step 2 below. For role assignment (step 3), assign roles directly to the managed identity by name rather than to a service principal.
+
+In your build steps, use the managed identity's Client ID with the same PowerShell command shown in the [Using the token in build steps](#using-the-token-in-build-steps) section below.
+
 ### 2. Add a federated identity credential
 
 In the app registration, go to **Certificates & secrets → Federated credentials → Add credential**.
@@ -22,7 +30,7 @@ The subject identifier must match the `sub` claim in the token exactly. Add one 
 
 ### 3. Assign Azure roles
 
-Go to the resource (subscription, resource group, storage account, etc.) and assign the appropriate role (e.g. **Contributor**, **Storage Blob Data Contributor**) to the app registration's service principal.
+Go to the resource (subscription, resource group, storage account, etc.) and assign the appropriate role (e.g. **Contributor**, **Storage Blob Data Contributor**) to the app registration or managed identity.
 
 ## Build feature configuration
 
@@ -33,17 +41,7 @@ In the OIDC Identity Token build feature:
 
 ## Using the token in build steps
 
-Log in with the Azure CLI using the federated token:
-
-```bash
-az login \
-  --service-principal \
-  --username <application-client-id> \
-  --tenant <directory-tenant-id> \
-  --federated-token "%jwt.token%"
-```
-
-All subsequent `az` commands in the same step will use that identity. To use the Azure PowerShell module instead:
+Log in using the Azure PowerShell module:
 
 ```powershell
 Connect-AzAccount `
@@ -52,6 +50,10 @@ Connect-AzAccount `
   -TenantId "<directory-tenant-id>" `
   -FederatedToken "%jwt.token%"
 ```
+
+All subsequent `Az` commands in the same step will use that identity.
+
+> **Note:** `az login --federated-token` is not yet a publicly supported Azure CLI feature ([azure-cli#24756](https://github.com/Azure/azure-cli/issues/24756)) and fails when the token expires mid-build. Use the PowerShell module until official CLI support ships.
 
 ## Restricting access further
 

@@ -9,7 +9,7 @@
     <tr>
         <td colspan="2"><span class="error" id="error_root_url"></span></td>
     </tr>
-    <tr>
+<tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
             <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
@@ -77,7 +77,6 @@
             <span class="smallNote">
                 <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/aws.md" target="_blank" rel="noopener">AWS</a> &middot;
                 <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/azure.md" target="_blank" rel="noopener">Azure</a> &middot;
-                <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/terraform-cloud.md" target="_blank" rel="noopener">Terraform Cloud</a> &middot;
                 <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/octopus-deploy.md" target="_blank" rel="noopener">Octopus Deploy</a>
             </span>
         </td>

@@ -26,7 +26,7 @@ sequenceDiagram
     end
 ```
 
-## Token verification by cloud providers
+## Token verification by relying parties (e.g. cloud providers)
 
 A build step sends `%jwt.token%` to the cloud provider (e.g. as a header or request body). The provider verifies it using the standard OIDC discovery protocol — no prior configuration of public keys is needed.
 

@@ -69,6 +69,8 @@ export AWS_ROLE_SESSION_NAME=teamcity-build-%build.number%
 aws sts get-caller-identity
 ```
 
+The SDK reads from the token file each time it needs credentials, so the token only needs to be valid at the point each request is made, not for the entire build. Set the token TTL to comfortably exceed the time from build start to the first AWS credential request.
+
 Alternatively, assume the role explicitly and export the resulting credentials:
 
 ```bash
@@ -83,6 +85,8 @@ export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r .AccessKeyId)
 export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r .SecretAccessKey)
 export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r .SessionToken)
 ```
+
+With this approach the token must still be valid at the point `assume-role-with-web-identity` runs, so ensure the TTL is long enough if this step runs late in a long build.
 
 ## Restricting access further
 
