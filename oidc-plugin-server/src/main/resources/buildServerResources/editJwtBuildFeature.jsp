@@ -216,9 +216,7 @@
         const row = document.getElementById('row_root_url');
         const span = document.getElementById('error_root_url');
         if (row && span) {
-            const sync = function() { row.style.display = span.textContent.trim() ? '' : 'none'; };
-            sync();
-            new MutationObserver(sync).observe(span, { childList: true, subtree: true, characterData: true });
+            row.style.display = span.textContent.trim() ? '' : 'none';
         }
     })();
 
