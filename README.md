@@ -2,7 +2,7 @@
 
 A TeamCity plugin that turns your TeamCity server into an OIDC identity provider, enabling workload identity federation with cloud services — no static credentials required.
 
-When a build starts, the plugin issues a signed JWT and injects it as a masked build parameter (`jwt.token`). Cloud providers (AWS, Azure, GCP, Octopus Deploy) can verify the token against the plugin's public JWKS endpoint and grant access based on claims in the token.
+When a build starts, the plugin issues a signed JWT and injects it as the masked build parameter `jwt.token`. Cloud providers (AWS, Azure, GCP, Octopus Deploy) verify the token against the plugin's public JWKS endpoint and grant access based on the claims it contains. No secrets need to be stored in TeamCity or on the build agent.
 
 ## Requirements
 
@@ -17,99 +17,16 @@ Copy the plugin zip to `<TeamCity data directory>/plugins/` and restart TeamCity
 
 1. Add the **OIDC Identity Token** build feature to a build configuration.
 2. Configure the audience (`aud`) to match what your cloud provider expects.
-3. In your cloud provider, create an OIDC identity that trusts your TeamCity server as the issuer and configure conditions based on the token claims.
+3. In your cloud provider, create an OIDC identity that trusts your TeamCity server as the issuer, and configure conditions based on the claims in the token.
+4. Reference the token in build steps as `%jwt.token%`.
+
+## Screenshot
 
 ![OIDC Identity Token build feature](screenshot-build-features.png)
 
-## OIDC Endpoints
+## Documentation
 
-The plugin serves two public endpoints (no authentication required):
-
-| Endpoint | Description |
-|---|---|
-| `GET /.well-known/openid-configuration` | OIDC discovery document |
-| `GET /.well-known/jwks.json` | Public key set for signature verification |
-
-The issuer is your TeamCity root URL (e.g. `https://teamcity.example.com`).
-
-## Token
-
-The token is injected as the masked build parameter `jwt.token`. Reference it in build steps as `%jwt.token%`.
-
-### Standard claims
-
-| Claim | Value |
-|---|---|
-| `sub` | Build type external ID (e.g. `MyProject_Build`) |
-| `iss` | TeamCity root URL |
-| `aud` | Configured audience (defaults to TeamCity root URL) |
-| `iat` / `exp` | Issued at / expiry (configurable TTL, default 10 minutes) |
-| `jti` | Unique token ID (`<buildId>-<uuid>`) |
-
-### Optional claims
-
-Configurable per build feature instance:
-
-| Claim | Description |
-|---|---|
-| `branch` | Branch name |
-| `build_type_external_id` | Build type external ID |
-| `project_external_id` | Project external ID |
-| `triggered_by` | Human-readable trigger description |
-| `triggered_by_id` | User ID (omitted for automated triggers) |
-| `build_number` | Build number string |
-
-## Build Feature Configuration
-
-![Build feature configuration](screenshot-build-feature.png)
-
-| Field | Description |
-|---|---|
-| Token lifetime | How long the JWT is valid (default: 10 minutes) |
-| Audience | Value for the `aud` claim. Cloud providers often require a specific value (e.g. `api://AzureADTokenExchange`) |
-| Signing algorithm | RS256 (RSA-2048, default), RS384 (RSA-3072), or ES256 (ECDSA P-256) |
-| Claims to include | Select which optional claims to include in the token |
-
-## Test Connection
-
-![Test Connection](screenshot-test-connection.png)
-
-The build feature configuration page includes a **Test Connection** button that:
-
-1. Issues a test JWT using the current configuration
-2. Verifies the OIDC discovery endpoint is reachable
-3. Verifies the token signature against the JWKS endpoint
-4. Optionally attempts an OIDC token exchange against a target service URL
-
-## Octopus Deploy
-
-In Octopus Deploy, go to **Configuration → Users → Your Service Account → OpenID Connect** and create a new OIDC Identity. 
-Set the issuer to your TeamCity root URL and the subject to the build type external ID. Copy the Service Account Id and 
-use it as the audience in the build feature configuration.
-
-![Octopus Deploy OIDC configuration](screenshot-octopus-configuration.png)
-
-## Key Rotation
-
-To rotate keys, `POST` to `/admin/jwtKeyRotate.html` (requires `CHANGE_SERVER_SETTINGS` permission). The previous keys remain in the JWKS for one overlap window so in-flight tokens continue to verify.
-
-> **Note:** Only one generation of retired keys is kept. If you rotate twice in quick succession, tokens signed with the oldest key will fail verification at relying parties. Rotate no more frequently than your token TTL to avoid dropping in-flight tokens.
-
-## Key Storage and Encryption
-
-Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS).
-
-The plugin uses TeamCity's server `Encryption` infrastructure to encrypt key files at rest. The level of protection depends on whether a custom encryption key is configured for the server:
-
-- **With `TEAMCITY_ENCRYPTION_KEYS` set** (recommended): key files are encrypted with AES-256 using a server-specific key. A file read from disk (e.g. in a backup) cannot be decrypted without that key.
-- **Without a custom key**: the server's default scramble strategy is used (obfuscation only); file permissions are the sole meaningful protection.
-
-To configure a custom encryption key, follow the [TeamCity Encryption Settings documentation](https://www.jetbrains.com/help/teamcity/teamcity-configuration-and-maintenance.html#encryption-settings). The `TEAMCITY_ENCRYPTION_KEYS` environment variable is the recommended approach (set via the OS service manager so the key is never written to disk alongside the data it protects).
-
-## Building
-
-```
-mvn package -pl oidc-plugin-server -am -DskipTests
-```
-
-The plugin zip is written to `target/Octopus.TeamCity.OIDC.1.0-SNAPSHOT.zip`.
+- [How It Works](docs/how-it-works.md) — JWT issuance lifecycle, OIDC token verification flow, Test Connection
+- [Configuration Reference](docs/configuration.md) — build feature fields, token claims, Octopus Deploy integration
+- [Key Management](docs/key-management.md) — key rotation, storage, and encryption at rest
+- [Development](docs/development.md) — building the plugin, plugin architecture
