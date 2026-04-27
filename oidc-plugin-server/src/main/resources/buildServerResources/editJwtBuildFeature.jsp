@@ -6,7 +6,7 @@
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
 
 <l:settingsGroup title="">
-    <tr>
+    <tr id="row_root_url">
         <td colspan="2"><span class="error" id="error_root_url"></span></td>
     </tr>
     <tr>
@@ -87,7 +87,7 @@
 <%-- Hidden holder; JS moves its contents into TC's editBuildFeatureAdditionalButtons on DOM ready --%>
 <%-- data-build-type-id carries the build type ID safely without inline JS injection --%>
 <span id="jwtTestConnectionBtnHolder" style="display:none;" data-build-type-id="${fn:escapeXml(param.id)}">
-    <input type="button" value="Test Connection" class="btn btn_primary submitButton"
+    <input type="button" value="Test Connection" class="btn btn_primary"
            onclick="event.stopPropagation(); window.jwtTestOpen();" />
 </span>
 
@@ -182,7 +182,7 @@
 
         document.getElementById('jwtServiceUrl').disabled = false;
         document.getElementById('jwtExchangeBtn').disabled = false;
-    }
+    };
 
     window.jwtTestExchange = async function() {
         const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
@@ -205,7 +205,22 @@
         const r = await jwtPost({step:'exchange', tokenRef:r1.tokenRef, serviceUrl:serviceUrl, audience:audience});
         jwtSetRow('jwtRow3', r.ok, r.message);
         document.getElementById('jwtExchangeBtn').disabled = false;
-    }
+    };
+
+    (function() {
+        // Hide the empty groupingTitle row the l:settingsGroup tag always renders
+        document.querySelectorAll('tr.groupingTitle').forEach(function(tr) {
+            if (!tr.textContent.trim()) tr.style.display = 'none';
+        });
+
+        const row = document.getElementById('row_root_url');
+        const span = document.getElementById('error_root_url');
+        if (row && span) {
+            const sync = function() { row.style.display = span.textContent.trim() ? '' : 'none'; };
+            sync();
+            new MutationObserver(sync).observe(span, { childList: true, subtree: true, characterData: true });
+        }
+    })();
 
     $j(document).ready(function() {
         const placeholder = $j('span#editBuildFeatureAdditionalButtons');
