@@ -3,12 +3,18 @@
 <%@ taglib prefix="l" tagdir="/WEB-INF/tags/layout" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
+<%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
+<%
+    pageContext.setAttribute("jwtRootUrlNeedsHttps", !JwtBuildFeature.isRootUrlHttps());
+%>
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
 
 <l:settingsGroup title="">
-    <tr id="row_root_url">
-        <td colspan="2"><span class="error" id="error_root_url"></span></td>
-    </tr>
+    <c:if test="${jwtRootUrlNeedsHttps}">
+        <tr id="row_root_url">
+            <td colspan="2"><span class="error" id="error_root_url">The TeamCity server root URL must use HTTPS for OIDC token issuance. Update it in Administration &#x2192; Global Settings.</span></td>
+        </tr>
+    </c:if>
     <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
@@ -201,14 +207,6 @@
         document.querySelectorAll('tr.groupingTitle').forEach(function(tr) {
             if (!tr.textContent.trim()) tr.style.display = 'none';
         });
-
-        const row = document.getElementById('row_root_url');
-        const span = document.getElementById('error_root_url');
-        if (row && span) {
-            const sync = function() { row.style.display = span.textContent.trim() ? '' : 'none'; };
-            sync();
-            new MutationObserver(sync).observe(span, { childList: true, subtree: true, characterData: true });
-        }
     })();
 
     $j(document).ready(function() {
