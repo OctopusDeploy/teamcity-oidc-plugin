@@ -21,7 +21,7 @@
         <th><label for="audience">Audience (<code>aud</code>):</label></th>
         <td>
             <props:textProperty name="audience" value="${propertiesBean.properties['audience']}" style="width:30em;"/>
-            <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code>).</span>
+            <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Azure).</span>
             <span class="error" id="error_audience"></span>
         </td>
     </tr>
@@ -69,6 +69,17 @@
             </table>
             <span class="smallNote">Uncheck claims to exclude them from the token.</span>
             <span class="error" id="error_claims"></span>
+        </td>
+    </tr>
+    <tr>
+        <th>Setup guides:</th>
+        <td>
+            <span class="smallNote">
+                <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/aws.md" target="_blank" rel="noopener">AWS</a> &middot;
+                <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/azure.md" target="_blank" rel="noopener">Azure</a> &middot;
+                <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/terraform-cloud.md" target="_blank" rel="noopener">Terraform Cloud</a> &middot;
+                <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/octopus-deploy.md" target="_blank" rel="noopener">Octopus Deploy</a>
+            </span>
         </td>
     </tr>
 </l:settingsGroup>
