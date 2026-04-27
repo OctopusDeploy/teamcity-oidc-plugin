@@ -4,7 +4,7 @@
 
 Add the **OIDC Identity Token** build feature to a build configuration. Multiple instances are allowed if you need tokens for different audiences.
 
-![Build feature configuration](../screenshot-build-feature.png)
+![Build feature configuration](images/screenshot-build-feature.png)
 
 | Field | Description |
 |---|---|
@@ -38,12 +38,10 @@ Reference the token in build steps as `%jwt.token%`. It is injected as a masked 
 | `triggered_by_id` | User ID (omitted for automated triggers) |
 | `build_number` | Build number string |
 
-## Octopus Deploy
+## Cloud provider setup guides
 
-In Octopus Deploy, go to **Configuration → Users → Your Service Account → OpenID Connect** and create a new OIDC Identity.
+- [AWS](aws.md) — IAM OIDC federation, trust policy, using the token with the AWS CLI/SDK
+- [Azure](azure.md) — workload identity federation, federated credentials, Azure CLI login
+- [Terraform Cloud](terraform-cloud.md) — HCP Terraform OIDC workload identity
+- [Octopus Deploy](octopus-deploy.md) — OIDC identity setup for Octopus Deploy
 
-- Set the **issuer** to your TeamCity root URL.
-- Set the **subject** to the build type external ID.
-- Copy the **Service Account Id** and use it as the **Audience** in the build feature configuration.
-
-![Octopus Deploy OIDC configuration](../screenshot-octopus-configuration.png)

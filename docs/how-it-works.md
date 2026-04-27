@@ -66,7 +66,7 @@ Both endpoints return `503 Service Unavailable` during server startup while keys
 
 ## Test Connection
 
-![Test Connection](../screenshot-test-connection.png)
+![Test Connection](images/screenshot-test-connection.png)
 
 The build feature configuration page includes a **Test Connection** button that runs a four-step verification from the server (not the browser):
 

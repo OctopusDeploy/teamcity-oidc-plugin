@@ -22,11 +22,11 @@ Copy the plugin zip to `<TeamCity data directory>/plugins/` and restart TeamCity
 
 ## Screenshot
 
-![OIDC Identity Token build feature](screenshot-build-features.png)
+![OIDC Identity Token build feature](docs/images/screenshot-build-features.png)
 
 ## Documentation
 
 - [How It Works](docs/how-it-works.md) — JWT issuance lifecycle, OIDC token verification flow, Test Connection
-- [Configuration Reference](docs/configuration.md) — build feature fields, token claims, Octopus Deploy integration
+- [Configuration Reference](docs/configuration.md) — build feature fields, token claims, cloud provider setup guides
 - [Key Management](docs/key-management.md) — key rotation, storage, and encryption at rest
 - [Development](docs/development.md) — building the plugin, plugin architecture
