@@ -18,7 +18,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
     private static final Logger LOG = Logger.getLogger(JwtBuildStartContext.class.getName());
 
     private final ExtensionHolder extensionHolder;
-    private final SBuildServer buildServer;
+    private final OidcIssuerUrlProvider issuerUrlProvider;
     private final JwtKeyManager keyManager;
 
     private static final Pattern CLAIMS_SPLIT = Pattern.compile("\\s*,\\s*");
@@ -29,10 +29,10 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder,
-                                @NotNull final SBuildServer buildServer,
+                                @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                                 @NotNull final JwtKeyManager keyManager) {
         this.extensionHolder = extensionHolder;
-        this.buildServer = buildServer;
+        this.issuerUrlProvider = issuerUrlProvider;
         this.keyManager = keyManager;
     }
 
@@ -70,17 +70,17 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 }
                 final var algorithmName = params.getOrDefault("algorithm", "RS256");
 
-                final var buildServerRootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+                final var issuerUrl = issuerUrlProvider.getIssuerUrl();
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
-                        + ", rootUrl=" + buildServerRootUrl + ", algorithm=" + sanitize(algorithmName));
+                        + ", issuerUrl=" + issuerUrl + ", algorithm=" + sanitize(algorithmName));
 
-                if (!OidcUrlUtils.isHttpsUrl(buildServerRootUrl)) {
-                    LOG.warning("JWT plugin: skipping JWT — root URL is not HTTPS: " + buildServerRootUrl);
+                if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
+                    LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + issuerUrl);
                     return;
                 }
 
                 final var rawAudience = params.getOrDefault("audience", "");
-                final var audience = rawAudience.isBlank() ? buildServerRootUrl : rawAudience;
+                final var audience = rawAudience.isBlank() ? issuerUrl : rawAudience;
 
                 final var claimsParam = params.get("claims");
                 final Set<String> requestedClaims = (claimsParam == null || claimsParam.isBlank())
@@ -108,7 +108,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
                         .subject(build.getBuildTypeExternalId())
                         .audience(List.of(audience))
-                        .issuer(buildServerRootUrl)
+                        .issuer(issuerUrl)
                         .issueTime(Date.from(now))
                         .notBeforeTime(Date.from(now))
                         .expirationTime(Date.from(now.plus(ttlMinutes, ChronoUnit.MINUTES)));
@@ -136,7 +136,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
-                        + " (iss=" + buildServerRootUrl + ", aud=" + sanitize(audience) + ", alg=" + sanitize(algorithmName)
+                        + " (iss=" + issuerUrl + ", aud=" + sanitize(audience) + ", alg=" + sanitize(algorithmName)
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
             } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);

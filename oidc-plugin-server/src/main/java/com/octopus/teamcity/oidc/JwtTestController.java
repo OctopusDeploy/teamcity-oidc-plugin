@@ -52,6 +52,7 @@ public class JwtTestController extends BaseController {
 
     private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
+    private final OidcIssuerUrlProvider issuerUrlProvider;
     private final HttpClient httpClient;
     private final CSRFFilter csrfFilter;
     private final AddressResolver addressResolver;
@@ -60,8 +61,9 @@ public class JwtTestController extends BaseController {
     public JwtTestController(@NotNull final WebControllerManager controllerManager,
                              @NotNull final JwtKeyManager keyManager,
                              @NotNull final SBuildServer buildServer,
+                             @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                              @NotNull final ExtensionHolder extensionHolder) {
-        this(controllerManager, keyManager, buildServer,
+        this(controllerManager, keyManager, buildServer, issuerUrlProvider,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
                 new CSRFFilter(extensionHolder), InetAddress::getAllByName);
     }
@@ -69,19 +71,22 @@ public class JwtTestController extends BaseController {
     JwtTestController(@NotNull final WebControllerManager controllerManager,
                       @NotNull final JwtKeyManager keyManager,
                       @NotNull final SBuildServer buildServer,
+                      @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter) {
-        this(controllerManager, keyManager, buildServer, httpClient, csrfFilter, InetAddress::getAllByName);
+        this(controllerManager, keyManager, buildServer, issuerUrlProvider, httpClient, csrfFilter, InetAddress::getAllByName);
     }
 
     JwtTestController(@NotNull final WebControllerManager controllerManager,
                       @NotNull final JwtKeyManager keyManager,
                       @NotNull final SBuildServer buildServer,
+                      @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter,
                       @NotNull final AddressResolver addressResolver) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
+        this.issuerUrlProvider = issuerUrlProvider;
         this.httpClient = httpClient;
         this.csrfFilter = csrfFilter;
         this.addressResolver = addressResolver;
@@ -152,9 +157,9 @@ public class JwtTestController extends BaseController {
     }
 
     private String[] stepJwt(final HttpServletRequest request, final SUser user) throws Exception {
-        final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+        final var rootUrl = issuerUrlProvider.getIssuerUrl();
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
-            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+            throw new TestStepException("Issuer URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         var algorithm = request.getParameter("algorithm");
         if (algorithm == null || algorithm.isBlank()) algorithm = "RS256";
@@ -220,9 +225,9 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepDiscovery() throws Exception {
-        final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+        final var rootUrl = issuerUrlProvider.getIssuerUrl();
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
-            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+            throw new TestStepException("Issuer URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         final var url = buildUrl(rootUrl, "/.well-known/openid-configuration");
         final var resp = httpGet(url);
@@ -238,9 +243,9 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepJwks(final HttpServletRequest request) throws Exception {
-        final var rootUrl = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+        final var rootUrl = issuerUrlProvider.getIssuerUrl();
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
-            throw new TestStepException("Root URL is not HTTPS — OIDC endpoints won't be reachable");
+            throw new TestStepException("Issuer URL is not HTTPS — OIDC endpoints won't be reachable");
         }
         final var tokenRef = request.getParameter("tokenRef");
         final var token = tokenRef != null

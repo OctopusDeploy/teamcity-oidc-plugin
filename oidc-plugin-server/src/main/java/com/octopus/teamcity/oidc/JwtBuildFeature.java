@@ -13,19 +13,25 @@ public class JwtBuildFeature extends BuildFeature {
     static final String FEATURE_TYPE = "oidc-plugin";
 
     private static volatile SBuildServer staticServer;
+    private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
 
     private final PluginDescriptor pluginDescriptor;
-    private final SBuildServer buildServer;
+    private final OidcIssuerUrlProvider issuerUrlProvider;
 
     public JwtBuildFeature(@NotNull final PluginDescriptor pluginDescriptor,
-                           @NotNull final SBuildServer buildServer) {
+                           @NotNull final SBuildServer buildServer,
+                           @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
         this.pluginDescriptor = pluginDescriptor;
-        this.buildServer = buildServer;
+        this.issuerUrlProvider = issuerUrlProvider;
         staticServer = buildServer;
+        staticIssuerUrlProvider = issuerUrlProvider;
     }
 
-    /** Used by the edit JSP to check root URL without Spring context access. */
+    /** Used by the edit JSP to check the issuer URL without Spring context access. */
     public static boolean isRootUrlHttps() {
+        if (staticIssuerUrlProvider != null) {
+            return OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
+        }
         return staticServer != null && OidcUrlUtils.isHttpsUrl(staticServer.getRootUrl());
     }
 
@@ -75,10 +81,10 @@ public class JwtBuildFeature extends BuildFeature {
     public PropertiesProcessor getParametersProcessor(@NotNull final BuildTypeIdentity buildTypeOrTemplate) {
         return params -> {
             final Collection<InvalidProperty> errors = new ArrayList<>();
-            if (!OidcUrlUtils.isHttpsUrl(buildServer.getRootUrl())) {
+            if (!OidcUrlUtils.isHttpsUrl(issuerUrlProvider.getIssuerUrl())) {
                 errors.add(new InvalidProperty("root_url",
-                        "The TeamCity server root URL must use HTTPS for OIDC token issuance. " +
-                                "Update it in Administration → Global Settings."));
+                        "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
+                                "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
             }
             final var ttl = params.getOrDefault("ttl_minutes", "10");
             try {

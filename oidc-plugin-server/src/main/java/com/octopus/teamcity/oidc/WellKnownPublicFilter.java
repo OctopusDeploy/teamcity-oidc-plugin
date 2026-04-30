@@ -1,7 +1,6 @@
 package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.jwk.JWKSet;
-import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.DelegatingFilter;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
@@ -26,12 +25,12 @@ public class WellKnownPublicFilter implements Filter {
     static final long JWKS_STALE_WHILE_REVALIDATE_SECONDS = 60L;
 
     private final JwtKeyManager keyManager;
-    private final SBuildServer buildServer;
+    private final OidcIssuerUrlProvider issuerUrlProvider;
 
     public WellKnownPublicFilter(@NotNull final JwtKeyManager keyManager,
-                                 @NotNull final SBuildServer buildServer) {
+                                 @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
         this.keyManager = keyManager;
-        this.buildServer = buildServer;
+        this.issuerUrlProvider = issuerUrlProvider;
         DelegatingFilter.registerDelegate(this);
         LOG.info("JWT plugin: WellKnownPublicFilter registered in DelegatingFilter chain");
     }
@@ -73,7 +72,7 @@ public class WellKnownPublicFilter implements Filter {
             resp.setHeader("Access-Control-Allow-Origin", "*");
             resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
                     + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
-            final var issuer = OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl());
+            final var issuer = issuerUrlProvider.getIssuerUrl();
             LOG.fine("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
 
             final var doc = getJsonObject(issuer);
