@@ -1,6 +1,7 @@
 <%@ include file="/include-internal.jsp"%>
 <%@ taglib prefix="props" tagdir="/WEB-INF/tags/props" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<link rel="stylesheet" href="${pageContext.request.contextPath}/plugins/teamcity-oidc-plugin/jwt-admin.css"/>
 <%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
 <%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
 <%@ page import="jetbrains.buildServer.users.SUser" %>
@@ -27,12 +28,16 @@
   </tr>
   <tr>
     <td>
-      <span class="smallNote">
+      <span class="jwt-hint">
         Leave blank to use the TeamCity root URL.
         Set this if TeamCity is behind a reverse proxy and the public-facing URL
-        differs from the root URL.<br/>
-        Effective issuer URL: <strong><c:out value="${effectiveIssuerUrl}"/></strong>
+        differs from the root URL.
       </span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      Effective issuer URL: <strong><c:out value="${effectiveIssuerUrl}"/></strong>
     </td>
   </tr>
   <tr>
