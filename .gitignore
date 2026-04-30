@@ -8,3 +8,4 @@ target/
 # macOS
 .DS_Store
 /.superpowers
+.worktrees/

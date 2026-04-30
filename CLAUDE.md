@@ -107,3 +107,4 @@ automatically escaped and still require `fn:escapeXml()` explicitly.
 
 - `OIDC-PLAN.md`
 - `build-and-run-tests.sh`
+- `docs/superpowers/` (superpowers skill docs)
