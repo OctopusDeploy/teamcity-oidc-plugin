@@ -56,6 +56,26 @@ public class OidcSettingsControllerTest {
         return (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(writer.toString());
     }
 
+    private JSONObject postForJson(final OidcSettingsManager mgr, final String url) throws Exception {
+        final var writer = new StringWriter();
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getParameter("overrideIssuerUrl")).thenReturn(url);
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        final var admin = adminUser();
+        try (final var su = mockStatic(SessionUser.class)) {
+            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
+            controller(mgr).doHandle(request, response);
+        }
+        return parseResponse(writer);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mockHttpStatus(final int status) throws Exception {
+        final var httpResp = mock(HttpResponse.class);
+        when(httpResp.statusCode()).thenReturn(status);
+        when(httpClient.send(any(), any())).thenReturn(httpResp);
+    }
+
     @Test
     void registersAtExpectedPath() {
         new OidcSettingsController(controllerManager, new OidcSettingsManager(tempDir), csrfFilter, httpClient);
@@ -71,148 +91,63 @@ public class OidcSettingsControllerTest {
 
     @Test
     void rejectsNonHttpsUrl() throws Exception {
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("http://ci.example.com");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(new OidcSettingsManager(tempDir)).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        final var mgr = new OidcSettingsManager(tempDir);
+        final var json = postForJson(mgr, "http://ci.example.com");
         assertThat((Boolean) json.get("ok")).isFalse();
         assertThat((String) json.get("message")).contains("HTTPS");
-        assertThat(new OidcSettingsManager(tempDir).load()).isEmpty();
+        assertThat(mgr.load()).isEmpty();
     }
 
     @Test
     void rejectsInvalidUrl() throws Exception {
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("not a url");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(new OidcSettingsManager(tempDir)).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        final var json = postForJson(new OidcSettingsManager(tempDir), "not a url");
         assertThat((Boolean) json.get("ok")).isFalse();
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void savesAndReturnsOkWhenReachableAndHttp200() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("https://ci.example.com");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
-        final var httpResp = mock(HttpResponse.class);
-        when(httpResp.statusCode()).thenReturn(200);
-        when(httpClient.send(any(), any())).thenReturn(httpResp);
-
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        mockHttpStatus(200);
+        final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((Boolean) json.get("ok")).isTrue();
         assertThat(mgr.load()).contains("https://ci.example.com");
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void savesWithWarningWhenUnreachable() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("https://ci.example.com");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
         when(httpClient.send(any(), any())).thenThrow(new java.net.ConnectException("refused"));
-
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((Boolean) json.get("ok")).isTrue();
         assertThat((String) json.get("message")).containsIgnoringCase("could not be verified");
         assertThat(mgr.load()).contains("https://ci.example.com");
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void rejectsAndDoesNotSaveOnHttpError() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("https://ci.example.com");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
-        final var httpResp = mock(HttpResponse.class);
-        when(httpResp.statusCode()).thenReturn(404);
-        when(httpClient.send(any(), any())).thenReturn(httpResp);
-
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        mockHttpStatus(404);
+        final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((Boolean) json.get("ok")).isFalse();
         assertThat((String) json.get("message")).contains("404");
         assertThat(mgr.load()).isEmpty();
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void rejectsAndDoesNotSaveOnRedirect() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("https://ci.example.com");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
-        final var httpResp = mock(HttpResponse.class);
-        when(httpResp.statusCode()).thenReturn(301);
-        when(httpClient.send(any(), any())).thenReturn(httpResp);
-
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        mockHttpStatus(301);
+        final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((Boolean) json.get("ok")).isFalse();
         assertThat((String) json.get("message")).contains("301");
         assertThat(mgr.load()).isEmpty();
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void rejectsAndDoesNotSaveOnServerError() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("https://ci.example.com");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
-        final var httpResp = mock(HttpResponse.class);
-        when(httpResp.statusCode()).thenReturn(503);
-        when(httpClient.send(any(), any())).thenReturn(httpResp);
-
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        mockHttpStatus(503);
+        final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((Boolean) json.get("ok")).isFalse();
         assertThat((String) json.get("message")).contains("503");
         assertThat(mgr.load()).isEmpty();
@@ -222,38 +157,16 @@ public class OidcSettingsControllerTest {
     void clearsOverrideOnBlankInput() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
         mgr.save("https://ci.example.com");
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        final var json = parseResponse(writer);
+        final var json = postForJson(mgr, "");
         assertThat((Boolean) json.get("ok")).isTrue();
         assertThat(mgr.load()).isEmpty();
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void stripsTrailingSlashBeforeSaving() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn("https://ci.example.com/");
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-
-        final var httpResp = mock(HttpResponse.class);
-        when(httpResp.statusCode()).thenReturn(200);
-        when(httpClient.send(any(), any())).thenReturn(httpResp);
-
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
+        mockHttpStatus(200);
+        postForJson(mgr, "https://ci.example.com/");
         assertThat(mgr.load()).contains("https://ci.example.com");
     }
 }
