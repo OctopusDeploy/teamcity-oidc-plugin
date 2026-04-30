@@ -10,6 +10,7 @@ import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.ServerPaths;
+import jetbrains.buildServer.serverSide.SBuildServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,7 +30,6 @@ import static org.mockito.Mockito.*;
 public class JwtIssuanceAndVerificationTest {
 
     @Mock ServerPaths serverPaths;
-    @Mock SBuildServer buildServer;
     @Mock ExtensionHolder extensionHolder;
     @Mock BuildStartContext buildStartContext;
     @Mock SRunningBuild runningBuild;
@@ -45,10 +45,18 @@ public class JwtIssuanceAndVerificationTest {
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
     }
 
+    private SBuildServer buildServerWithRootUrl(final String url) {
+        final var server = mock(SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(url);
+        return server;
+    }
+
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
+    }
+
     @Test
     public void rs256JwtSignatureVerifiesAgainstJwksPublicKey() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-
         final var token = issueToken(Map.of());
 
         final var jwks = getJwks();
@@ -66,8 +74,6 @@ public class JwtIssuanceAndVerificationTest {
 
     @Test
     public void es256JwtSignatureVerifiesAgainstJwksPublicKey() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-
         final var token = issueToken(Map.of("algorithm", "ES256"));
 
         final var jwks = getJwks();
@@ -85,8 +91,6 @@ public class JwtIssuanceAndVerificationTest {
 
     @Test
     public void jwtIssuedBeforeKeyRotationRemainsVerifiableAfterRotation() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-
         final var tokenBeforeRotation = issueToken(Map.of());
         final var jwtBefore = SignedJWT.parse(tokenBeforeRotation);
         final var kidBefore = jwtBefore.getHeader().getKeyID();
@@ -102,8 +106,6 @@ public class JwtIssuanceAndVerificationTest {
 
     @Test
     public void jwtClaimsMatchBuildContextAndConfiguration() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-
         setupBuildContext(Map.of("audience", "my-cloud-audience", "ttl_minutes", "5"));
 
         final var branch = mock(Branch.class);
@@ -112,7 +114,7 @@ public class JwtIssuanceAndVerificationTest {
         when(runningBuild.getBuildTypeExternalId()).thenReturn("My_BuildType");
 
         final var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        new JwtBuildStartContext(extensionHolder, buildServer, keyManager).updateParameters(buildStartContext);
+        new JwtBuildStartContext(extensionHolder, providerFor("https://teamcity.example.com"), keyManager).updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
 
         final var jwt = SignedJWT.parse(tokenCaptor.getValue());
@@ -140,8 +142,6 @@ public class JwtIssuanceAndVerificationTest {
 
     @Test
     public void jwtSignedWithNewKeyVerifiesAfterRotation() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
-
         keyManager.rotateKey();
 
         final var token = issueToken(Map.of());
@@ -158,7 +158,7 @@ public class JwtIssuanceAndVerificationTest {
     private String issueToken(final Map<String, String> params) {
         setupBuildContext(params);
         final var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        new JwtBuildStartContext(extensionHolder, buildServer, keyManager).updateParameters(buildStartContext);
+        new JwtBuildStartContext(extensionHolder, providerFor("https://teamcity.example.com"), keyManager).updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
         return tokenCaptor.getValue();
     }

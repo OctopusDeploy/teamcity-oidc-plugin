@@ -58,15 +58,23 @@ public class JwtTestControllerTest {
     private static final JwtTestController.AddressResolver PUBLIC_RESOLVER =
             host -> new InetAddress[]{InetAddress.getByAddress(new byte[]{93, -72, -40, 34})};
 
+    private SBuildServer buildServerWithRootUrl(final String url) {
+        final var server = mock(SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(url);
+        return server;
+    }
+
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
+    }
+
     @BeforeEach
     void setup() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         // Default: CSRF check passes. lenient() because some tests use GET (CSRF never reached).
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
-        // Default: HTTPS root URL. lenient() because not all tests exercise this path.
-        lenient().when(buildServer.getRootUrl()).thenReturn("https://tc.example.com");
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
     }
 
     // ---- lifecycle ----
@@ -261,7 +269,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepFailsWhenRootUrlIsNotHttps() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10", "audience", "aud"
         ));
@@ -274,7 +282,7 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepFailsWhenRootUrlIsNotHttps() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         final var result = callStep(Map.of("step", "discovery"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("not HTTPS");
@@ -311,7 +319,7 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryUrlStripsQueryStringFromRootUrl() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com?v=1");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com?v=1"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         doReturn(mockResponse(200, "{}")).when(httpClient).send(any(), any());
 
         callStep(Map.of("step", "discovery"));
@@ -324,7 +332,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksUrlStripsQueryStringFromRootUrl() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com?v=1");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com?v=1"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         final var session = createMockSession();
         final var tokenRef = issueTokenRef(session);
         // Empty JWKS: parse succeeds, key lookup fails after send() — we only care the URL was right.
@@ -342,7 +350,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksStepFailsWhenRootUrlIsNotHttps() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         final var result = callStep(Map.of("step", "jwks"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("not HTTPS");
@@ -513,7 +521,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepNormalizesIssuerWhenRootUrlHasTrailingSlash() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com/");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com/"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         mockBuildType("MyBuildType");
         final var session = createMockSession();
         final var result = callStep(Map.of(
@@ -528,7 +536,7 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepSucceedsWhenRootUrlHasTrailingSlashButIssuerIsNormalized() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://tc.example.com/");
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com/"), httpClient, csrfFilter, PUBLIC_RESOLVER);
         doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}"))
             .when(httpClient).send(any(), any());
 
@@ -605,7 +613,7 @@ public class JwtTestControllerTest {
     @Test
     void exchangeStepBlocksLoopbackAddress() throws Exception {
         // Private address check happens before session lookup
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
         final var result = callStep(Map.of(
             "step", "exchange",
             "serviceUrl", "https://127.0.0.1", "audience", "aud"
@@ -616,7 +624,7 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepBlocksRfc1918Address() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
         final var result = callStep(Map.of(
             "step", "exchange",
             "serviceUrl", "https://192.168.1.100", "audience", "aud"
@@ -627,7 +635,7 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepBlocksLinkLocalAddress() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
         final var result = callStep(Map.of(
             "step", "exchange",
             "serviceUrl", "https://169.254.169.254", "audience", "aud"
@@ -640,7 +648,7 @@ public class JwtTestControllerTest {
     void exchangeStepAllowsPrivateAddressWhenSystemPropertySet() throws Exception {
         System.setProperty(JwtTestController.ALLOW_PRIVATE_EXCHANGE_PROPERTY, "true");
         try {
-            controller = new JwtTestController(controllerManager, keyManager, buildServer, httpClient, csrfFilter);
+            controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
             // Private-address check is bypassed; HTTPS is still required.
             // Call fails later because no tokenRef was supplied — not due to the address check.
             final var result = callStep(Map.of(

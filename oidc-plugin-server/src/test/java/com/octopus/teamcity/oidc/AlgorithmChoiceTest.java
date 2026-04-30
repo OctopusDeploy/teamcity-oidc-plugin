@@ -3,7 +3,6 @@ package com.octopus.teamcity.oidc;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
-import com.nimbusds.jose.jwk.KeyType;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
@@ -27,7 +26,6 @@ import static org.mockito.Mockito.*;
 public class AlgorithmChoiceTest {
 
     @Mock ExtensionHolder extensionHolder;
-    @Mock SBuildServer buildServer;
     @Mock SRunningBuild runningBuild;
     @Mock BuildStartContext buildStartContext;
     @Mock SBuildFeatureDescriptor featureDescriptor;
@@ -43,9 +41,18 @@ public class AlgorithmChoiceTest {
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
     }
 
+    private SBuildServer buildServerWithRootUrl(final String url) {
+        final var server = mock(SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(url);
+        return server;
+    }
+
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
+    }
+
     private JwtBuildStartContext buildContext() {
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var context = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var context = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
         final var triggeredBy = mock(TriggeredBy.class);

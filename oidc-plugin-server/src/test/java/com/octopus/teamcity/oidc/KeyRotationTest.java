@@ -1,5 +1,6 @@
 package com.octopus.teamcity.oidc;
 
+import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
@@ -94,8 +95,18 @@ public class KeyRotationTest {
 
     // --- helpers ---
 
+    private SBuildServer buildServerWithRootUrl(final String url) {
+        final var server = mock(SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(url);
+        return server;
+    }
+
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
+    }
+
     private JSONArray jwksKeys() throws Exception {
-        final var filter = new WellKnownPublicFilter(keyManager, mock(jetbrains.buildServer.serverSide.SBuildServer.class));
+        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"));
         final var request = mock(HttpServletRequest.class);
         final var response = mock(HttpServletResponse.class);
         final var writer = new StringWriter();

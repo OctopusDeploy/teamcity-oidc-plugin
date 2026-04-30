@@ -4,6 +4,7 @@ import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.ServerPaths;
+import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.users.SUser;
 import org.assertj.core.api.AssertionsForClassTypes;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,6 @@ import static org.mockito.Mockito.*;
 public class JwtBuildStartContextTest {
 
     @Mock ExtensionHolder extensionHolder;
-    @Mock SBuildServer buildServer;
     @Mock SRunningBuild runningBuild;
     @Mock BuildStartContext buildStartContext;
     @Mock SBuildFeatureDescriptor jwtBuildFeatureBuildFeatureDescriptor;
@@ -33,11 +33,21 @@ public class JwtBuildStartContextTest {
 
     @TempDir File tempDir;
 
+    private SBuildServer buildServerWithRootUrl(final String url) {
+        final var server = mock(SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(url);
+        return server;
+    }
+
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
+    }
+
     @Test
     public void testRegister() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var  keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://tc.example.com"), keyManager);
         jwtBuildStartContext.register();
         verify(extensionHolder, times(1)).registerExtension(any(), any(), any());
     }
@@ -45,8 +55,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void doNotUpdateParametersWhenBuildFeatureDisabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var  keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://tc.example.com"), keyManager);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(Collections.emptyList());
         jwtBuildStartContext.updateParameters(buildStartContext);
@@ -56,15 +66,14 @@ public class JwtBuildStartContextTest {
     @Test
     public void doesNotThrowWhenBuildIsTriggeredAutomaticallyWithNoUser() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
-        final var  keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var  jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of());
 
-        final var  triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(null);
         when(triggeredBy.getAsString()).thenReturn("Schedule Trigger");
@@ -77,9 +86,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void branchClaimIsTheBranchNameNotAnObjectReference() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -89,8 +97,8 @@ public class JwtBuildStartContextTest {
         when(branch.getName()).thenReturn("refs/heads/main");
         when(runningBuild.getBranch()).thenReturn(branch);
 
-        final var  triggeredBy = mock(TriggeredBy.class);
-        final var  user = mock(SUser.class);
+        final var triggeredBy = mock(TriggeredBy.class);
+        final var user = mock(SUser.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(user);
 
@@ -105,15 +113,14 @@ public class JwtBuildStartContextTest {
     @Test
     public void tokenTtlIsReadFromBuildFeatureParameters() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
         when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(Map.of("ttl_minutes", "5"));
 
-        final var  triggeredBy = mock(TriggeredBy.class);
+        final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
         when(triggeredBy.getUser()).thenReturn(mock(SUser.class));
 
@@ -130,9 +137,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void tokenTtlDefaultsTo10MinutesWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -155,9 +161,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void tokenTtlIsClamppedToOneDayMaximum() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -180,9 +185,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void doesNotInjectTokenWhenRootUrlIsNotHttps() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("http://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("http://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -196,9 +200,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void updateParametersWhenBuildFeatureEnabled() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -216,9 +219,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void audienceIsConfigurablePerBuildFeature() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -238,9 +240,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void audienceDefaultsToServerRootUrlWhenNotConfigured() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -260,9 +261,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void audienceDefaultsToServerRootUrlWhenAudienceParamIsBlank() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -282,9 +282,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void triggeredByIdClaimIncludedWhenUserIsAvailable() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -307,9 +306,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void onlyConfiguredClaimsAreIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -336,9 +334,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void claimsWithWhitespaceAroundCommasAreAllIncluded() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -365,9 +362,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void allClaimsIncludedWhenClaimsParamAbsent() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -394,9 +390,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void unknownClaimNamesAreIgnoredAndDoNotAppearInToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -423,9 +418,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void issuerClaimHasTrailingSlashStripped() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111/");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111/"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -445,9 +439,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void tokenTtlDefaultsTo10MinutesWhenTtlParamIsNotNumeric() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
@@ -470,9 +463,8 @@ public class JwtBuildStartContextTest {
     @Test
     public void jtiClaimIsUniquePerToken() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://localhost:8111");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, buildServer, keyManager);
+        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"), keyManager);
 
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));

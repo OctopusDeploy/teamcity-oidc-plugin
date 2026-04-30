@@ -26,7 +26,6 @@ import static org.mockito.Mockito.*;
 public class WellKnownPublicFilterTest {
 
     @Mock private ServerPaths serverPaths;
-    @Mock private SBuildServer buildServer;
     @Mock private HttpServletRequest request;
     @Mock private HttpServletResponse response;
     @Mock private FilterChain chain;
@@ -38,7 +37,17 @@ public class WellKnownPublicFilterTest {
     @BeforeEach
     void setUp() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), buildServer);
+        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), providerFor("https://tc.example.com"));
+    }
+
+    private SBuildServer buildServerWithRootUrl(final String url) {
+        final var server = mock(SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(url);
+        return server;
+    }
+
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
     }
 
     private StringWriter stubResponseWriter() throws Exception {
@@ -64,7 +73,6 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void servesOidcDiscoveryWithoutCallingChain() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
@@ -116,7 +124,8 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void trailingSlashesStrippedFromDiscoveryDocUrls() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com/");
+        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), providerFor("https://teamcity.example.com/"));
         final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
@@ -130,7 +139,6 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void discoveryDocIncludesAuthorizationEndpoint() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
@@ -140,7 +148,7 @@ public class WellKnownPublicFilterTest {
         final var json = parseJson(writer.toString());
         assertThat(json.containsKey("authorization_endpoint")).isTrue();
         assertThat(json.getAsString("authorization_endpoint"))
-                .startsWith("https://teamcity.example.com");
+                .startsWith("https://tc.example.com");
     }
 
     @Test
@@ -168,7 +176,6 @@ public class WellKnownPublicFilterTest {
 
     @Test
     public void discoveryResponseIncludesCorsWildcardHeader() throws Exception {
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");

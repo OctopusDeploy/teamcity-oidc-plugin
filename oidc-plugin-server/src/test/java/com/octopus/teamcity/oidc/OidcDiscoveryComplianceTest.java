@@ -32,18 +32,22 @@ import static org.mockito.Mockito.*;
 public class OidcDiscoveryComplianceTest {
 
     @Mock ServerPaths serverPaths;
-    @Mock jetbrains.buildServer.serverSide.SBuildServer buildServer;
 
     @TempDir File tempDir;
 
     private JSONObject discoveryDocument;
 
+    private OidcIssuerUrlProvider providerFor(final String issuerUrl) {
+        final var server = mock(jetbrains.buildServer.serverSide.SBuildServer.class);
+        lenient().when(server.getRootUrl()).thenReturn(issuerUrl);
+        return new OidcIssuerUrlProvider(server, new OidcSettingsManager(tempDir));
+    }
+
     @BeforeEach
     void fetchDiscoveryDocument() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, buildServer);
+        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://teamcity.example.com"));
 
         final var request = mock(HttpServletRequest.class);
         final var response = mock(HttpServletResponse.class);
