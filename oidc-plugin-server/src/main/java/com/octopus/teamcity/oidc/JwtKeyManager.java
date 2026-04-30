@@ -103,6 +103,11 @@ public class JwtKeyManager {
         return new RotationSettingsManager(keyDirectory);
     }
 
+    /** Spring factory-method: creates an {@link OidcSettingsManager} sharing the same key directory. */
+    public OidcSettingsManager createOidcSettingsManager() {
+        return new OidcSettingsManager(keyDirectory);
+    }
+
     public RSAKey getRsaKey() {
         return requireReady().rsa();
     }

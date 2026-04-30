@@ -24,14 +24,17 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
 
     @NotNull private final JwtKeyManager keyManager;
     @NotNull private final RotationSettingsManager settingsManager;
+    @NotNull private final OidcIssuerUrlProvider issuerUrlProvider;
 
     public JwtBuildFeatureAdminPage(@NotNull final PagePlaces pagePlaces,
                                     @NotNull final PluginDescriptor descriptor,
                                     @NotNull final JwtKeyManager keyManager,
-                                    @NotNull final RotationSettingsManager settingsManager) {
+                                    @NotNull final RotationSettingsManager settingsManager,
+                                    @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
         super(pagePlaces);
         this.keyManager = keyManager;
         this.settingsManager = settingsManager;
+        this.issuerUrlProvider = issuerUrlProvider;
         setPluginName("jwtPlugin");
         setIncludeUrl(descriptor.getPluginResourcesPath(PAGE));
         setTabTitle(TAB_TITLE);
@@ -42,12 +45,13 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     @Override
     public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
-        populateModel(model, keyManager, settingsManager);
+        populateModel(model, keyManager, settingsManager, issuerUrlProvider);
     }
 
     static void populateModel(@NotNull final Map<String, Object> model,
                               @NotNull final JwtKeyManager keyManager,
-                              @NotNull final RotationSettingsManager settingsManager) {
+                              @NotNull final RotationSettingsManager settingsManager,
+                              @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
         if (keyManager.isReady()) {
             final var jwks = new JWKSet(keyManager.getPublicKeys());
             final var jwksJson = jwks.toString();
@@ -85,6 +89,9 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
         } else {
             model.put("nextDue", null);
         }
+
+        model.put("overrideIssuerUrl", issuerUrlProvider.getOverrideUrl().orElse(""));
+        model.put("effectiveIssuerUrl", issuerUrlProvider.getIssuerUrl());
     }
 
     @Override

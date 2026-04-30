@@ -8,6 +8,11 @@
     <bean id="rotationSettingsManager"
           factory-bean="jwtKeyManager"
           factory-method="createRotationSettingsManager"/>
+    <bean id="oidcSettingsManager"
+          factory-bean="jwtKeyManager"
+          factory-method="createOidcSettingsManager"/>
+    <bean id="oidcIssuerUrlProvider" class="com.octopus.teamcity.oidc.OidcIssuerUrlProvider"/>
+    <bean id="oidcSettingsController" class="com.octopus.teamcity.oidc.OidcSettingsController"/>
     <bean id="keyRotationScheduler" class="com.octopus.teamcity.oidc.KeyRotationScheduler"/>
     <bean id="jwtBuildFeature" class="com.octopus.teamcity.oidc.JwtBuildFeature" />
     <bean id="jwtBuildStartContext" class="com.octopus.teamcity.oidc.JwtBuildStartContext" init-method="register" />

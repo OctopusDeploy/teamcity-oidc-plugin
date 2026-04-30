@@ -1,5 +1,6 @@
 package com.octopus.teamcity.oidc;
 
+import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.crypt.Encryption;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -23,22 +25,28 @@ public class JwtBuildFeatureAdminPageTest {
 
     @Mock private ServerPaths serverPaths;
     @Mock private Encryption encryption;
+    @Mock private SBuildServer buildServer;
 
     @TempDir private File tempDir;
 
     private JwtKeyManager keyManager;
     private RotationSettingsManager settingsManager;
+    private OidcSettingsManager oidcSettingsManager;
+    private OidcIssuerUrlProvider issuerUrlProvider;
 
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        lenient().when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         settingsManager = keyManager.createRotationSettingsManager();
+        oidcSettingsManager = keyManager.createOidcSettingsManager();
+        issuerUrlProvider = new OidcIssuerUrlProvider(buildServer, oidcSettingsManager);
     }
 
     private Map<String, Object> model() {
         final Map<String, Object> model = new HashMap<>();
-        JwtBuildFeatureAdminPage.populateModel(model, keyManager, settingsManager);
+        JwtBuildFeatureAdminPage.populateModel(model, keyManager, settingsManager, issuerUrlProvider);
         return model;
     }
 
@@ -63,7 +71,7 @@ public class JwtBuildFeatureAdminPageTest {
         // Not-ready manager: constructed but notifyTeamCityServerStartupCompleted() never called
         final var notReady = new JwtKeyManager(serverPaths, encryption);
         final Map<String, Object> model = new HashMap<>();
-        JwtBuildFeatureAdminPage.populateModel(model, notReady, settingsManager);
+        JwtBuildFeatureAdminPage.populateModel(model, notReady, settingsManager, issuerUrlProvider);
 
         assertThat(model.get("jwks").toString()).contains("startup in progress");
         assertThat(model.get("jwksBase64")).isEqualTo("");
@@ -136,5 +144,29 @@ public class JwtBuildFeatureAdminPageTest {
         settingsManager.save(new RotationSettings(true, "not a cron", Instant.parse("2000-01-01T00:00:00Z")));
         assertThat(model().get("nextDue")).isNotNull();
         assertThat(model().get("nextDue").toString()).endsWith("UTC");
+    }
+
+    // --- OIDC issuer URL ---
+
+    @Test
+    void overrideIssuerUrlIsEmptyWhenNotSet() {
+        assertThat(model().get("overrideIssuerUrl")).isEqualTo("");
+    }
+
+    @Test
+    void overrideIssuerUrlIsPopulatedWhenSet() {
+        oidcSettingsManager.save("https://custom.issuer.example.com");
+        assertThat(model().get("overrideIssuerUrl")).isEqualTo("https://custom.issuer.example.com");
+    }
+
+    @Test
+    void effectiveIssuerUrlFallsBackToServerRootUrlWhenNoOverride() {
+        assertThat(model().get("effectiveIssuerUrl")).isEqualTo("https://teamcity.example.com");
+    }
+
+    @Test
+    void effectiveIssuerUrlUsesOverrideWhenSet() {
+        oidcSettingsManager.save("https://custom.issuer.example.com");
+        assertThat(model().get("effectiveIssuerUrl")).isEqualTo("https://custom.issuer.example.com");
     }
 }
