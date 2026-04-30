@@ -72,10 +72,10 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
                 final var issuerUrl = issuerUrlProvider.getIssuerUrl();
                 LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
-                        + ", issuerUrl=" + issuerUrl + ", algorithm=" + sanitize(algorithmName));
+                        + ", issuerUrl=" + sanitize(issuerUrl) + ", algorithm=" + sanitize(algorithmName));
 
                 if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
-                    LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + issuerUrl);
+                    LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
                     return;
                 }
 
@@ -136,7 +136,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var serialized = signedJWT.serialize();
                 buildStartContext.addSharedParameter(JwtPasswordsProvider.JWT_PARAMETER_NAME, serialized);
                 LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
-                        + " (iss=" + issuerUrl + ", aud=" + sanitize(audience) + ", alg=" + sanitize(algorithmName)
+                        + " (iss=" + sanitize(issuerUrl) + ", aud=" + sanitize(audience) + ", alg=" + sanitize(algorithmName)
                         + ", kid=" + signedJWT.getHeader().getKeyID() + ")");
             } catch (final JOSEException e) {
                 LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);

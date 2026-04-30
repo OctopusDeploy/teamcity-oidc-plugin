@@ -23,7 +23,7 @@
       &nbsp;
       <input type="button" value="Save" onclick="jwtSaveOidcSettings()"/>
       &nbsp;
-      <input type="button" value="Clear" onclick="jwtClearOidcSettings()"/>
+      <input type="button" value="Reset to default" onclick="jwtClearOidcSettings()"/>
     </td>
   </tr>
   <tr>

@@ -87,8 +87,10 @@ public class OidcFlowIT {
     private static final Path TC_CACERTS_WITH_TEST_CA;
     static {
         try {
-            // Include TESTCONTAINERS_HOST_OVERRIDE (e.g. "docker" in DinD) as a SAN so
-            // that TLS verification succeeds when connecting via the mapped port host.
+            // All three aliases are always included as SANs: the Caddy container always
+            // gets all three network aliases (CADDY_ALIAS, TC_ALT_ALIAS, OCTOPUS_CADDY_ALIAS)
+            // regardless of environment. TESTCONTAINERS_HOST_OVERRIDE adds an extra SAN
+            // so TLS verification also succeeds via the mapped port host in DinD.
             final var tcHostOverride = System.getenv("TESTCONTAINERS_HOST_OVERRIDE");
             TLS = (tcHostOverride != null && !tcHostOverride.isBlank())
                     ? TlsCertificateGenerator.generate(CADDY_ALIAS, TC_ALT_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost", tcHostOverride)
