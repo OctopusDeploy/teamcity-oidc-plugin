@@ -39,6 +39,7 @@ public class OidcFlowIT {
 
     private static final String TC_INTERNAL_ALIAS = "teamcity";
     private static final String CADDY_ALIAS = "teamcity-tls";
+    private static final String TC_ALT_ALIAS = "teamcity-public-tls";
     private static final String OCTOPUS_CADDY_ALIAS = "octopus-tls";
     private static final String TC_HTTPS_BASE = "https://teamcity-tls";
 
@@ -90,8 +91,8 @@ public class OidcFlowIT {
             // that TLS verification succeeds when connecting via the mapped port host.
             final var tcHostOverride = System.getenv("TESTCONTAINERS_HOST_OVERRIDE");
             TLS = (tcHostOverride != null && !tcHostOverride.isBlank())
-                    ? TlsCertificateGenerator.generate(CADDY_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost", tcHostOverride)
-                    : TlsCertificateGenerator.generate(CADDY_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost");
+                    ? TlsCertificateGenerator.generate(CADDY_ALIAS, TC_ALT_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost", tcHostOverride)
+                    : TlsCertificateGenerator.generate(CADDY_ALIAS, TC_ALT_ALIAS, OCTOPUS_CADDY_ALIAS, "localhost");
             TC_CACERTS_WITH_TEST_CA = buildCacertsWithTestCa(TLS.caCert());
         } catch (final Exception e) {
             throw new RuntimeException("Failed to prepare TC runtime files", e);
@@ -202,7 +203,7 @@ public class OidcFlowIT {
     @Container
     static final GenericContainer<?> caddy = new GenericContainer<>(CADDY_IMAGE)
             .withNetwork(network)
-            .withNetworkAliases(CADDY_ALIAS, OCTOPUS_CADDY_ALIAS)
+            .withNetworkAliases(CADDY_ALIAS, TC_ALT_ALIAS, OCTOPUS_CADDY_ALIAS)
             .withExposedPorts(443, 8443)
             .withCopyFileToContainer(
                     MountableFile.forClasspathResource("Caddyfile"),
@@ -926,7 +927,7 @@ public class OidcFlowIT {
      *   JAVA_HOME=$(jenv prefix 21) \
      *   mvn verify -pl integration-tests -Dit.test=OidcFlowIT#manualTestingPause -Dmanual
      * Add to /etc/hosts (once):
-     *   127.0.0.1  teamcity-tls
+     *   127.0.0.1  teamcity-tls  teamcity-public-tls  octopus-tls
      * Then browse to https://teamcity-tls:<port> printed below.
      * Accept the cert warning (self-signed CA), log in with empty username + the token below.
      */
@@ -939,6 +940,7 @@ public class OidcFlowIT {
 
         final int caddyPort = caddy.getMappedPort(443);
         final var httpsUrl = "https://teamcity-tls:" + caddyPort;
+        final var altHttpsUrl = "https://teamcity-public-tls:" + caddyPort;
         // TC runs inside Docker — use the internal Caddy port (8443), not the host-mapped port.
         final var octopusTlsUrl = "https://octopus-tls:8443";
         // superUserAuthHeader is "Basic <base64(:token)>" — decode and split on ":" to get the token
@@ -950,6 +952,7 @@ public class OidcFlowIT {
         System.out.println("║  Stack is ready for manual testing                               ║");
         System.out.println("║                                                                  ║");
         System.out.printf( "║  TeamCity:    %-51s║%n", httpsUrl);
+        System.out.printf( "║  Alt URL:     %-51s║%n", altHttpsUrl);
         System.out.printf( "║  Login:       %-51s║%n", "(empty username)");
         System.out.printf( "║  Password:    %-51s║%n", decodedToken);
         System.out.println("║                                                                  ║");
@@ -958,7 +961,8 @@ public class OidcFlowIT {
         System.out.printf( "║  API key:     %-51s║%n", OCTOPUS_ADMIN_API_KEY);
         System.out.printf( "║  Octopus ExternalId (JWT aud): %-35s║%n", octopusExternalId);
         System.out.println("║                                                                  ║");
-        System.out.println("║  /etc/hosts:  127.0.0.1  teamcity-tls  octopus-tls               ║");
+        System.out.println("║  /etc/hosts:  127.0.0.1  teamcity-tls  teamcity-public-tls       ║");
+        System.out.println("║               127.0.0.1  octopus-tls                             ║");
         System.out.println("║  Cert warning: accept in browser (self-signed CA)                ║");
         System.out.println("║                                                                  ║");
         System.out.println("║  Press Ctrl+C to stop all containers                             ║");

@@ -49,7 +49,7 @@ The banner prints the TeamCity URL, super user token, Octopus URL, and API key.
 Add to `/etc/hosts` (once):
 
 ```
-127.0.0.1  teamcity-tls
+127.0.0.1  teamcity-tls  teamcity-public-tls  octopus-tls
 ```
 
 ### Logging in via Chrome MCP
