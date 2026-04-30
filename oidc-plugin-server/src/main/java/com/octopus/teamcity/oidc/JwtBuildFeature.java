@@ -12,7 +12,6 @@ public class JwtBuildFeature extends BuildFeature {
 
     static final String FEATURE_TYPE = "oidc-plugin";
 
-    private static volatile SBuildServer staticServer;
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
 
     private final PluginDescriptor pluginDescriptor;
@@ -23,16 +22,12 @@ public class JwtBuildFeature extends BuildFeature {
                            @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
         this.pluginDescriptor = pluginDescriptor;
         this.issuerUrlProvider = issuerUrlProvider;
-        staticServer = buildServer;
         staticIssuerUrlProvider = issuerUrlProvider;
     }
 
     /** Used by the edit JSP to check the issuer URL without Spring context access. */
     public static boolean isRootUrlHttps() {
-        if (staticIssuerUrlProvider != null) {
-            return OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
-        }
-        return staticServer != null && OidcUrlUtils.isHttpsUrl(staticServer.getRootUrl());
+        return staticIssuerUrlProvider != null && OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
     }
 
     @NotNull

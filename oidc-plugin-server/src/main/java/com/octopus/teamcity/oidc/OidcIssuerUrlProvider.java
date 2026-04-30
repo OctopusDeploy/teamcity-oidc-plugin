@@ -17,12 +17,15 @@ public class OidcIssuerUrlProvider {
     }
 
     public @NotNull String getIssuerUrl() {
-        return settingsManager.load()
-                .map(OidcUrlUtils::normalizeRootUrl)
+        return loadOverride()
                 .orElseGet(() -> OidcUrlUtils.normalizeRootUrl(buildServer.getRootUrl()));
     }
 
     public @NotNull Optional<String> getOverrideUrl() {
+        return loadOverride();
+    }
+
+    private Optional<String> loadOverride() {
         return settingsManager.load().map(OidcUrlUtils::normalizeRootUrl);
     }
 }
