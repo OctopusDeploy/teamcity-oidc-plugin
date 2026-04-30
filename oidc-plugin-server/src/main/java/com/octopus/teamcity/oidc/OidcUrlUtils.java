@@ -1,5 +1,6 @@
 package com.octopus.teamcity.oidc;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class OidcUrlUtils {
@@ -18,8 +19,8 @@ public final class OidcUrlUtils {
     }
 
     /** Strips trailing slashes from a root URL. Cloud providers compare issuer by exact string. */
-    public static String normalizeRootUrl(@Nullable final String url) {
-        if (url == null) return null;
+    public static @NotNull String normalizeRootUrl(@Nullable final String url) {
+        if (url == null) return "";
         return url.replaceAll("/+$", "");
     }
 }

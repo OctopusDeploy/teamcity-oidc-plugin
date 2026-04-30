@@ -53,8 +53,7 @@ public class OidcUrlUtilsTest {
     }
 
     @Test
-    public void normalizeRootUrlReturnsNullForNull() {
-        //noinspection ConstantValue
-        assertThat(OidcUrlUtils.normalizeRootUrl(null)).isNull();
+    public void normalizeRootUrlReturnsEmptyStringForNull() {
+        assertThat(OidcUrlUtils.normalizeRootUrl(null)).isEmpty();
     }
 }
