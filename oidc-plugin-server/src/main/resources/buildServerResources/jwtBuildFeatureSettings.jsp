@@ -12,6 +12,36 @@
     }
 %>
 
+<h2>OIDC Issuer URL</h2>
+
+<table>
+  <tr>
+    <td>
+      <label for="overrideIssuerUrl">Issuer base URL override:</label><br/>
+      <input type="text" id="overrideIssuerUrl" size="50" value="<c:out value="${overrideIssuerUrl}"/>"/>
+      &nbsp;
+      <input type="button" value="Save" onclick="jwtSaveOidcSettings()"/>
+      &nbsp;
+      <input type="button" value="Clear" onclick="jwtClearOidcSettings()"/>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span class="smallNote">
+        Leave blank to use the TeamCity root URL.
+        Set this if TeamCity is behind a reverse proxy and the public-facing URL
+        differs from the root URL.<br/>
+        Effective issuer URL: <strong><c:out value="${effectiveIssuerUrl}"/></strong>
+      </span>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <span id="jwtOidcSettingsResult" style="display:none"></span>
+    </td>
+  </tr>
+</table>
+
 <h2>Key Rotation</h2>
 
 <table>
@@ -108,6 +138,29 @@
     el.textContent = message;
     el.style.color = ok ? 'green' : 'red';
     el.style.display = 'inline';
+  }
+
+  function jwtSaveOidcSettings() {
+    const url = document.getElementById('overrideIssuerUrl').value;
+    jwtAdminPost(jwtContextPath + '/admin/jwtOidcSettings.html',
+      'overrideIssuerUrl=' + encodeURIComponent(url),
+      function(data) {
+        jwtShowResult('jwtOidcSettingsResult', data.ok, data.message);
+        if (data.ok) {
+          document.getElementById('overrideIssuerUrl').value = url.trim().replace(/\/+$/, '');
+        }
+      },
+      function() { jwtShowResult('jwtOidcSettingsResult', false, 'Request failed'); }
+    );
+  }
+
+  function jwtClearOidcSettings() {
+    document.getElementById('overrideIssuerUrl').value = '';
+    jwtAdminPost(jwtContextPath + '/admin/jwtOidcSettings.html',
+      'overrideIssuerUrl=',
+      function(data) { jwtShowResult('jwtOidcSettingsResult', data.ok, data.message); },
+      function() { jwtShowResult('jwtOidcSettingsResult', false, 'Request failed'); }
+    );
   }
 </script>
 
