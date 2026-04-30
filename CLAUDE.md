@@ -103,6 +103,21 @@ passed into these — it produces double-escaped output.
 Raw HTML contexts (plain `<input>`, `<span>` content, `data-` attributes) are **not**
 automatically escaped and still require `fn:escapeXml()` explicitly.
 
+## Commits and Pull Requests
+
+Do not use conventional commit prefixes (e.g. `fix:`, `feat:`, `chore:`) in commit messages or PR titles.
+
+## Pull Request Descriptions
+
+PR descriptions must always include:
+
+- **Background**: The high level of why the change is needed — the user-facing problem or motivation
+- **Details**: The details of the problem
+- **Results**: What was changed and how it fixes the problem
+- **Screenshots**: Include before/after screenshots where the change affects the UI. Screenshots must be uploaded by the human — Claude cannot upload binary files to GitHub. Take the screenshots (saving them to `/tmp/`), tell the human the file paths, and ask them to drag-and-drop the images into the PR description on GitHub.
+
+Create PRs in draft, so that human review is required before saying they are ready.
+
 ## Do not commit
 
 - `OIDC-PLAN.md`
