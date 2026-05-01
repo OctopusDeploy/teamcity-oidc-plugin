@@ -292,7 +292,7 @@
   }
 
   function jwtRefreshKeyTable() {
-    fetch(jwtContextPath + '/.well-known/jwks.json')
+    fetch(jwtContextPath + '/.well-known/jwks.json', { cache: 'no-store' })
       .then(function(r) { return r.json(); })
       .then(function(jwks) { jwtRenderKeys(jwks.keys || []); })
       .catch(function() {
