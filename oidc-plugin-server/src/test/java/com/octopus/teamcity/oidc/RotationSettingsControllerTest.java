@@ -71,7 +71,7 @@ public class RotationSettingsControllerTest {
         final var saved = mgr.load();
         assertThat(saved.enabled()).isTrue();
         assertThat(saved.cronSchedule()).isEqualTo("0 0 2 * * *");
-        assertThat(writer.toString()).contains("\"ok\":true");
+        assertThat(writer.toString()).contains("\"state\":\"ok\"");
     }
 
     @Test
@@ -107,7 +107,7 @@ public class RotationSettingsControllerTest {
             controller(mgr).doHandle(request, response);
         }
 
-        assertThat(writer.toString()).contains("\"ok\":false");
+        assertThat(writer.toString()).contains("\"state\":\"error\"");
         assertThat(mgr.load().cronSchedule()).isEqualTo(RotationSettings.DEFAULT_SCHEDULE);
     }
 

@@ -57,24 +57,24 @@ public class RotationSettingsController extends BaseController {
         final var user = SessionUser.getUser(request);
         if (user == null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            writeJson(response, false, "Not authenticated");
+            writeJson(response, "error", "Not authenticated");
             return null;
         }
         if (!user.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            writeJson(response, false, "Access denied");
+            writeJson(response, "error", "Access denied");
             return null;
         }
 
         final var cronSchedule = request.getParameter("cronSchedule");
         if (cronSchedule == null || cronSchedule.isBlank()) {
-            writeJson(response, false, "Missing required parameter: cronSchedule");
+            writeJson(response, "error", "Missing required parameter: cronSchedule");
             return null;
         }
         try {
             CronExpression.parse(cronSchedule);
         } catch (final IllegalArgumentException e) {
-            writeJson(response, false, "Invalid cron schedule: " + e.getMessage());
+            writeJson(response, "error", "Invalid cron schedule: " + e.getMessage());
             return null;
         }
 
@@ -82,7 +82,7 @@ public class RotationSettingsController extends BaseController {
         settingsManager.save(enabled, cronSchedule);
 
         LOG.info("JWT plugin: rotation settings updated (enabled=" + enabled + ", schedule=" + sanitize(cronSchedule) + ")");
-        writeJson(response, true, "Settings saved");
+        writeJson(response, "ok", "Settings saved");
         return null;
     }
 
@@ -90,9 +90,9 @@ public class RotationSettingsController extends BaseController {
         return s == null ? "" : s.replaceAll("[\\r\\n\\t]", "_");
     }
 
-    private static void writeJson(final HttpServletResponse response, final boolean ok, final String message) throws IOException {
+    private static void writeJson(final HttpServletResponse response, final String state, final String message) throws IOException {
         final var json = new JSONObject();
-        json.put("ok", ok);
+        json.put("state", state);
         json.put("message", message);
         response.getWriter().write(json.toJSONString());
     }

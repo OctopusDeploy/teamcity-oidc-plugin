@@ -151,7 +151,6 @@ public class OidcSettingsController extends BaseController {
 
     private static void writeJson(final HttpServletResponse response, final String state, final String message) throws IOException {
         final var json = new JSONObject();
-        json.put("ok", !"error".equals(state));
         json.put("state", state);
         json.put("message", message);
         response.getWriter().write(json.toJSONString());

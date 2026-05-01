@@ -134,7 +134,7 @@
     el.style.display = 'inline-flex';
   }
 
-  function jwtAdminPost(url, body, onSuccess, onError) {
+  const jwtAdminPost = (url, body, onSuccess, onError) => {
     const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
     const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
     fetch(url, {
@@ -145,59 +145,55 @@
       },
       body: body
     })
-    .then(function(r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+    .then(r => { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
     .then(onSuccess)
     .catch(onError);
-  }
+  };
 
-  function jwtSaveOidcSettings() {
+  const jwtSaveOidcSettings = () => {
     const url = document.getElementById('overrideIssuerUrl').value;
     jwtAdminPost(jwtContextPath + '/admin/jwtOidcSettings.html',
       'overrideIssuerUrl=' + encodeURIComponent(url),
-      function(data) {
-        const state = data.state || (data.ok ? 'ok' : 'error');
-        jwtShowResult('jwtOidcSettingsResult', state, data.message);
-        if (data.ok) {
+      data => {
+        jwtShowResult('jwtOidcSettingsResult', data.state, data.message);
+        if (data.state !== 'error') {
           document.getElementById('overrideIssuerUrl').value = url.trim().replace(/\/+$/, '');
         }
       },
-      function() { jwtShowResult('jwtOidcSettingsResult', 'error', 'Request failed'); }
+      () => jwtShowResult('jwtOidcSettingsResult', 'error', 'Request failed')
     );
-  }
+  };
 
-  function jwtClearOidcSettings() {
+  const jwtClearOidcSettings = () => {
     document.getElementById('overrideIssuerUrl').value = '';
     jwtAdminPost(jwtContextPath + '/admin/jwtOidcSettings.html',
       'overrideIssuerUrl=',
-      function(data) {
-        const state = data.state || (data.ok ? 'ok' : 'error');
-        jwtShowResult('jwtOidcSettingsResult', state, data.message);
-      },
-      function() { jwtShowResult('jwtOidcSettingsResult', 'error', 'Request failed'); }
+      data => jwtShowResult('jwtOidcSettingsResult', data.state, data.message),
+      () => jwtShowResult('jwtOidcSettingsResult', 'error', 'Request failed')
     );
-  }
+  };
 
-  function jwtSaveRotationSettings() {
+  const jwtSaveRotationSettings = () => {
     const enabled = document.getElementById('rotationEnabled').checked;
     const schedule = document.getElementById('cronSchedule').value;
     jwtAdminPost(jwtContextPath + '/admin/jwtRotationSettings.html',
       'enabled=' + enabled + '&cronSchedule=' + encodeURIComponent(schedule),
-      function(data) { jwtShowResult('jwtSaveResult', data.ok ? 'ok' : 'error', data.message); },
-      function() { jwtShowResult('jwtSaveResult', 'error', 'Request failed'); }
+      data => jwtShowResult('jwtSaveResult', data.state, data.message),
+      () => jwtShowResult('jwtSaveResult', 'error', 'Request failed')
     );
-  }
+  };
 
-  function jwtRotateNow() {
+  const jwtRotateNow = () => {
     jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
-      function(data) {
-        const ok = data.status === 'rotated';
-        jwtShowResult('jwtRotateResult', ok ? 'ok' : 'error', ok ? 'Keys rotated successfully' : (data.message || 'Rotation failed'));
-        if (ok && data.warning) {
+      data => {
+        const rotated = data.status === 'rotated';
+        jwtShowResult('jwtRotateResult', rotated ? 'ok' : 'error', rotated ? 'Keys rotated successfully' : (data.message || 'Rotation failed'));
+        if (rotated && data.warning) {
           jwtShowResult('jwtRotateWarning', 'warn', data.warning);
         } else {
           document.getElementById('jwtRotateWarning').style.display = 'none';
         }
-        if (ok) {
+        if (rotated) {
           const now = new Date();
           const formatted = now.getUTCFullYear() + '-' +
             String(now.getUTCMonth() + 1).padStart(2, '0') + '-' +
@@ -208,17 +204,15 @@
           jwtRefreshKeyTable();
         }
       },
-      function() { jwtShowResult('jwtRotateResult', 'error', 'Request failed'); }
+      () => jwtShowResult('jwtRotateResult', 'error', 'Request failed')
     );
-  }
+  };
 
-  function jwtEscape(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
+  const jwtEscape = str => String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
   function jwtHighlightJson(json) {
     // " is intentionally not escaped — the regex patterns below depend on literal " delimiters,
@@ -229,12 +223,10 @@
       .replace(/>/g, '&gt;');
     return escaped
       .replace(/"([^"]+)"(\s*:)/g, '<span class="jwt-j-key">"$1"</span>$2')
-      .replace(/:\s*"([^"]*)"/g, function(m, v) {
-        return ': <span class="jwt-j-str">"' + v + '"</span>';
-      });
+      .replace(/:\s*"([^"]*)"/g, (m, v) => ': <span class="jwt-j-str">"' + v + '"</span>');
   }
 
-  function jwtRenderKeys(keys) {
+  const jwtRenderKeys = keys => {
     document.getElementById('jwtKeyCount').textContent =
       keys.length + ' active key' + (keys.length !== 1 ? 's' : '');
     document.getElementById('jwtJwksDownload').style.display = '';
@@ -244,7 +236,7 @@
     tbody.innerHTML = '';
     const seenAlgs = new Set();
 
-    keys.forEach(function(key) {
+    keys.forEach(key => {
       const alg = key.alg || key.kty || '?';
       const status = seenAlgs.has(alg) ? 'retiring' : 'current';
       seenAlgs.add(alg);
@@ -257,7 +249,7 @@
       dataRow.className = 'jwt-data-row';
       const created = key.iat
         ? new Date(key.iat * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
-        : '—';
+        : '\u2014';
       dataRow.innerHTML =
         '<td class="jwt-expand-cell"><span class="jwt-expand-icon">&#9658;</span></td>' +
         '<td class="jwt-monospace">' + jwtEscape(key.kid || '') + '</td>' +
@@ -280,7 +272,7 @@
       jsonRow.appendChild(jsonCell);
 
       const expandIcon = dataRow.querySelector('.jwt-expand-icon');
-      dataRow.addEventListener('click', function() {
+      dataRow.addEventListener('click', () => {
         const open = jsonRow.style.display !== 'none';
         jsonRow.style.display = open ? 'none' : '';
         expandIcon.classList.toggle('jwt-open', !open);
@@ -291,14 +283,14 @@
     });
   }
 
-  function jwtRefreshKeyTable() {
+  const jwtRefreshKeyTable = () => {
     fetch(jwtContextPath + '/.well-known/jwks.json', { cache: 'no-store' })
-      .then(function(r) { return r.json(); })
-      .then(function(jwks) { jwtRenderKeys(jwks.keys || []); })
-      .catch(function() {
+      .then(r => r.json())
+      .then(jwks => jwtRenderKeys(jwks.keys || []))
+      .catch(() => {
         document.getElementById('jwtKeyCount').textContent = 'Could not refresh JWKS data';
       });
-  }
+  };
 
   (function() {
     const raw = '${jwksBase64}';
