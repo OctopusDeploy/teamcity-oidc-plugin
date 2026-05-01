@@ -91,7 +91,7 @@ public class KeyRotationController extends BaseController {
             final var result = new JSONObject();
             result.put("status", "rotated");
             if (secondsSinceLast < MIN_ROTATION_GAP_SECONDS) {
-                final var warning = "Rotated again after only " + secondsSinceLast + "s — verifiers "
+                final var warning = "Warning: Keys were rotated again after only " + secondsSinceLast + "s — verifiers "
                         + "with cached JWKS may fail to validate tokens signed by the previous key "
                         + "until their cache refreshes (up to " + MIN_ROTATION_GAP_SECONDS + "s).";
                 result.put("warning", warning);
