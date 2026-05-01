@@ -251,9 +251,12 @@
     document.getElementById('jwtKeyTable').style.display = '';
 
     const tbody = document.getElementById('jwtKeyTableBody');
+    const seenAlgs = new Set();
 
-    keys.forEach(function(key, idx) {
-      const status = idx === 0 ? 'current' : 'retiring';
+    keys.forEach(function(key) {
+      const alg = key.alg || key.kty || '?';
+      const status = seenAlgs.has(alg) ? 'retiring' : 'current';
+      seenAlgs.add(alg);
       const type = key.kty === 'EC'    ? 'EC ' + (key.crv || '?')
                  : key.alg === 'RS256' ? 'RSA-2048'
                  : key.alg === 'RS384' ? 'RSA-3072'
