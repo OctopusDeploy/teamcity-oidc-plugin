@@ -11,6 +11,10 @@
     max-width: 680px;
 }
 
+.jwt-intro + .jwt-intro {
+    margin-top: -16px;
+}
+
 .jwt-sec {
     margin-bottom: 30px;
 }
