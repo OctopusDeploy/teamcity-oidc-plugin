@@ -40,7 +40,7 @@
           <input class="jwt-inp jwt-inp-url" type="text" id="overrideIssuerUrl"
                  value="<c:out value="${overrideIssuerUrl}"/>" placeholder="https://ci.example.com"/>
           <button class="jwt-btn jwt-btn-primary" type="button" onclick="jwtSaveOidcSettings()">Save</button>
-          <button class="jwt-btn jwt-btn-danger" type="button" onclick="jwtClearOidcSettings()">Clear</button>
+          <button class="jwt-btn jwt-btn-danger" type="button" onclick="jwtClearOidcSettings()">Reset to default</button>
         </div>
         <span class="jwt-hint">Leave blank to use the TeamCity root URL. Set this only if TeamCity is behind a reverse proxy and the public-facing URL differs from the root URL.</span>
         <span id="jwtOidcSettingsResult" style="display:none"></span>
@@ -126,7 +126,7 @@
 
   function jwtShowResult(elementId, state, message) {
     const el = document.getElementById(elementId);
-    const prefix = state === 'ok' ? '✓ ' : state === 'warn' ? '⚠ ' : '✗ ';
+    const prefix = state === 'ok' ? '\u2713 ' : state === 'warn' ? '\u26a0 ' : '\u2717 ';
     el.textContent = prefix + message;
     el.className = 'jwt-msg jwt-msg-' + state;
     el.style.display = 'inline-flex';
@@ -190,7 +190,7 @@
       function(data) {
         const ok = data.status === 'rotated';
         const msg = ok
-          ? 'Keys rotated successfully' + (data.warning ? ' ⚠ ' + data.warning : '')
+          ? 'Keys rotated successfully' + (data.warning ? ' \u26a0 ' + data.warning : '')
           : (data.message || 'Rotation failed');
         jwtShowResult('jwtRotateResult', ok ? 'ok' : 'error', msg);
         if (ok) {
@@ -267,7 +267,7 @@
         '<td>' + jwtEscape(type) + '</td>' +
         '<td>' + jwtEscape(key.use || 'sig') + '</td>' +
         '<td><span class="jwt-badge jwt-badge-' + status + '">' + status + '</span></td>' +
-        '<td><span class="jwt-expand-link">▶ View JSON</span></td>';
+        '<td class="jwt-expand-cell"><span class="jwt-expand-icon">&#9658;</span></td>';
 
       const jsonRow = document.createElement('tr');
       jsonRow.className = 'jwt-json-row';
@@ -281,11 +281,11 @@
       jsonCell.appendChild(pre);
       jsonRow.appendChild(jsonCell);
 
-      const expandBtn = dataRow.querySelector('.jwt-expand-link');
-      expandBtn.addEventListener('click', function() {
+      const expandIcon = dataRow.querySelector('.jwt-expand-icon');
+      dataRow.addEventListener('click', function() {
         const open = jsonRow.style.display !== 'none';
         jsonRow.style.display = open ? 'none' : '';
-        expandBtn.textContent = open ? '▶ View JSON' : '▼ Hide JSON';
+        expandIcon.classList.toggle('jwt-open', !open);
       });
 
       tbody.appendChild(dataRow);

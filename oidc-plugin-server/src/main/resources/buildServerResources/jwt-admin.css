@@ -199,6 +199,10 @@
     vertical-align: middle;
 }
 
+.jwt-data-row {
+    cursor: pointer;
+}
+
 .jwt-data-row:hover td {
     background: #f7faff;
 }
@@ -235,17 +239,25 @@
 .jwt-badge-current  { background: #e6f4ea; color: #1e6b3a; }
 .jwt-badge-retiring { background: #fef3cd; color: #856404; }
 
-.jwt-expand-link {
-    font-size: 11px;
-    color: #3d7ab5;
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
+.jwt-expand-cell {
+    width: 28px;
+    text-align: center;
 }
 
-.jwt-expand-link:hover {
-    color: #1d4f8f;
-    text-decoration: underline;
+.jwt-expand-icon {
+    font-size: 10px;
+    color: #999;
+    display: inline-block;
+    transition: transform 0.15s ease;
+    user-select: none;
+}
+
+.jwt-data-row:hover .jwt-expand-icon {
+    color: #3d7ab5;
+}
+
+.jwt-expand-icon.jwt-open {
+    transform: rotate(90deg);
 }
 
 .jwt-monospace {
