@@ -79,7 +79,7 @@ public class KeyRotationScheduler extends BuildServerAdapter {
 
         final var lastRotated = settings.lastRotatedAt() != null
                 ? settings.lastRotatedAt().atZone(ZoneOffset.UTC).toLocalDateTime()
-                : LocalDateTime.ofEpochSecond(0, 0, ZoneOffset.UTC);
+                : LocalDateTime.now(ZoneOffset.UTC);
 
         final var nextDue = cron.next(lastRotated);
         if (nextDue == null) {
