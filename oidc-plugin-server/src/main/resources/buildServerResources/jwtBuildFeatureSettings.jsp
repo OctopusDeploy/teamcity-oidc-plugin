@@ -15,7 +15,7 @@
 <div class="jwt-admin">
 
   <p class="jwt-intro">
-    Turns TeamCity into an OIDC provider. During each build, this plugin issue a short-lived,
+    Turns TeamCity into an OIDC provider. During each build, this plugin issues a short-lived,
     cryptographically signed JWT that cloud services can verify against the public keys below &mdash;
     so your builds can authenticate without storing long-lived credentials anywhere.
   </p>
