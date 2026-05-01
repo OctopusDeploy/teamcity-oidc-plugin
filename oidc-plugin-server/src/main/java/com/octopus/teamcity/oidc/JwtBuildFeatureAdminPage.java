@@ -77,7 +77,7 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
                 final var cron = CronExpression.parse(settings.cronSchedule());
                 final var lastInstant = settings.lastRotatedAt() != null
                         ? settings.lastRotatedAt()
-                        : java.time.Instant.EPOCH;
+                        : java.time.Instant.now();
                 final var last = lastInstant.atZone(ZoneOffset.UTC).toLocalDateTime();
                 final var next = cron.next(last);
                 model.put("nextDue", next != null

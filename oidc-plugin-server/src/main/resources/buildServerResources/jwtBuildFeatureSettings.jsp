@@ -78,7 +78,7 @@
           <button class="jwt-btn jwt-btn-primary" type="button" onclick="jwtSaveRotationSettings()">Save</button>
           <button class="jwt-btn" type="button" onclick="jwtRotateNow()">Rotate now</button>
         </div>
-        <span class="jwt-hint">6-field cron (sec min hr day month weekday) — e.g. <code>0 0 3 * * SUN</code> = Sundays at 03:00 UTC</span>
+        <span class="jwt-hint">6-field cron (sec min hr day month weekday) &mdash; e.g. <code>0 0 3 * * SUN</code> = Sundays at 03:00 UTC</span>
         <span id="jwtSaveResult" style="display:none"></span>
         <span id="jwtRotateResult" style="display:none"></span>
         <span id="jwtRotateWarning" style="display:none"></span>
@@ -89,7 +89,7 @@
       <div class="jwt-field-label"></div>
       <div class="jwt-field-body">
         <span class="jwt-status-line">
-          Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span><c:if test="${not empty nextDue}"> &nbsp;·&nbsp; Next due: <c:out value="${nextDue}"/></c:if>
+          Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span><c:if test="${not empty nextDue}"> &nbsp;&middot;&nbsp; Next due: <c:out value="${nextDue}"/></c:if>
         </span>
       </div>
     </div>
