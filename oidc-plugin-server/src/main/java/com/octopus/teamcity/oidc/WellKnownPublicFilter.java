@@ -21,11 +21,6 @@ public class WellKnownPublicFilter implements Filter {
     static final String JWKS_PATH = "/.well-known/jwks.json";
     static final String OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration";
     static final String AUTHORIZE_PATH = "/oidc/authorize";
-
-    // DelegatingFilter has two registries: an unnamed CopyOnWriteArrayList with no public removal
-    // API, and a named Map that supports unregister. Using the named registration lets the plugin
-    // unregister cleanly on reload — without it, every plugin upgrade leaves a ghost filter behind
-    // that handles requests with stale references to the previous Spring context.
     static final String DELEGATE_NAME = "octopus-oidc-well-known";
 
     static final long JWKS_MAX_AGE_SECONDS = 60L;
