@@ -22,6 +22,6 @@
     <bean id="jwtTestController" class="com.octopus.teamcity.oidc.JwtTestController" destroy-method="destroy"/>
     <bean id="keyRotationController" class="com.octopus.teamcity.oidc.KeyRotationController"/>
     <bean id="rotationSettingsController" class="com.octopus.teamcity.oidc.RotationSettingsController"/>
-    <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter"/>
+    <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter" destroy-method="destroy"/>
 </beans>
 

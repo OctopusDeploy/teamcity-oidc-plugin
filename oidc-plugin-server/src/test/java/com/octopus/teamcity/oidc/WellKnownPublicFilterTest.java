@@ -2,6 +2,7 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import jetbrains.buildServer.web.DelegatingFilter;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.servlet.FilterChain;
@@ -183,6 +185,34 @@ public class WellKnownPublicFilterTest {
         filter.doFilter(request, response, chain);
 
         verify(response).setHeader("Access-Control-Allow-Origin", "*");
+    }
+
+    @Test
+    public void discoveryDocDoesNotEscapeForwardSlashesInUrls() throws Exception {
+        final var writer = stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(writer.toString()).doesNotContain("\\/");
+        assertThat(writer.toString()).contains("\"https://tc.example.com\"");
+    }
+
+    @Test
+    public void registersWithNamedDelegateAndUnregistersOnDestroy() throws Exception {
+        try (final MockedStatic<DelegatingFilter> mocked = mockStatic(DelegatingFilter.class)) {
+            final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+            final var f = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"));
+
+            // Must use the named overload — the unnamed overload registers into a list with no
+            // unregister API, leaving a ghost filter behind on plugin reload.
+            mocked.verify(() -> DelegatingFilter.registerDelegate(WellKnownPublicFilter.DELEGATE_NAME, f));
+            mocked.verify(() -> DelegatingFilter.registerDelegate(any(javax.servlet.Filter.class)), never());
+
+            f.destroy();
+            mocked.verify(() -> DelegatingFilter.unregisterDelegate(WellKnownPublicFilter.DELEGATE_NAME));
+        }
     }
 
     @Test

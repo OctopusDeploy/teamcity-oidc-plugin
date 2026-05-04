@@ -4,6 +4,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import jetbrains.buildServer.web.DelegatingFilter;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
+import net.minidev.json.JSONStyle;
 import org.jetbrains.annotations.NotNull;
 
 import javax.servlet.*;
@@ -20,6 +21,7 @@ public class WellKnownPublicFilter implements Filter {
     static final String JWKS_PATH = "/.well-known/jwks.json";
     static final String OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration";
     static final String AUTHORIZE_PATH = "/oidc/authorize";
+    static final String DELEGATE_NAME = "octopus-oidc-well-known";
 
     static final long JWKS_MAX_AGE_SECONDS = 60L;
     static final long JWKS_STALE_WHILE_REVALIDATE_SECONDS = 60L;
@@ -31,8 +33,8 @@ public class WellKnownPublicFilter implements Filter {
                                  @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
         this.keyManager = keyManager;
         this.issuerUrlProvider = issuerUrlProvider;
-        DelegatingFilter.registerDelegate(this);
-        LOG.info("JWT plugin: WellKnownPublicFilter registered in DelegatingFilter chain");
+        DelegatingFilter.registerDelegate(DELEGATE_NAME, this);
+        LOG.info("JWT plugin: WellKnownPublicFilter registered in DelegatingFilter chain as " + DELEGATE_NAME);
     }
 
     @Override
@@ -77,7 +79,10 @@ public class WellKnownPublicFilter implements Filter {
 
             final var doc = getJsonObject(issuer);
 
-            resp.getWriter().write(doc.toJSONString());
+            // LT_COMPRESS disables json-smart's default Escape4Web protector, which escapes "/"
+            // as "\/" for safety against </script> injection in HTML contexts. We're serving
+            // application/json, so the escaping is unnecessary and just makes the output noisy.
+            resp.getWriter().write(doc.toJSONString(JSONStyle.LT_COMPRESS));
             return;
         }
 
@@ -134,5 +139,8 @@ public class WellKnownPublicFilter implements Filter {
     public void init(final FilterConfig filterConfig) {}
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+        DelegatingFilter.unregisterDelegate(DELEGATE_NAME);
+        LOG.info("JWT plugin: WellKnownPublicFilter unregistered from DelegatingFilter chain");
+    }
 }
