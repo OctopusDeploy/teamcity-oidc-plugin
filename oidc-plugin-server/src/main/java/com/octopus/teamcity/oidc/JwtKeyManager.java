@@ -33,6 +33,11 @@ import java.util.logging.Logger;
 public class JwtKeyManager {
     private static final Logger LOG = Logger.getLogger(JwtKeyManager.class.getName());
 
+    private static final String[] KEY_FILE_NAMES = {
+            "rsa-key.json", "ec-key.json", "rsa3072-key.json",
+            "retired-rsa-key.json", "retired-ec-key.json", "retired-rsa3072-key.json"
+    };
+
     record KeyMaterial(
             RSAKey rsa,
             @Nullable RSAKey retiredRsa,
@@ -50,6 +55,16 @@ public class JwtKeyManager {
      * {@link #isReady()} or will receive an {@link IllegalStateException}.
      */
     private final AtomicReference<KeyMaterial> keys = new AtomicReference<>();
+
+    /**
+     * Max {@code lastModified} across the key files at the time {@link #keys} was last loaded.
+     * In TC HA only the main node rotates (gated in {@link KeyRotationScheduler}), but every
+     * node serves JWKS and signs build tokens. Secondaries keep their in-memory
+     * {@link KeyMaterial} aligned with the shared filesystem by reloading whenever
+     * {@link #maxKeyFileMtime()} changes — see {@link #refreshIfStale()}. Comparison uses
+     * inequality, not greater-than, so clock skew on shared storage cannot mask a change.
+     */
+    private volatile long lastLoadedMaxMtime = 0L;
 
     /**
      * Spring autowires {@link Encryption} (resolved to TC's {@code EncryptionManager}). Key
@@ -150,6 +165,9 @@ public class JwtKeyManager {
         saveKeyToFile(newEc, "ec-key.json");
 
         keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec(), newRsa3072, current.rsa3072()));
+        // Record that this node's in-memory state matches what we just wrote, so the next
+        // refreshIfStale() doesn't misread our own writes as an external change.
+        lastLoadedMaxMtime = maxKeyFileMtime();
     }
 
     /**
@@ -195,7 +213,39 @@ public class JwtKeyManager {
         final var k = keys.get();
         if (k == null) throw new IllegalStateException(
                 "JWT plugin: key manager not yet initialized — server startup is still in progress");
-        return k;
+        refreshIfStale();
+        return keys.get();
+    }
+
+    /**
+     * If a writer (typically the main node in TC HA, or another thread on this node) has updated
+     * the key files on the shared filesystem since the last load, reload them. Fast-path is a
+     * single volatile read plus a few {@code stat()} syscalls; only takes the lock when a real
+     * change is detected.
+     */
+    private void refreshIfStale() {
+        if (maxKeyFileMtime() == lastLoadedMaxMtime) return;
+        synchronized (this) {
+            final var observed = maxKeyFileMtime();
+            if (observed == lastLoadedMaxMtime) return;
+            try {
+                LOG.info("JWT plugin: detected key file change on disk — reloading keys");
+                loadKeys();
+                lastLoadedMaxMtime = observed;
+            } catch (final Exception e) {
+                LOG.log(Level.SEVERE, "JWT plugin: failed to reload keys after detecting filesystem"
+                        + " change — continuing to serve previously-loaded keys", e);
+            }
+        }
+    }
+
+    private long maxKeyFileMtime() {
+        var max = 0L;
+        for (final var name : KEY_FILE_NAMES) {
+            final var m = new File(keyDirectory, name).lastModified();
+            if (m > max) max = m;
+        }
+        return max;
     }
 
     private void loadKeys() throws IOException, ParseException, JOSEException {
@@ -207,6 +257,7 @@ public class JwtKeyManager {
                 loadOrGenerateRsa3072Key(),
                 loadRetiredRsa3072Key()
         ));
+        lastLoadedMaxMtime = maxKeyFileMtime();
         LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
     }
 
