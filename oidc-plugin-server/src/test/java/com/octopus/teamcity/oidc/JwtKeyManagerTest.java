@@ -155,11 +155,12 @@ public class JwtKeyManagerTest {
     }
 
     @Test
-    public void picksUpKeyChangesMadeByAnotherWriter() throws Exception {
+    public void refreshesKeysAfterAnotherWriterRotates() throws Exception {
         // In TC HA, every node loads keys from the shared filesystem at startup but only
         // the main node rotates. Secondaries must notice when the files change underneath
         // them — otherwise they keep signing builds with retired keys whose kid no longer
-        // appears as "current" in the JWKS endpoint.
+        // appears as "current" in the JWKS endpoint, and verifiers fetching JWKS from a
+        // secondary won't see the previous-current key in the published list.
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var nodeA = TestJwtKeyManagerFactory.create(serverPaths);
         final var nodeB = TestJwtKeyManagerFactory.create(serverPaths);
@@ -175,27 +176,9 @@ public class JwtKeyManagerTest {
             Files.setLastModifiedTime(f.toPath(), future);
         }
 
-        assertThat(nodeA.getRsaKey().getKeyID()).isNotEqualTo(initialKid);
-        assertThat(nodeA.getRsaKey().getKeyID()).isEqualTo(nodeB.getRsaKey().getKeyID());
-    }
-
-    @Test
-    public void exposesRetiredKeyAfterAnotherWriterRotates() throws Exception {
-        // After a refresh, retired keys must also flow through so verifiers fetching JWKS
-        // from this node see the previous-current key in the published list.
-        when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var nodeA = TestJwtKeyManagerFactory.create(serverPaths);
-        final var nodeB = TestJwtKeyManagerFactory.create(serverPaths);
-        final var initialKid = nodeA.getRsaKey().getKeyID();
-
-        nodeB.rotateKey();
-
-        final var future = FileTime.from(Instant.now().plusSeconds(2));
-        final var keyDir = new File(tempDir, "JwtBuildFeature");
-        for (final var f : keyDir.listFiles((d, n) -> n.endsWith(".json"))) {
-            Files.setLastModifiedTime(f.toPath(), future);
-        }
-
+        assertThat(nodeA.getRsaKey().getKeyID())
+                .isNotEqualTo(initialKid)
+                .isEqualTo(nodeB.getRsaKey().getKeyID());
         final var publicKids = nodeA.getPublicKeys().stream().map(k -> k.getKeyID()).toList();
         assertThat(publicKids).contains(initialKid);
     }
