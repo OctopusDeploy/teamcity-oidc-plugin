@@ -2,6 +2,7 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.serverSide.BuildServerAdapter;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import jetbrains.buildServer.serverSide.TeamCityNodes;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.scheduling.support.CronExpression;
 
@@ -19,13 +20,16 @@ public class KeyRotationScheduler extends BuildServerAdapter {
 
     private final JwtKeyManager keyManager;
     private final RotationSettingsManager settingsManager;
+    private final TeamCityNodes nodes;
     private final ScheduledExecutorService executor;
 
     public KeyRotationScheduler(@NotNull final SBuildServer buildServer,
                                 @NotNull final JwtKeyManager keyManager,
-                                @NotNull final RotationSettingsManager settingsManager) {
+                                @NotNull final RotationSettingsManager settingsManager,
+                                @NotNull final TeamCityNodes nodes) {
         this.keyManager = keyManager;
         this.settingsManager = settingsManager;
+        this.nodes = nodes;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             final var t = new Thread(r, "jwt-key-rotation-scheduler");
             t.setDaemon(true);
@@ -64,6 +68,13 @@ public class KeyRotationScheduler extends BuildServerAdapter {
 
     /** Package-private for testing. */
     void checkAndRotateIfDue() {
+        // In TC HA every node runs this scheduler, but only the main node should actually rotate.
+        // Otherwise multiple nodes race on disk writes and end up with divergent in-memory keys.
+        if (!nodes.getCurrentNode().isMainNode()) {
+            LOG.fine("JWT plugin: skipping rotation check on secondary node");
+            return;
+        }
+
         final var settings = settingsManager.load();
         if (!settings.enabled()) {
             return;

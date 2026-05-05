@@ -2,6 +2,9 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
+import jetbrains.buildServer.serverSide.TeamCityNode;
+import jetbrains.buildServer.serverSide.TeamCityNodes;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,8 +22,16 @@ public class KeyRotationSchedulerTest {
 
     @Mock SBuildServer buildServer;
     @Mock ServerPaths serverPaths;
+    @Mock TeamCityNodes nodes;
+    @Mock TeamCityNode currentNode;
 
     @TempDir File tempDir;
+
+    @BeforeEach
+    void stubMainNode() {
+        lenient().when(nodes.getCurrentNode()).thenReturn(currentNode);
+        lenient().when(currentNode.isMainNode()).thenReturn(true);
+    }
 
     private JwtKeyManager keyManager() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
@@ -33,7 +44,7 @@ public class KeyRotationSchedulerTest {
 
     @Test
     void registersAsBuildServerListener() {
-        new KeyRotationScheduler(buildServer, keyManager(), settingsManager());
+        new KeyRotationScheduler(buildServer, keyManager(), settingsManager(), nodes);
         verify(buildServer).addListener(any(KeyRotationScheduler.class));
     }
 
@@ -44,7 +55,7 @@ public class KeyRotationSchedulerTest {
         mgr.save(new RotationSettings(false, RotationSettings.DEFAULT_SCHEDULE, null));
         final var originalKid = km.getRsaKey().getKeyID();
 
-        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
     }
@@ -57,7 +68,7 @@ public class KeyRotationSchedulerTest {
                 Instant.parse("2000-01-01T00:00:00Z")));
         final var originalKid = km.getRsaKey().getKeyID();
 
-        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
@@ -70,7 +81,7 @@ public class KeyRotationSchedulerTest {
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE, Instant.now()));
         final var originalKid = km.getRsaKey().getKeyID();
 
-        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
     }
@@ -83,7 +94,7 @@ public class KeyRotationSchedulerTest {
                 Instant.parse("2000-01-01T00:00:00Z")));
 
         final var before = Instant.now();
-        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
         final var after = Instant.now();
 
         final var recorded = mgr.load().lastRotatedAt();
@@ -100,7 +111,7 @@ public class KeyRotationSchedulerTest {
         final var mgr = settingsManager(); // no file → load() returns defaults()
         final var originalKid = km.getRsaKey().getKeyID();
 
-        new KeyRotationScheduler(buildServer, km, mgr).checkAndRotateIfDue();
+        new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
     }
@@ -117,15 +128,32 @@ public class KeyRotationSchedulerTest {
                 Instant.parse("2000-01-01T00:00:00Z")));
         final var originalKid = km.getRsaKey().getKeyID();
 
-        new KeyRotationScheduler(buildServer, km, mgr); // no serverStartup() call
+        new KeyRotationScheduler(buildServer, km, mgr, nodes); // no serverStartup() call
 
         Thread.sleep(3000);
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 
     @Test
+    void doesNotRotateOnSecondaryNodeEvenWhenOverdue() throws Exception {
+        // In TC HA, every node runs the scheduler, but only the main node should rotate.
+        // Otherwise multiple nodes race on disk writes and end up with divergent in-memory keys.
+        when(currentNode.isMainNode()).thenReturn(false);
+        final var km = keyManager();
+        final var mgr = settingsManager();
+        mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
+                Instant.parse("2000-01-01T00:00:00Z")));
+        final var originalKid = km.getRsaKey().getKeyID();
+
+        new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
+
+        assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
+        assertThat(mgr.load().lastRotatedAt()).isEqualTo(Instant.parse("2000-01-01T00:00:00Z"));
+    }
+
+    @Test
     void shuttingDownStopsExecutor() {
-        final var scheduler = new KeyRotationScheduler(buildServer, keyManager(), settingsManager());
+        final var scheduler = new KeyRotationScheduler(buildServer, keyManager(), settingsManager(), nodes);
         scheduler.serverStartup();
         scheduler.serverShutdown(); // must not throw or hang
     }
