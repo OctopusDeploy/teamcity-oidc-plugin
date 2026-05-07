@@ -57,7 +57,6 @@ public class AlgorithmChoiceTest {
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
         final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
-        when(triggeredBy.getParameters()).thenReturn(java.util.Map.of());
         return context;
     }
 

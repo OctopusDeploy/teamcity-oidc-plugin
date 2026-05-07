@@ -472,36 +472,6 @@ public class OidcFlowIT {
 
     }
 
-    /**
-     * Attaches a small public Git repo as a VCS root so the build has branch info
-     * (used by the build feature edit UI's sample-claims display). The build type
-     * is configured with manual checkout so the agent doesn't fetch the repo.
-     */
-    private static void attachSampleVcsRoot() throws Exception {
-        // Disable automatic checkout so the build doesn't depend on outbound Git access
-        tcPut("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/checkoutMode", "MANUAL");
-
-        // teamcity:branchSpec must be set for builds to carry branch information;
-        // without it, SBuild.getBranch() returns null and the JWT branch claim is blank.
-        final var vcsRootJson = """
-                {"id":"OidcTest_VcsRoot","name":"OidcTest VCS",
-                 "vcsName":"jetbrains.git",
-                 "project":{"id":"OidcTest"},
-                 "properties":{"property":[
-                     {"name":"url","value":"https://github.com/octocat/Hello-World.git"},
-                     {"name":"branch","value":"refs/heads/master"},
-                     {"name":"teamcity:branchSpec","value":"+:refs/heads/*"},
-                     {"name":"authMethod","value":"ANONYMOUS"}
-                 ]}}
-                """;
-        tcPost("/httpAuth/app/rest/vcs-roots", vcsRootJson);
-
-        final var vcsEntryJson = """
-                {"id":"OidcTest_VcsRoot","vcs-root":{"id":"OidcTest_VcsRoot"},"checkout-rules":""}
-                """;
-        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/vcs-root-entries", vcsEntryJson);
-    }
-
     private static JSONObject parseJson(final String body) {
         try {
             return (JSONObject) new JSONParser(JSONParser.DEFAULT_PERMISSIVE_MODE).parse(body);
@@ -969,18 +939,6 @@ public class OidcFlowIT {
                 System.getProperty("manual") != null,
                 "Skipped — pass -Dmanual to activate manual testing pause"
         );
-
-        // Attach a VCS root and run a sample build so the build feature edit UI
-        // has real branch / trigger_type sample values to display.
-        log("Attaching VCS root for manual stack...");
-        attachSampleVcsRoot();
-        log("Triggering sample build for manual stack...");
-        waitForAgentIdle();
-        final var queueResponse = triggerBuild();
-        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
-        log("Sample build queued, id=" + buildId + " — waiting for it to finish...");
-        waitForBuildSuccess(buildId);
-        log("Sample build finished.");
 
         final int caddyPort = caddy.getMappedPort(443);
         final var httpsUrl = "https://teamcity-tls:" + caddyPort;

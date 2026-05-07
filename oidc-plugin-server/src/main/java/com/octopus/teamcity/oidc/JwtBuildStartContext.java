@@ -23,7 +23,9 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
 
     private static final Pattern CLAIMS_SPLIT = Pattern.compile("\\s*,\\s*");
 
-    private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of("branch", "trigger_type");
+    private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of(
+            "branch", "build_type_external_id", "project_external_id",
+            "triggered_by", "triggered_by_id", "build_number");
 
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder,
@@ -95,6 +97,12 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         .filter(ALL_CUSTOM_CLAIMS::contains)
                         .collect(Collectors.toSet());
 
+                final var branch = build.getBranch();
+                final var branchName = branch != null ? branch.getName() : "";
+
+                final var triggeredBy = build.getTriggeredBy();
+                final var user = triggeredBy.getUser();
+
                 final var now = Instant.now();
                 final var claimsBuilder = new JWTClaimsSet.Builder()
                         .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
@@ -103,18 +111,25 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                         .issuer(issuerUrl)
                         .issueTime(Date.from(now))
                         .notBeforeTime(Date.from(now))
-                        .expirationTime(Date.from(now.plus(ttlMinutes, ChronoUnit.MINUTES)))
-                        .claim("build_type_external_id", build.getBuildTypeExternalId())
-                        .claim("project_external_id", build.getProjectExternalId());
+                        .expirationTime(Date.from(now.plus(ttlMinutes, ChronoUnit.MINUTES)));
 
                 if (enabledClaims.contains("branch")) {
-                    final var branchName = ClaimsResolver.resolveBranchName(build);
-                    if (!branchName.isEmpty()) {
-                        claimsBuilder.claim("branch", branchName);
-                    }
+                    claimsBuilder.claim("branch", branchName);
                 }
-                if (enabledClaims.contains("trigger_type")) {
-                    claimsBuilder.claim("trigger_type", ClaimsResolver.resolveTriggerType(build.getTriggeredBy()));
+                if (enabledClaims.contains("build_type_external_id")) {
+                    claimsBuilder.claim("build_type_external_id", build.getBuildTypeExternalId());
+                }
+                if (enabledClaims.contains("project_external_id")) {
+                    claimsBuilder.claim("project_external_id", build.getProjectExternalId());
+                }
+                if (enabledClaims.contains("triggered_by")) {
+                    claimsBuilder.claim("triggered_by", triggeredBy.getAsString());
+                }
+                if (enabledClaims.contains("triggered_by_id") && user != null) {
+                    claimsBuilder.claim("triggered_by_id", user.getId());
+                }
+                if (enabledClaims.contains("build_number")) {
+                    claimsBuilder.claim("build_number", build.getBuildNumber());
                 }
 
                 final var signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);

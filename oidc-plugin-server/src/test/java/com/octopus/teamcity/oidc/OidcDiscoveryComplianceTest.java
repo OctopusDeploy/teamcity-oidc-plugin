@@ -146,11 +146,8 @@ public class OidcDiscoveryComplianceTest {
     @Test
     public void claimsSupportedIncludesCustomBuildClaims() {
         final var claims = toStringList((JSONArray) discoveryDocument.get("claims_supported"));
-        assertThat(claims).contains(
-                "build_type_external_id",
-                "project_external_id",
-                "branch",
-                "trigger_type");
+        assertThat(claims).contains("branch", "build_type_external_id", "project_external_id",
+                "triggered_by", "build_number");
     }
 
     // --- Wire format ---

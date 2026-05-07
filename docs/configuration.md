@@ -26,15 +26,17 @@ Reference the token in build steps as `%jwt.token%`. It is injected as a masked 
 | `aud` | Configured audience (defaults to TeamCity root URL) |
 | `iat` / `nbf` / `exp` | Issued at / not before / expiry (based on configured TTL) |
 | `jti` | Unique token ID (`<buildId>-<uuid>`) |
-| `build_type_external_id` | Build type external ID (same as `sub`) |
-| `project_external_id` | Project external ID |
 
 ### Optional claims
 
 | Claim | Description |
 |---|---|
-| `branch` | Branch name (e.g. `refs/heads/main`). Default-branch builds are reported as the VCS root's configured default branch ref, not TeamCity's `<default>` marker. Omitted from the token entirely when the build has no branch (typically because the build configuration has no VCS root attached). |
-| `trigger_type` | How the build was triggered: `user`, `snapshotDependency`, the trigger's `type` parameter (e.g. `vcsTrigger`, `schedulingTrigger`), or `unknown` |
+| `branch` | Branch name |
+| `build_type_external_id` | Build type external ID (same as `sub`) |
+| `project_external_id` | Project external ID |
+| `triggered_by` | Human-readable trigger description |
+| `triggered_by_id` | User ID (omitted for automated triggers) |
+| `build_number` | Build number string |
 
 ## Cloud provider setup guides
 
