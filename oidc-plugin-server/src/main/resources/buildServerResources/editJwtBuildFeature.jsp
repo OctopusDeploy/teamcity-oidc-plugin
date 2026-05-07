@@ -1,3 +1,4 @@
+<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ include file="/include-internal.jsp"%>
 <%@ taglib prefix="props" tagdir="/WEB-INF/tags/props" %>
 <%@ taglib prefix="l" tagdir="/WEB-INF/tags/layout" %>
@@ -6,7 +7,12 @@
 <%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
 <%
     pageContext.setAttribute("jwtRootUrlNeedsHttps", !JwtBuildFeature.isRootUrlHttps());
+    JwtBuildFeature.SampleClaims jwtSamples = JwtBuildFeature.sampleClaimsFor(request.getParameter("id"));
+    pageContext.setAttribute("sampleBranch", jwtSamples.branch());
+    pageContext.setAttribute("sampleTriggerType", jwtSamples.triggerType());
+    pageContext.setAttribute("sampleHasVcsRoot", jwtSamples.hasVcsRoot());
 %>
+<link rel="stylesheet" href="${pageContext.request.contextPath}/plugins/teamcity-oidc-plugin/jwt-admin.css"/>
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
 
 <l:settingsGroup title="">
@@ -43,37 +49,46 @@
         </td>
     </tr>
     <tr>
-        <th><label>Claims to include:</label></th>
+        <th><label>Claims:</label></th>
         <td>
             <%-- Hidden field holds the comma-separated value that TC saves; JS keeps it in sync --%>
             <props:hiddenProperty name="claims" id="claims"/>
-            <table style="border-collapse:collapse;">
+            <table class="jwt-claims-table">
+                <thead>
+                    <tr>
+                        <th>Claim</th>
+                        <th>Sample value</th>
+                    </tr>
+                </thead>
+                <tbody>
                 <tr>
-                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="branch"/> branch</label></td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="build_type_external_id"/> build_type_external_id</label></td>
-                    <td><span class="smallNote"><code>${fn:escapeXml(buildForm.externalId)}</code></span></td>
-                </tr>
-                <tr>
-                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="project_external_id"/> project_external_id</label></td>
+                    <td><label title="Always included &mdash; required to identify the source project"><input type="checkbox" checked disabled title="Always included &mdash; required to identify the source project"/> project_external_id</label></td>
                     <td><span class="smallNote"><code>${fn:escapeXml(buildForm.project.externalId)}</code></span></td>
                 </tr>
                 <tr>
-                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="triggered_by"/> triggered_by</label></td>
-                    <td></td>
+                    <td><label title="Always included &mdash; required to identify the source build configuration"><input type="checkbox" checked disabled title="Always included &mdash; required to identify the source build configuration"/> build_type_external_id</label></td>
+                    <td><span class="smallNote"><code>${fn:escapeXml(buildForm.externalId)}</code></span></td>
                 </tr>
+                <c:if test="${sampleHasVcsRoot}">
                 <tr>
-                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="triggered_by_id"/> triggered_by_id</label></td>
-                    <td></td>
+                    <td><label><input type="checkbox" class="jwt-claim-cb" value="branch"/> branch</label></td>
+                    <td>
+                        <c:if test="${not empty sampleBranch}"><span class="smallNote"><code>${fn:escapeXml(sampleBranch)}</code></span></c:if>
+                        <c:if test="${empty sampleBranch}"><span class="smallNote jwt-claims-sample-example">e.g. <code>refs/heads/main</code></span></c:if>
+                    </td>
                 </tr>
+                </c:if>
                 <tr>
-                    <td style="padding:2px 8px 2px 0;"><label><input type="checkbox" class="jwt-claim-cb" value="build_number"/> build_number</label></td>
-                    <td></td>
+                    <td><label><input type="checkbox" class="jwt-claim-cb" value="trigger_type"/> trigger_type</label></td>
+                    <td>
+                        <c:if test="${not empty sampleTriggerType}"><span class="smallNote"><code>${fn:escapeXml(sampleTriggerType)}</code></span></c:if>
+                        <c:if test="${empty sampleTriggerType}"><span class="smallNote jwt-claims-sample-example">e.g. <code>user</code></span></c:if>
+                        <span class="smallNote jwt-claims-tooltip"
+                              title="Possible values: user, snapshotDependency, vcsTrigger, schedulingTrigger, retryBuildTrigger, buildDependencyTrigger, finishBuildTrigger, perforceShelveTrigger, unknown">[?]</span>
+                    </td>
                 </tr>
+                </tbody>
             </table>
-            <span class="smallNote">Uncheck claims to exclude them from the token.</span>
             <span class="error" id="error_claims"></span>
         </td>
     </tr>
@@ -228,8 +243,9 @@
 
         // Initialise claim checkboxes from stored comma-separated value.
         // Blank = all claims enabled, so tick all boxes when the field is empty.
-        const ALL_CLAIMS = ['branch','build_type_external_id','project_external_id',
-                          'triggered_by','triggered_by_id','build_number'];
+        // ALL_CLAIMS is derived from the rendered checkboxes so it stays in sync
+        // when rows are conditionally hidden (e.g. branch row when no VCS root).
+        const ALL_CLAIMS = $j('.jwt-claim-cb').map(function() { return $j(this).val(); }).get();
         const stored = $j('#claims').val().trim();
         const enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
         $j('.jwt-claim-cb').each(function() {

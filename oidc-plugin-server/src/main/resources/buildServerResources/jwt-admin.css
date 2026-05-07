@@ -263,3 +263,55 @@
 .jwt-monospace {
     font-family: monospace;
 }
+
+/* === Build feature edit: claims table ===
+   Rules use !important because the build-feature edit form is rendered inside
+   TC's settings dialog, which has its own td/.smallNote rules that would
+   otherwise win on specificity. */
+.jwt-claims-table {
+    border-collapse: collapse;
+}
+
+.jwt-claims-table th,
+.jwt-claims-table td {
+    padding: 2px 64px 2px 0 !important;
+    text-align: left;
+}
+
+.jwt-claims-table th {
+    font-weight: bold;
+    padding-bottom: 4px !important;
+}
+
+.jwt-claims-table th:last-child,
+.jwt-claims-table td:last-child {
+    padding-right: 0 !important;
+}
+
+.jwt-claims-table td:last-child {
+    white-space: nowrap;
+}
+
+.jwt-claims-table .smallNote {
+    display: inline !important;
+}
+
+/* Disabled inputs swallow mouse events in most browsers, so the label's
+   title tooltip never appears when hovering the checkbox itself. Letting
+   events pass through means hovering anywhere on the row reveals the
+   tooltip on the wrapping label. */
+.jwt-claims-table input[disabled] {
+    pointer-events: none;
+}
+
+.jwt-claims-sample-example {
+    color: #888;
+    font-style: italic;
+}
+
+.jwt-claims-tooltip {
+    margin-left: 6px;
+    cursor: help;
+    color: #888;
+    border-bottom: 1px dotted #888;
+}

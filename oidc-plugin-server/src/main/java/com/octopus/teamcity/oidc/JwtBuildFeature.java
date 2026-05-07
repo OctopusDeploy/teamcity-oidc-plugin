@@ -13,6 +13,7 @@ public class JwtBuildFeature extends BuildFeature {
     static final String FEATURE_TYPE = "oidc-plugin";
 
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
+    private static volatile SBuildServer staticBuildServer;
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcIssuerUrlProvider issuerUrlProvider;
@@ -23,11 +24,36 @@ public class JwtBuildFeature extends BuildFeature {
         this.pluginDescriptor = pluginDescriptor;
         this.issuerUrlProvider = issuerUrlProvider;
         staticIssuerUrlProvider = issuerUrlProvider;
+        staticBuildServer = buildServer;
     }
 
     /** Used by the edit JSP to check the issuer URL without Spring context access. */
     public static boolean isRootUrlHttps() {
         return staticIssuerUrlProvider != null && OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
+    }
+
+    /** Sample claim values from the most recent finished build, used by the edit JSP. */
+    public record SampleClaims(@NotNull String branch, @NotNull String triggerType, boolean hasVcsRoot) {}
+
+    public static SampleClaims sampleClaimsFor(@Nullable final String buildTypeIdParam) {
+        final var server = staticBuildServer;
+        if (server == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
+            return new SampleClaims("", "", false);
+        }
+        // The build feature edit dialog passes id as "buildType:<externalId>".
+        // Strip the prefix when present so findBuildTypeByExternalId resolves it.
+        final var externalId = buildTypeIdParam.startsWith("buildType:")
+                ? buildTypeIdParam.substring("buildType:".length())
+                : buildTypeIdParam;
+        final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
+        if (buildType == null) return new SampleClaims("", "", false);
+        final var hasVcsRoot = !buildType.getVcsRoots().isEmpty();
+        final var history = buildType.getHistory();
+        if (history.isEmpty()) return new SampleClaims("", "", hasVcsRoot);
+        final var lastBuild = history.get(0);
+        final var branchName = ClaimsResolver.resolveBranchName(lastBuild);
+        final var triggerType = ClaimsResolver.resolveTriggerType(lastBuild.getTriggeredBy());
+        return new SampleClaims(branchName, triggerType, hasVcsRoot);
     }
 
     @NotNull
