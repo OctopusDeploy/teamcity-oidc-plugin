@@ -165,7 +165,7 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void tokenTtlIsClamppedToOneDayMaximum() throws Exception {
+    public void tokenTtlIsClampedToOneDayMaximum() throws Exception {
         enableBuildFeature(Map.of("ttl_minutes", "999999"));
         stubUserTrigger();
 
