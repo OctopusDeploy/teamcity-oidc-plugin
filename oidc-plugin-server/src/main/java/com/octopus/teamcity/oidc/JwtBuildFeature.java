@@ -14,7 +14,6 @@ public class JwtBuildFeature extends BuildFeature {
 
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
     private static volatile SBuildServer staticBuildServer;
-    private static volatile OidcSettingsManager staticOidcSettingsManager;
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcIssuerUrlProvider issuerUrlProvider;
@@ -29,18 +28,11 @@ public class JwtBuildFeature extends BuildFeature {
         this.oidcSettingsManager = oidcSettingsManager;
         staticIssuerUrlProvider = issuerUrlProvider;
         staticBuildServer = buildServer;
-        staticOidcSettingsManager = oidcSettingsManager;
     }
 
     /** Used by the edit JSP to check the issuer URL without Spring context access. */
     public static boolean isRootUrlHttps() {
         return staticIssuerUrlProvider != null && OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
-    }
-
-    /** Used by the edit JSP to render the configured upper bound in the small note. */
-    public static int maxTokenLifetimeMinutes() {
-        final var mgr = staticOidcSettingsManager;
-        return mgr != null ? mgr.load().maxTokenLifetimeMinutes() : OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES;
     }
 
     /** Sample claim values from the most recent finished build, used by the edit JSP. */
