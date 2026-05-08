@@ -25,16 +25,19 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     @NotNull private final JwtKeyManager keyManager;
     @NotNull private final RotationSettingsManager settingsManager;
     @NotNull private final OidcIssuerUrlProvider issuerUrlProvider;
+    @NotNull private final OidcSettingsManager oidcSettingsManager;
 
     public JwtBuildFeatureAdminPage(@NotNull final PagePlaces pagePlaces,
                                     @NotNull final PluginDescriptor descriptor,
                                     @NotNull final JwtKeyManager keyManager,
                                     @NotNull final RotationSettingsManager settingsManager,
-                                    @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
+                                    @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
+                                    @NotNull final OidcSettingsManager oidcSettingsManager) {
         super(pagePlaces);
         this.keyManager = keyManager;
         this.settingsManager = settingsManager;
         this.issuerUrlProvider = issuerUrlProvider;
+        this.oidcSettingsManager = oidcSettingsManager;
         setPluginName("jwtPlugin");
         setIncludeUrl(descriptor.getPluginResourcesPath(PAGE));
         setTabTitle(TAB_TITLE);
@@ -45,13 +48,14 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
     @Override
     public void fillModel(@NotNull final Map<String, Object> model, @NotNull final HttpServletRequest request) {
         super.fillModel(model, request);
-        populateModel(model, keyManager, settingsManager, issuerUrlProvider);
+        populateModel(model, keyManager, settingsManager, issuerUrlProvider, oidcSettingsManager);
     }
 
     static void populateModel(@NotNull final Map<String, Object> model,
                               @NotNull final JwtKeyManager keyManager,
                               @NotNull final RotationSettingsManager settingsManager,
-                              @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
+                              @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
+                              @NotNull final OidcSettingsManager oidcSettingsManager) {
         if (keyManager.isReady()) {
             final var jwks = new JWKSet(keyManager.getPublicKeys());
             final var jwksJson = jwks.toString();
@@ -92,6 +96,8 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
 
         model.put("overrideIssuerUrl", issuerUrlProvider.getOverrideUrl().orElse(""));
         model.put("effectiveIssuerUrl", issuerUrlProvider.getIssuerUrl());
+        model.put("maxTokenLifetimeMinutes", oidcSettingsManager.load().maxTokenLifetimeMinutes());
+        model.put("maxTokenLifetimeAbsoluteMax", OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES);
     }
 
     @Override

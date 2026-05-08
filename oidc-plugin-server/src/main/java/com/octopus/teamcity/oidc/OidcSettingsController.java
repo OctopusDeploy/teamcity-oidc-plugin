@@ -86,11 +86,23 @@ public class OidcSettingsController extends BaseController {
             return null;
         }
 
-        final var rawUrl = request.getParameter("overrideIssuerUrl");
-        if (rawUrl == null || rawUrl.isBlank()) {
-            settingsManager.save(null);
-            writeJson(response, "ok", "Override cleared");
+        // The page has two independent sections; the controller dispatches on which
+        // parameter was sent.
+        final var rawMax = request.getParameter("maxTokenLifetimeMinutes");
+        if (rawMax != null) {
+            handleMaxTokenLifetime(response, rawMax);
             return null;
+        }
+
+        handleOverrideIssuerUrl(response, request.getParameter("overrideIssuerUrl"));
+        return null;
+    }
+
+    private void handleOverrideIssuerUrl(final HttpServletResponse response, final String rawUrl) throws IOException {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            settingsManager.saveOverrideIssuerUrl(null);
+            writeJson(response, "ok", "Override cleared");
+            return;
         }
 
         final var normalised = OidcUrlUtils.normalizeRootUrl(rawUrl.strip());
@@ -100,29 +112,49 @@ public class OidcSettingsController extends BaseController {
             uri = URI.create(normalised);
         } catch (final IllegalArgumentException e) {
             writeJson(response, "error", "Invalid URL: " + e.getMessage());
-            return null;
+            return;
         }
 
         if (!"https".equalsIgnoreCase(uri.getScheme())) {
             writeJson(response, "error", "The issuer URL must use HTTPS");
-            return null;
+            return;
         }
 
         final var result = checkReachability(normalised);
 
         switch (result) {
             case Ok ignored -> {
-                settingsManager.save(normalised);
+                settingsManager.saveOverrideIssuerUrl(normalised);
                 writeJson(response, "ok", "Settings saved");
             }
             case Warning w -> {
-                settingsManager.save(normalised);
+                settingsManager.saveOverrideIssuerUrl(normalised);
                 writeJson(response, "warn", w.message());
             }
             case Err err -> writeJson(response, "error", err.message());
         }
+    }
 
-        return null;
+    private void handleMaxTokenLifetime(final HttpServletResponse response, final String raw) throws IOException {
+        final int value;
+        try {
+            value = Integer.parseInt(raw.strip());
+        } catch (final NumberFormatException e) {
+            writeJson(response, "error", "Max token lifetime must be a whole number of minutes");
+            return;
+        }
+        if (value < OidcSettings.MIN_TOKEN_LIFETIME_MINUTES) {
+            writeJson(response, "error", "Max token lifetime must be at least "
+                    + OidcSettings.MIN_TOKEN_LIFETIME_MINUTES + " minute");
+            return;
+        }
+        if (value > OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES) {
+            writeJson(response, "error", "Max token lifetime must not exceed "
+                    + OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES + " minutes (24 hours)");
+            return;
+        }
+        settingsManager.saveMaxTokenLifetimeMinutes(value);
+        writeJson(response, "ok", "Max token lifetime saved");
     }
 
     private ReachabilityResult checkReachability(final String baseUrl) {

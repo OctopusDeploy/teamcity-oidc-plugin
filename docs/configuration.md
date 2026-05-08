@@ -8,7 +8,7 @@ Add the **OIDC Identity Token** build feature to a build configuration. Multiple
 
 | Field | Description |
 |---|---|
-| Token lifetime | How long the JWT is valid (1–1440 minutes, default 10). Set this to the minimum needed by your build steps. |
+| Token lifetime | How long the JWT is valid (default 10 minutes). The upper bound is the **Max lifetime** configured under Administration → OIDC / JWT (defaults to 720 minutes / 12 hours). Set this to the minimum needed by your build steps. |
 | Audience | Value for the `aud` claim. Cloud providers typically require a specific value (e.g. `api://AzureADTokenExchange` for Azure, the service account ID for Octopus Deploy). Defaults to the TeamCity root URL. |
 | Signing algorithm | RS256 (RSA-2048, default), RS384 (RSA-3072), or ES256 (ECDSA P-256). |
 | Claims to include | Select which optional claims to include. All are included by default. |

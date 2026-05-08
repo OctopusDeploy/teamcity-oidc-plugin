@@ -114,7 +114,8 @@ public class JwtIssuanceAndVerificationTest {
         when(runningBuild.getBuildTypeExternalId()).thenReturn("My_BuildType");
 
         final var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        new JwtBuildStartContext(extensionHolder, providerFor("https://teamcity.example.com"), keyManager).updateParameters(buildStartContext);
+        new JwtBuildStartContext(extensionHolder, providerFor("https://teamcity.example.com"), keyManager,
+                new OidcSettingsManager(tempDir)).updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
 
         final var jwt = SignedJWT.parse(tokenCaptor.getValue());
@@ -158,7 +159,8 @@ public class JwtIssuanceAndVerificationTest {
     private String issueToken(final Map<String, String> params) {
         setupBuildContext(params);
         final var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        new JwtBuildStartContext(extensionHolder, providerFor("https://teamcity.example.com"), keyManager).updateParameters(buildStartContext);
+        new JwtBuildStartContext(extensionHolder, providerFor("https://teamcity.example.com"), keyManager,
+                new OidcSettingsManager(tempDir)).updateParameters(buildStartContext);
         verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
         return tokenCaptor.getValue();
     }

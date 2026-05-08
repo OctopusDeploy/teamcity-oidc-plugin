@@ -23,7 +23,7 @@ public class OidcIssuerUrlProviderTest {
 
     private OidcSettingsManager managerWithOverride(final String override) {
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.save(override);
+        mgr.saveOverrideIssuerUrl(override);
         return mgr;
     }
 
@@ -57,7 +57,7 @@ public class OidcIssuerUrlProviderTest {
     @Test
     void fallsBackToRootUrlWhenOverrideCleared() {
         final var mgr = managerWithOverride("https://ci.example.com");
-        mgr.save(null);
+        mgr.saveOverrideIssuerUrl(null);
         final var provider = new OidcIssuerUrlProvider(serverWithRootUrl("https://tc.internal"), mgr);
         assertThat(provider.getIssuerUrl()).isEqualTo("https://tc.internal");
     }

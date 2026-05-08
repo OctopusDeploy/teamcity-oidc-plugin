@@ -26,6 +26,6 @@ public class OidcIssuerUrlProvider {
     }
 
     private Optional<String> loadOverride() {
-        return settingsManager.load().map(OidcUrlUtils::normalizeRootUrl);
+        return settingsManager.load().findOverrideIssuerUrl().map(OidcUrlUtils::normalizeRootUrl);
     }
 }

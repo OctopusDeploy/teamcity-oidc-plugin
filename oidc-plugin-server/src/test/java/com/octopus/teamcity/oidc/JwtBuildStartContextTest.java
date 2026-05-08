@@ -47,7 +47,8 @@ public class JwtBuildStartContextTest {
     private JwtBuildStartContext newContext(final String issuerUrl) {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        return new JwtBuildStartContext(extensionHolder, providerFor(issuerUrl), keyManager);
+        return new JwtBuildStartContext(extensionHolder, providerFor(issuerUrl), keyManager,
+                new OidcSettingsManager(tempDir));
     }
 
     /** Creates a JwtBuildStartContext using the standard HTTPS root URL. */
@@ -165,11 +166,13 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void tokenTtlIsClampedToOneDayMaximum() throws Exception {
+    public void tokenTtlIsClampedToConfiguredMaximum() throws Exception {
         enableBuildFeature(Map.of("ttl_minutes", "999999"));
         stubUserTrigger();
 
-        assertThat(ttlSecondsOf(runAndParseToken(newContext()))).isEqualTo(1440 * 60);
+        // Defaults to OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES since no override is saved.
+        assertThat(ttlSecondsOf(runAndParseToken(newContext())))
+                .isEqualTo(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES * 60L);
     }
 
     @Test

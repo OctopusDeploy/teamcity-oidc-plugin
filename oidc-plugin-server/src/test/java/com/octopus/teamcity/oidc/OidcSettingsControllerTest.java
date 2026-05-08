@@ -59,7 +59,24 @@ public class OidcSettingsControllerTest {
     private JSONObject postForJson(final OidcSettingsManager mgr, final String url) throws Exception {
         final var writer = new StringWriter();
         when(request.getMethod()).thenReturn("POST");
-        when(request.getParameter("overrideIssuerUrl")).thenReturn(url);
+        // The controller checks maxTokenLifetimeMinutes first; with strict stubbing,
+        // we stub both parameters even if only one is exercised in a given test.
+        lenient().when(request.getParameter("maxTokenLifetimeMinutes")).thenReturn(null);
+        lenient().when(request.getParameter("overrideIssuerUrl")).thenReturn(url);
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        final var admin = adminUser();
+        try (final var su = mockStatic(SessionUser.class)) {
+            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
+            controller(mgr).doHandle(request, response);
+        }
+        return parseResponse(writer);
+    }
+
+    private JSONObject postMaxTtl(final OidcSettingsManager mgr, final String value) throws Exception {
+        final var writer = new StringWriter();
+        when(request.getMethod()).thenReturn("POST");
+        lenient().when(request.getParameter("maxTokenLifetimeMinutes")).thenReturn(value);
+        lenient().when(request.getParameter("overrideIssuerUrl")).thenReturn(null);
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
         final var admin = adminUser();
         try (final var su = mockStatic(SessionUser.class)) {
@@ -95,7 +112,7 @@ public class OidcSettingsControllerTest {
         final var json = postForJson(mgr, "http://ci.example.com");
         assertThat((String) json.get("state")).isEqualTo("error");
         assertThat((String) json.get("message")).contains("HTTPS");
-        assertThat(mgr.load()).isEmpty();
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
@@ -110,7 +127,7 @@ public class OidcSettingsControllerTest {
         mockHttpStatus(200);
         final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((String) json.get("state")).isEqualTo("ok");
-        assertThat(mgr.load()).contains("https://ci.example.com");
+        assertThat(mgr.load().findOverrideIssuerUrl()).contains("https://ci.example.com");
     }
 
     @Test
@@ -120,7 +137,7 @@ public class OidcSettingsControllerTest {
         final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((String) json.get("state")).isEqualTo("warn");
         assertThat((String) json.get("message")).containsIgnoringCase("could not be verified");
-        assertThat(mgr.load()).contains("https://ci.example.com");
+        assertThat(mgr.load().findOverrideIssuerUrl()).contains("https://ci.example.com");
     }
 
     @Test
@@ -130,7 +147,7 @@ public class OidcSettingsControllerTest {
         final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((String) json.get("state")).isEqualTo("error");
         assertThat((String) json.get("message")).contains("404");
-        assertThat(mgr.load()).isEmpty();
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
@@ -140,7 +157,7 @@ public class OidcSettingsControllerTest {
         final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((String) json.get("state")).isEqualTo("error");
         assertThat((String) json.get("message")).contains("301");
-        assertThat(mgr.load()).isEmpty();
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
@@ -150,16 +167,16 @@ public class OidcSettingsControllerTest {
         final var json = postForJson(mgr, "https://ci.example.com");
         assertThat((String) json.get("state")).isEqualTo("error");
         assertThat((String) json.get("message")).contains("503");
-        assertThat(mgr.load()).isEmpty();
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
     void clearsOverrideOnBlankInput() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.save("https://ci.example.com");
+        mgr.saveOverrideIssuerUrl("https://ci.example.com");
         final var json = postForJson(mgr, "");
         assertThat((String) json.get("state")).isEqualTo("ok");
-        assertThat(mgr.load()).isEmpty();
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
@@ -167,6 +184,46 @@ public class OidcSettingsControllerTest {
         final var mgr = new OidcSettingsManager(tempDir);
         mockHttpStatus(200);
         postForJson(mgr, "https://ci.example.com/");
-        assertThat(mgr.load()).contains("https://ci.example.com");
+        assertThat(mgr.load().findOverrideIssuerUrl()).contains("https://ci.example.com");
+    }
+
+    @Test
+    void savesValidMaxTokenLifetime() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        final var json = postMaxTtl(mgr, "60");
+        assertThat((String) json.get("state")).isEqualTo("ok");
+        assertThat(mgr.load().maxTokenLifetimeMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void rejectsNonNumericMaxTokenLifetime() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        final var json = postMaxTtl(mgr, "abc");
+        assertThat((String) json.get("state")).isEqualTo("error");
+        assertThat(mgr.load().maxTokenLifetimeMinutes())
+                .isEqualTo(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES);
+    }
+
+    @Test
+    void rejectsTooSmallMaxTokenLifetime() throws Exception {
+        final var json = postMaxTtl(new OidcSettingsManager(tempDir), "0");
+        assertThat((String) json.get("state")).isEqualTo("error");
+    }
+
+    @Test
+    void rejectsTooLargeMaxTokenLifetime() throws Exception {
+        final var json = postMaxTtl(new OidcSettingsManager(tempDir),
+                String.valueOf(OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES + 1));
+        assertThat((String) json.get("state")).isEqualTo("error");
+    }
+
+    @Test
+    void savingMaxTokenLifetimePreservesOverrideUrl() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        mgr.saveOverrideIssuerUrl("https://ci.example.com");
+        postMaxTtl(mgr, "30");
+        final var settings = mgr.load();
+        assertThat(settings.findOverrideIssuerUrl()).contains("https://ci.example.com");
+        assertThat(settings.maxTokenLifetimeMinutes()).isEqualTo(30);
     }
 }
