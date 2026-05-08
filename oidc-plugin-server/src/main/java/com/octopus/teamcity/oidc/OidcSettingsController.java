@@ -86,8 +86,9 @@ public class OidcSettingsController extends BaseController {
             return null;
         }
 
-        // The page has two independent sections; the controller dispatches on which
-        // parameter was sent.
+        // Two independent sections of the admin page POST here (Issuer URL and Token
+        // defaults — Key Rotation has its own controller). Dispatch on which parameter
+        // the request carries.
         final var rawMax = request.getParameter("maxTokenLifetimeMinutes");
         if (rawMax != null) {
             handleMaxTokenLifetime(response, rawMax);
