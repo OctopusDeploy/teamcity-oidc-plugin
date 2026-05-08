@@ -20,7 +20,8 @@
     final var editJwtSettingsManager = WebApplicationContextUtils
             .getRequiredWebApplicationContext(application)
             .getBean(OidcSettingsManager.class);
-    pageContext.setAttribute("maxTokenLifetimeMinutes", editJwtSettingsManager.load().maxTokenLifetimeMinutes());
+    final var maxTokenLifetimeMinutes = editJwtSettingsManager.load().maxTokenLifetimeMinutes();
+    pageContext.setAttribute("maxTokenLifetimeMinutes", maxTokenLifetimeMinutes);
 
     final var editJwtCurrentUser = SessionUser.getUser(request);
     pageContext.setAttribute("currentUserCanConfigureMax",
