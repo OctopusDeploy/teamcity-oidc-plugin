@@ -5,12 +5,19 @@
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 <%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
+<%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
+<%@ page import="jetbrains.buildServer.users.SUser" %>
+<%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
 <%
     pageContext.setAttribute("jwtRootUrlNeedsHttps", !JwtBuildFeature.isRootUrlHttps());
     JwtBuildFeature.SampleClaims jwtSamples = JwtBuildFeature.sampleClaimsFor(request.getParameter("id"));
     pageContext.setAttribute("sampleBranch", jwtSamples.branch());
     pageContext.setAttribute("sampleTriggerType", jwtSamples.triggerType());
     pageContext.setAttribute("sampleHasVcsRoot", jwtSamples.hasVcsRoot());
+    pageContext.setAttribute("maxTokenLifetimeMinutes", JwtBuildFeature.maxTokenLifetimeMinutes());
+    final SUser editJwtCurrentUser = SessionUser.getUser(request);
+    pageContext.setAttribute("currentUserCanConfigureMax",
+            editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
 %>
 <link rel="stylesheet" href="${pageContext.request.contextPath}/plugins/teamcity-oidc-plugin/jwt-admin.css"/>
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
@@ -25,7 +32,7 @@
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
             <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
-            <span class="smallNote">How long the JWT is valid for. Default: 10 minutes.</span>
+            <span class="smallNote">How long the JWT is valid for.<br/>Default: 10 minutes; max: <c:out value="${maxTokenLifetimeMinutes}"/> minutes (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
             <span class="error" id="error_ttl_minutes"></span>
         </td>
     </tr>

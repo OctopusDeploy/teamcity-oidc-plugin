@@ -68,7 +68,7 @@
                  value="<c:out value="${maxTokenLifetimeMinutes}"/>"/>
           <button class="jwt-btn jwt-btn-primary" type="button" onclick="jwtSaveMaxTokenLifetime()">Save</button>
         </div>
-        <span class="jwt-hint">Upper bound on the per-build-feature <code>Token lifetime</code> setting. Default 720 (12h); absolute ceiling <c:out value="${maxTokenLifetimeAbsoluteMax}"/> (24h, since cloud OIDC consumers reject longer tokens).</span>
+        <span class="jwt-hint">Upper bound on the per-build-feature <code>Token lifetime</code> setting. Default 720 (12h); absolute ceiling <c:out value="${maxTokenLifetimeAbsoluteMax}"/> (24h).</span>
         <span id="jwtMaxTtlResult" style="display:none"></span>
       </div>
     </div>
