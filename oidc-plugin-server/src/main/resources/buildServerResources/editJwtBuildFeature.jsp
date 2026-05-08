@@ -7,19 +7,21 @@
 <%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
 <%@ page import="com.octopus.teamcity.oidc.OidcSettingsManager" %>
 <%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
-<%@ page import="jetbrains.buildServer.users.SUser" %>
 <%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
 <%@ page import="org.springframework.web.context.support.WebApplicationContextUtils" %>
 <%
     pageContext.setAttribute("jwtRootUrlNeedsHttps", !JwtBuildFeature.isRootUrlHttps());
-    JwtBuildFeature.SampleClaims jwtSamples = JwtBuildFeature.sampleClaimsFor(request.getParameter("id"));
+
+    final var jwtSamples = JwtBuildFeature.sampleClaimsFor(request.getParameter("id"));
     pageContext.setAttribute("sampleBranch", jwtSamples.branch());
     pageContext.setAttribute("sampleTriggerType", jwtSamples.triggerType());
     pageContext.setAttribute("sampleHasVcsRoot", jwtSamples.hasVcsRoot());
-    final OidcSettingsManager editJwtSettingsManager = WebApplicationContextUtils
+
+    final var editJwtSettingsManager = WebApplicationContextUtils
             .getRequiredWebApplicationContext(application)
             .getBean(OidcSettingsManager.class);
     pageContext.setAttribute("maxTokenLifetimeMinutes", editJwtSettingsManager.load().maxTokenLifetimeMinutes());
+
     final var editJwtCurrentUser = SessionUser.getUser(request);
     pageContext.setAttribute("currentUserCanConfigureMax",
             editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
