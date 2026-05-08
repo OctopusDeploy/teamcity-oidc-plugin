@@ -81,9 +81,12 @@ public class OidcSettingsManagerTest {
     }
 
     @Test
-    void maxTokenLifetimeIsClampedToAbsoluteCeiling() {
+    void loadClampsMaxTokenLifetimeFromCorruptedConfig() throws Exception {
+        // Older versions of the plugin allowed values up to a year. If we read a stored
+        // config above the current ceiling, load() should clamp it rather than throw.
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.saveMaxTokenLifetimeMinutes(OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES + 1_000_000);
+        Files.writeString(new File(tempDir, "oidc-settings.json").toPath(),
+                "{\"maxTokenLifetimeMinutes\":525600}");
         assertThat(mgr.load().maxTokenLifetimeMinutes())
                 .isEqualTo(OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES);
     }

@@ -31,6 +31,15 @@ public record OidcSettings(@Nullable String overrideIssuerUrl, int maxTokenLifet
      */
     public static final int ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES = 1440;
 
+    public OidcSettings {
+        if (maxTokenLifetimeMinutes < MIN_TOKEN_LIFETIME_MINUTES
+                || maxTokenLifetimeMinutes > ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES) {
+            throw new IllegalArgumentException(
+                    "maxTokenLifetimeMinutes must be between " + MIN_TOKEN_LIFETIME_MINUTES
+                    + " and " + ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES + " (got " + maxTokenLifetimeMinutes + ")");
+        }
+    }
+
     public static OidcSettings defaults() {
         return new OidcSettings(null, DEFAULT_MAX_TOKEN_LIFETIME_MINUTES);
     }
