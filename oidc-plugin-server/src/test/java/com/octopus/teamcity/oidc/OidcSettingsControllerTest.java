@@ -57,26 +57,20 @@ public class OidcSettingsControllerTest {
     }
 
     private JSONObject postForJson(final OidcSettingsManager mgr, final String url) throws Exception {
-        final var writer = new StringWriter();
-        when(request.getMethod()).thenReturn("POST");
-        // The controller checks maxTokenLifetimeMinutes first; with strict stubbing,
-        // we stub both parameters even if only one is exercised in a given test.
-        lenient().when(request.getParameter("maxTokenLifetimeMinutes")).thenReturn(null);
-        lenient().when(request.getParameter("overrideIssuerUrl")).thenReturn(url);
-        when(response.getWriter()).thenReturn(new PrintWriter(writer));
-        final var admin = adminUser();
-        try (final var su = mockStatic(SessionUser.class)) {
-            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
-            controller(mgr).doHandle(request, response);
-        }
-        return parseResponse(writer);
+        return postWith(mgr, java.util.Map.of("overrideIssuerUrl", url == null ? "" : url));
     }
 
     private JSONObject postMaxTtl(final OidcSettingsManager mgr, final String value) throws Exception {
+        return postWith(mgr, java.util.Map.of("maxTokenLifetimeMinutes", value));
+    }
+
+    private JSONObject postWith(final OidcSettingsManager mgr, final java.util.Map<String, String> params) throws Exception {
         final var writer = new StringWriter();
         when(request.getMethod()).thenReturn("POST");
-        lenient().when(request.getParameter("maxTokenLifetimeMinutes")).thenReturn(value);
-        lenient().when(request.getParameter("overrideIssuerUrl")).thenReturn(null);
+        when(request.getParameterMap()).thenReturn(
+                params.entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                        java.util.Map.Entry::getKey, e -> new String[]{e.getValue()})));
+        params.forEach((k, v) -> lenient().when(request.getParameter(k)).thenReturn(v));
         when(response.getWriter()).thenReturn(new PrintWriter(writer));
         final var admin = adminUser();
         try (final var su = mockStatic(SessionUser.class)) {
@@ -91,6 +85,25 @@ public class OidcSettingsControllerTest {
         final var httpResp = mock(HttpResponse.class);
         when(httpResp.statusCode()).thenReturn(status);
         when(httpClient.send(any(), any())).thenReturn(httpResp);
+    }
+
+    @Test
+    void rejectsPostWithNeitherParameter() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        mgr.saveOverrideIssuerUrl("https://existing.example.com");
+        // POST with no recognised parameter should not silently clear the override.
+        final var writer = new StringWriter();
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getParameterMap()).thenReturn(java.util.Map.of());
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        final var admin = adminUser();
+        try (final var su = mockStatic(SessionUser.class)) {
+            su.when(() -> SessionUser.getUser(request)).thenReturn(admin);
+            controller(mgr).doHandle(request, response);
+        }
+        verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        assertThat((String) parseResponse(writer).get("state")).isEqualTo("error");
+        assertThat(mgr.load().findOverrideIssuerUrl()).contains("https://existing.example.com");
     }
 
     @Test

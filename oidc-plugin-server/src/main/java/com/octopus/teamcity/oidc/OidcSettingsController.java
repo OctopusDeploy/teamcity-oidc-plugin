@@ -88,14 +88,22 @@ public class OidcSettingsController extends BaseController {
 
         // Two independent sections of the admin page POST here (Issuer URL and Token
         // defaults — Key Rotation has its own controller). Dispatch on which parameter
-        // the request carries.
-        final var rawMax = request.getParameter("maxTokenLifetimeMinutes");
-        if (rawMax != null) {
-            handleMaxTokenLifetime(response, rawMax);
+        // the request carries; reject requests that include neither.
+        final var hasMax = request.getParameterMap().containsKey("maxTokenLifetimeMinutes");
+        final var hasOverride = request.getParameterMap().containsKey("overrideIssuerUrl");
+
+        if (hasMax) {
+            handleMaxTokenLifetime(response, request.getParameter("maxTokenLifetimeMinutes"));
+            return null;
+        }
+        if (hasOverride) {
+            handleOverrideIssuerUrl(response, request.getParameter("overrideIssuerUrl"));
             return null;
         }
 
-        handleOverrideIssuerUrl(response, request.getParameter("overrideIssuerUrl"));
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        writeJson(response, "error",
+                "Missing parameter: expected overrideIssuerUrl or maxTokenLifetimeMinutes");
         return null;
     }
 
