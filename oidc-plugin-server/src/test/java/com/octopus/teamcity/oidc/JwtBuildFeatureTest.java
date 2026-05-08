@@ -38,9 +38,14 @@ public class JwtBuildFeatureTest {
         return new OidcIssuerUrlProvider(buildServerWithRootUrl(issuerUrl), new OidcSettingsManager(tempDir));
     }
 
+    private JwtBuildFeature newFeature(final String rootUrl) {
+        return new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl(rootUrl),
+                providerFor(rootUrl), new OidcSettingsManager(tempDir));
+    }
+
     @Test
     public void validationRejectsHttpRootUrl() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("http://teamcity.example.com"), providerFor("http://teamcity.example.com"));
+        final var feature = newFeature("http://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of());
@@ -52,7 +57,7 @@ public class JwtBuildFeatureTest {
 
     @Test
     public void validationAcceptsHttpsRootUrl() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of());
@@ -62,7 +67,7 @@ public class JwtBuildFeatureTest {
 
     @Test
     public void validationRejectsNonNumericTtl() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of("ttl_minutes", "notanumber"));
@@ -75,7 +80,7 @@ public class JwtBuildFeatureTest {
 
     @Test
     public void validationRejectsNonPositiveTtl() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         assertThat(processor).isNotNull();
         final var errors = processor.process(Map.of("ttl_minutes", "0"));
@@ -88,10 +93,11 @@ public class JwtBuildFeatureTest {
 
     @Test
     public void validationRejectsTtlAboveMaximum() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         assertThat(processor).isNotNull();
-        final var errors = processor.process(Map.of("ttl_minutes", "1441"));
+        final var errors = processor.process(Map.of("ttl_minutes",
+                String.valueOf(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES + 1)));
 
         assertThat(errors)
                 .singleElement()
@@ -101,38 +107,39 @@ public class JwtBuildFeatureTest {
 
     @Test
     public void validationAcceptsMaximumTtl() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
         assertThat(processor).isNotNull();
-        final var errors = processor.process(Map.of("ttl_minutes", "1440"));
+        final var errors = processor.process(Map.of("ttl_minutes",
+                String.valueOf(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES)));
 
         assertThat(errors).isEmpty();
     }
 
     @Test
     public void describeParametersIncludesAlgorithmAndTtl() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("algorithm", "ES256", "ttl_minutes", "5"));
         assertThat(description).contains("ES256").contains("5m");
     }
 
     @Test
     public void describeParametersIncludesAudienceWhenPresent() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("audience", "api://my-app"));
         assertThat(description).contains("api://my-app");
     }
 
     @Test
     public void describeParametersOmitsAudienceWhenBlank() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("algorithm", "RS256", "ttl_minutes", "10"));
         assertThat(description).doesNotContain("aud:");
     }
 
     @Test
     public void describeParametersDefaultsToRS256AndTenMinutesWhenParamsMissing() {
-        final var feature = new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl("https://teamcity.example.com"), providerFor("https://teamcity.example.com"));
+        final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of());
         assertThat(description).contains("RS256").contains("10m");
     }

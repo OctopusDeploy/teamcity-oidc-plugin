@@ -17,12 +17,15 @@ public class JwtBuildFeature extends BuildFeature {
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcIssuerUrlProvider issuerUrlProvider;
+    private final OidcSettingsManager oidcSettingsManager;
 
     public JwtBuildFeature(@NotNull final PluginDescriptor pluginDescriptor,
                            @NotNull final SBuildServer buildServer,
-                           @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
+                           @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
+                           @NotNull final OidcSettingsManager oidcSettingsManager) {
         this.pluginDescriptor = pluginDescriptor;
         this.issuerUrlProvider = issuerUrlProvider;
+        this.oidcSettingsManager = oidcSettingsManager;
         staticIssuerUrlProvider = issuerUrlProvider;
         staticBuildServer = buildServer;
     }
@@ -107,11 +110,14 @@ public class JwtBuildFeature extends BuildFeature {
                         "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
                                 "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
             }
+            final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
             final var ttl = params.getOrDefault("ttl_minutes", "10");
             try {
                 final var ttlValue = Integer.parseInt(ttl);
-                if (ttlValue <= 0 || ttlValue > 1440) {
-                    errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be between 1 and 1440 minutes."));
+                if (ttlValue < OidcSettings.MIN_TOKEN_LIFETIME_MINUTES || ttlValue > maxTtl) {
+                    errors.add(new InvalidProperty("ttl_minutes",
+                            "Token lifetime must be between " + OidcSettings.MIN_TOKEN_LIFETIME_MINUTES
+                            + " and " + maxTtl + " minutes."));
                 }
             } catch (final NumberFormatException e) {
                 errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));

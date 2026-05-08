@@ -46,7 +46,7 @@ public class JwtBuildFeatureAdminPageTest {
 
     private Map<String, Object> model() {
         final Map<String, Object> model = new HashMap<>();
-        JwtBuildFeatureAdminPage.populateModel(model, keyManager, settingsManager, issuerUrlProvider);
+        JwtBuildFeatureAdminPage.populateModel(model, keyManager, settingsManager, issuerUrlProvider, oidcSettingsManager);
         return model;
     }
 
@@ -71,7 +71,7 @@ public class JwtBuildFeatureAdminPageTest {
         // Not-ready manager: constructed but notifyTeamCityServerStartupCompleted() never called
         final var notReady = new JwtKeyManager(serverPaths, encryption);
         final Map<String, Object> model = new HashMap<>();
-        JwtBuildFeatureAdminPage.populateModel(model, notReady, settingsManager, issuerUrlProvider);
+        JwtBuildFeatureAdminPage.populateModel(model, notReady, settingsManager, issuerUrlProvider, oidcSettingsManager);
 
         assertThat(model.get("jwks").toString()).contains("startup in progress");
         assertThat(model.get("jwksBase64")).isEqualTo("");
@@ -155,7 +155,7 @@ public class JwtBuildFeatureAdminPageTest {
 
     @Test
     void overrideIssuerUrlIsPopulatedWhenSet() {
-        oidcSettingsManager.save("https://custom.issuer.example.com");
+        oidcSettingsManager.saveOverrideIssuerUrl("https://custom.issuer.example.com");
         assertThat(model().get("overrideIssuerUrl")).isEqualTo("https://custom.issuer.example.com");
     }
 
@@ -166,7 +166,7 @@ public class JwtBuildFeatureAdminPageTest {
 
     @Test
     void effectiveIssuerUrlUsesOverrideWhenSet() {
-        oidcSettingsManager.save("https://custom.issuer.example.com");
+        oidcSettingsManager.saveOverrideIssuerUrl("https://custom.issuer.example.com");
         assertThat(model().get("effectiveIssuerUrl")).isEqualTo("https://custom.issuer.example.com");
     }
 }

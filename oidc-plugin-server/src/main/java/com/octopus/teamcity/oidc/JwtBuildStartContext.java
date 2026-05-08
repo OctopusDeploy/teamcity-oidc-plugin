@@ -20,6 +20,7 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
     private final ExtensionHolder extensionHolder;
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final JwtKeyManager keyManager;
+    private final OidcSettingsManager oidcSettingsManager;
 
     private static final Pattern CLAIMS_SPLIT = Pattern.compile("\\s*,\\s*");
 
@@ -28,10 +29,12 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
     @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
     public JwtBuildStartContext(@NotNull final ExtensionHolder extensionHolder,
                                 @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
-                                @NotNull final JwtKeyManager keyManager) {
+                                @NotNull final JwtKeyManager keyManager,
+                                @NotNull final OidcSettingsManager oidcSettingsManager) {
         this.extensionHolder = extensionHolder;
         this.issuerUrlProvider = issuerUrlProvider;
         this.keyManager = keyManager;
+        this.oidcSettingsManager = oidcSettingsManager;
     }
 
     public void register() {
@@ -56,15 +59,17 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
                 final var descriptor = jwtBuildFeatures.stream().findFirst().orElseThrow();
                 final var params = descriptor.getParameters();
 
+                final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
                 final var ttlRaw = params.getOrDefault("ttl_minutes", "10");
                 int ttlMinutes;
                 try {
-                    ttlMinutes = Math.max(1, Math.min(1440, Integer.parseInt(ttlRaw)));
+                    ttlMinutes = Math.clamp(Integer.parseInt(ttlRaw),
+                            OidcSettings.MIN_TOKEN_LIFETIME_MINUTES, maxTtl);
                 } catch (final NumberFormatException e) {
+                    ttlMinutes = Math.min(10, maxTtl);
                     LOG.warning("JWT plugin: invalid ttl_minutes value '" + sanitize(ttlRaw)
                             + "' for build " + build.getBuildId()
-                            + " — check the build feature configuration. Using default of 10 minutes.");
-                    ttlMinutes = 10;
+                            + " — check the build feature configuration. Using default of " + ttlMinutes + " minutes.");
                 }
                 final var algorithmName = params.getOrDefault("algorithm", "RS256");
 

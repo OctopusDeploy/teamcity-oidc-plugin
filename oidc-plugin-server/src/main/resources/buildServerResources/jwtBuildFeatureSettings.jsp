@@ -55,6 +55,25 @@
     </div>
   </div>
 
+  <%-- ── Section 1b: Token defaults ── --%>
+  <div class="jwt-sec">
+    <div class="jwt-sec-title">Token defaults</div>
+
+    <div class="jwt-field-row">
+      <div class="jwt-field-label"><label for="maxTokenLifetimeMinutes">Max lifetime (minutes)</label></div>
+      <div class="jwt-field-body">
+        <div class="jwt-field-inline">
+          <input class="jwt-inp" type="number" id="maxTokenLifetimeMinutes" min="1"
+                 max="<c:out value="${maxTokenLifetimeAbsoluteMax}"/>" style="width:7em;"
+                 value="<c:out value="${maxTokenLifetimeMinutes}"/>"/>
+          <button class="jwt-btn jwt-btn-primary" type="button" onclick="jwtSaveMaxTokenLifetime()">Save</button>
+        </div>
+        <span class="jwt-hint">Upper bound on the per-build-feature <code>Token lifetime</code> setting. Default 720 (12h); absolute ceiling <c:out value="${maxTokenLifetimeAbsoluteMax}"/> (24h).</span>
+        <span id="jwtMaxTtlResult" style="display:none"></span>
+      </div>
+    </div>
+  </div>
+
   <%-- ── Section 2: Key Rotation ── --%>
   <div class="jwt-sec">
     <div class="jwt-sec-title">Key Rotation</div>
@@ -170,6 +189,15 @@
       'overrideIssuerUrl=',
       data => jwtShowResult('jwtOidcSettingsResult', data.state, data.message),
       () => jwtShowResult('jwtOidcSettingsResult', 'error', 'Request failed')
+    );
+  };
+
+  const jwtSaveMaxTokenLifetime = () => {
+    const value = document.getElementById('maxTokenLifetimeMinutes').value;
+    jwtAdminPost(jwtContextPath + '/admin/jwtOidcSettings.html',
+      'maxTokenLifetimeMinutes=' + encodeURIComponent(value),
+      data => jwtShowResult('jwtMaxTtlResult', data.state, data.message),
+      () => jwtShowResult('jwtMaxTtlResult', 'error', 'Request failed')
     );
   };
 

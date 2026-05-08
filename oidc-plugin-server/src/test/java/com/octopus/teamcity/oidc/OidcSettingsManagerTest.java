@@ -6,7 +6,6 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermission;
 
@@ -17,33 +16,35 @@ public class OidcSettingsManagerTest {
     @TempDir File tempDir;
 
     @Test
-    void returnsEmptyWhenFileAbsent() {
+    void returnsDefaultsWhenFileAbsent() {
         final var mgr = new OidcSettingsManager(tempDir);
-        assertThat(mgr.load()).isEmpty();
+        final var settings = mgr.load();
+        assertThat(settings.findOverrideIssuerUrl()).isEmpty();
+        assertThat(settings.maxTokenLifetimeMinutes()).isEqualTo(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES);
     }
 
     @Test
     void roundTripsOverrideUrl() {
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.save("https://ci.example.com");
-        assertThat(mgr.load()).contains("https://ci.example.com");
+        mgr.saveOverrideIssuerUrl("https://ci.example.com");
+        assertThat(mgr.load().findOverrideIssuerUrl()).contains("https://ci.example.com");
     }
 
     @Test
     void clearingOverrideReturnsEmpty() {
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.save("https://ci.example.com");
-        mgr.save(null);
-        assertThat(mgr.load()).isEmpty();
+        mgr.saveOverrideIssuerUrl("https://ci.example.com");
+        mgr.saveOverrideIssuerUrl(null);
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
         assertThat(new File(tempDir, "oidc-settings.json")).exists();
     }
 
     @Test
     void clearingWithBlankStringReturnsEmpty() {
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.save("https://ci.example.com");
-        mgr.save("   ");
-        assertThat(mgr.load()).isEmpty();
+        mgr.saveOverrideIssuerUrl("https://ci.example.com");
+        mgr.saveOverrideIssuerUrl("   ");
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
@@ -51,21 +52,50 @@ public class OidcSettingsManagerTest {
         final var mgr = new OidcSettingsManager(tempDir);
         Files.writeString(new File(tempDir, "oidc-settings.json").toPath(),
                 "{\"overrideIssuerUrl\":null}");
-        assertThat(mgr.load()).isEmpty();
+        assertThat(mgr.load().findOverrideIssuerUrl()).isEmpty();
     }
 
     @Test
-    void malformedJsonReturnsEmpty() throws Exception {
+    void malformedJsonReturnsDefaults() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
         Files.writeString(new File(tempDir, "oidc-settings.json").toPath(), "not json at all");
-        assertThat(mgr.load()).isEmpty();
+        final var settings = mgr.load();
+        assertThat(settings.findOverrideIssuerUrl()).isEmpty();
+        assertThat(settings.maxTokenLifetimeMinutes()).isEqualTo(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES);
+    }
+
+    @Test
+    void roundTripsMaxTokenLifetime() {
+        final var mgr = new OidcSettingsManager(tempDir);
+        mgr.saveMaxTokenLifetimeMinutes(60);
+        assertThat(mgr.load().maxTokenLifetimeMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void invalidMaxTokenLifetimeFallsBackToDefault() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        Files.writeString(new File(tempDir, "oidc-settings.json").toPath(),
+                "{\"maxTokenLifetimeMinutes\":\"not-a-number\"}");
+        assertThat(mgr.load().maxTokenLifetimeMinutes())
+                .isEqualTo(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES);
+    }
+
+    @Test
+    void loadClampsMaxTokenLifetimeFromCorruptedConfig() throws Exception {
+        // Older versions of the plugin allowed values up to a year. If we read a stored
+        // config above the current ceiling, load() should clamp it rather than throw.
+        final var mgr = new OidcSettingsManager(tempDir);
+        Files.writeString(new File(tempDir, "oidc-settings.json").toPath(),
+                "{\"maxTokenLifetimeMinutes\":525600}");
+        assertThat(mgr.load().maxTokenLifetimeMinutes())
+                .isEqualTo(OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES);
     }
 
     @Test
     @DisabledOnOs(OS.WINDOWS)
     void saveRestrictsFilePermissionsTo0600() throws Exception {
         final var mgr = new OidcSettingsManager(tempDir);
-        mgr.save("https://ci.example.com");
+        mgr.saveOverrideIssuerUrl("https://ci.example.com");
         final var perms = Files.getPosixFilePermissions(
                 new File(tempDir, "oidc-settings.json").toPath());
         assertThat(perms).containsExactlyInAnyOrder(
