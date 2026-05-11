@@ -1,12 +1,13 @@
 package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.ExtensionHolder;
-import jetbrains.buildServer.parameters.ParametersProvider;
 import jetbrains.buildServer.serverSide.SBuild;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -22,15 +23,13 @@ public class JwtPasswordsProviderTest {
     SBuild build;
 
     @Test
-    public void returnsJwtTokenAsPasswordParameterWhenPresent() {
-        final var parametersProvider = mock(ParametersProvider.class);
-        when(parametersProvider.get("jwt.token")).thenReturn("a.b.c");
-        when(build.getParametersProvider()).thenReturn(parametersProvider);
+    public void returnsJwtFromIssuanceServiceAsPasswordParameter() {
+        final var issuanceService = mock(JwtIssuanceService.class);
+        when(issuanceService.issueOrGet(build)).thenReturn(Optional.of("a.b.c"));
 
-        final var provider = new JwtPasswordsProvider(extensionHolder);
-        final var passwords = provider.getPasswordParameters(build);
+        final var provider = new JwtPasswordsProvider(extensionHolder, issuanceService);
 
-        assertThat(passwords)
+        assertThat(provider.getPasswordParameters(build))
                 .singleElement()
                 .satisfies(p -> {
                     assertThat(p.getName()).isEqualTo("jwt.token");
@@ -39,14 +38,12 @@ public class JwtPasswordsProviderTest {
     }
 
     @Test
-    public void returnsEmptyWhenJwtTokenNotPresent() {
-        final var parametersProvider = mock(ParametersProvider.class);
-        when(parametersProvider.get("jwt.token")).thenReturn(null);
-        when(build.getParametersProvider()).thenReturn(parametersProvider);
+    public void returnsEmptyWhenIssuanceServiceReturnsEmpty() {
+        final var issuanceService = mock(JwtIssuanceService.class);
+        when(issuanceService.issueOrGet(build)).thenReturn(Optional.empty());
 
-        final var provider = new JwtPasswordsProvider(extensionHolder);
-        final var passwords = provider.getPasswordParameters(build);
+        final var provider = new JwtPasswordsProvider(extensionHolder, issuanceService);
 
-        assertThat(passwords).isEmpty();
+        assertThat(provider.getPasswordParameters(build)).isEmpty();
     }
 }

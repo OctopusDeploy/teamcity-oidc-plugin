@@ -47,8 +47,9 @@ public class JwtBuildStartContextTest {
     private JwtBuildStartContext newContext(final String issuerUrl) {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        return new JwtBuildStartContext(extensionHolder, providerFor(issuerUrl), keyManager,
+        final var service = new JwtIssuanceService(providerFor(issuerUrl), keyManager,
                 new OidcSettingsManager(tempDir));
+        return new JwtBuildStartContext(extensionHolder, service);
     }
 
     /** Creates a JwtBuildStartContext using the standard HTTPS root URL. */
@@ -340,7 +341,21 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void jtiClaimIsUniquePerToken() throws Exception {
+    public void jtiClaimStartsWithBuildIdPrefix() throws Exception {
+        enableBuildFeature(Map.of());
+        when(runningBuild.getBuildId()).thenReturn(42L);
+        stubTrigger();
+
+        final var jti = runAndParseToken(newContext()).getJWTClaimsSet().getJWTID();
+
+        assertThat(jti).startsWith("42-");
+    }
+
+    @Test
+    public void sameBuildReturnsCachedTokenAcrossInvocations() throws Exception {
+        // The same JWT must end up in the masking set AND in the jwt.token shared parameter,
+        // so the issuance service caches per buildId and re-using the same build returns the
+        // same value.
         enableBuildFeature(Map.of());
         when(runningBuild.getBuildId()).thenReturn(42L);
         stubTrigger();
@@ -351,9 +366,6 @@ public class JwtBuildStartContextTest {
         context.updateParameters(buildStartContext);
         verify(buildStartContext, times(2)).addSharedParameter(eq("jwt.token"), captor.capture());
 
-        final var jti1 = SignedJWT.parse(captor.getAllValues().get(0)).getJWTClaimsSet().getJWTID();
-        final var jti2 = SignedJWT.parse(captor.getAllValues().get(1)).getJWTClaimsSet().getJWTID();
-        assertThat(jti1).startsWith("42-").isNotEqualTo(jti2);
-        assertThat(jti2).startsWith("42-");
+        assertThat(captor.getAllValues().get(0)).isEqualTo(captor.getAllValues().get(1));
     }
 }

@@ -52,8 +52,9 @@ public class AlgorithmChoiceTest {
     }
 
     private JwtBuildStartContext buildContext() {
-        final var context = new JwtBuildStartContext(extensionHolder, providerFor("https://localhost:8111"),
+        final var service = new JwtIssuanceService(providerFor("https://localhost:8111"),
                 keyManager, new OidcSettingsManager(tempDir));
+        final var context = new JwtBuildStartContext(extensionHolder, service);
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
         final var triggeredBy = mock(TriggeredBy.class);

@@ -7,15 +7,11 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.SignedJWT;
-import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.*;
-import jetbrains.buildServer.serverSide.ServerPaths;
-import jetbrains.buildServer.serverSide.SBuildServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,8 +26,6 @@ import static org.mockito.Mockito.*;
 public class JwtIssuanceAndVerificationTest {
 
     @Mock ServerPaths serverPaths;
-    @Mock ExtensionHolder extensionHolder;
-    @Mock BuildStartContext buildStartContext;
     @Mock SRunningBuild runningBuild;
     @Mock SBuildFeatureDescriptor featureDescriptor;
 
@@ -106,22 +100,12 @@ public class JwtIssuanceAndVerificationTest {
 
     @Test
     public void jwtClaimsMatchBuildContextAndConfiguration() throws Exception {
-        setupBuildContext(Map.of("audience", "my-cloud-audience", "ttl_minutes", "5"));
-
         final var branch = mock(Branch.class);
         when(branch.getName()).thenReturn("refs/heads/main");
         when(runningBuild.getBranch()).thenReturn(branch);
         when(runningBuild.getBuildTypeExternalId()).thenReturn("My_BuildType");
 
-        final var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder,
-                providerFor("https://teamcity.example.com"),
-                keyManager,
-                new OidcSettingsManager(tempDir));
-        jwtBuildStartContext.updateParameters(buildStartContext);
-        verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
-
-        final var jwt = SignedJWT.parse(tokenCaptor.getValue());
+        final var jwt = SignedJWT.parse(issueToken(Map.of("audience", "my-cloud-audience", "ttl_minutes", "5")));
         final var claims = jwt.getJWTClaimsSet();
 
         assertThat(claims.getIssuer()).isEqualTo("https://teamcity.example.com");
@@ -160,23 +144,17 @@ public class JwtIssuanceAndVerificationTest {
     // --- helpers ---
 
     private String issueToken(final Map<String, String> params) {
-        setupBuildContext(params);
-        final var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        final var jwtBuildStartContext = new JwtBuildStartContext(extensionHolder,
-                providerFor("https://teamcity.example.com"),
-                keyManager,
-                new OidcSettingsManager(tempDir));
-        jwtBuildStartContext.updateParameters(buildStartContext);
-        verify(buildStartContext).addSharedParameter(eq(JwtPasswordsProvider.JWT_PARAMETER_NAME), tokenCaptor.capture());
-        return tokenCaptor.getValue();
-    }
-
-    private void setupBuildContext(final Map<String, String> params) {
-        when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
         when(featureDescriptor.getParameters()).thenReturn(params);
         final var triggeredBy = mock(TriggeredBy.class);
         when(runningBuild.getTriggeredBy()).thenReturn(triggeredBy);
+
+        final var service = new JwtIssuanceService(
+                providerFor("https://teamcity.example.com"),
+                keyManager,
+                new OidcSettingsManager(tempDir));
+        return service.issueOrGet(runningBuild)
+                .orElseThrow(() -> new AssertionError("issueOrGet returned empty"));
     }
 
     private JWKSet getJwks() {

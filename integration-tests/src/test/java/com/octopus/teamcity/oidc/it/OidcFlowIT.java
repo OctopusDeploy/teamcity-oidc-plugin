@@ -458,7 +458,8 @@ public class OidcFlowIT {
         tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
 
         // Write jwt.token to a file artifact so we can retrieve it via the artifacts API.
-        // The resulting-properties API masks password parameters; artifact file content is not masked.
+        // jwt.token is masked in the resulting-properties API and in the build log; artifact
+        // file content is not, so an artifact is the only way to read the value back.
         final var stepJson = """
                 {"type":"simpleRunner","name":"capture-jwt","properties":{"property":[
                   {"name":"script.content","value":"JWT=%jwt.token%\\nprintf 'JWT (first 50): %.50s\\\\n' \\"$JWT\\"\\nprintf '%s' \\"$JWT\\" > jwt.txt"},
@@ -470,6 +471,12 @@ public class OidcFlowIT {
         // Publish jwt.txt as an artifact so the test can download it via the artifacts API
         tcPut("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/artifactRules", "jwt.txt");
 
+        // Map jwt.token onto an env var, mirroring the real-world usage pattern
+        // (env.ARM_OIDC_TOKEN=%jwt.token%) that exposed the masking bug.
+        final var envVarParamJson = """
+                {"name":"env.ARM_OIDC_TOKEN","value":"%jwt.token%"}
+                """;
+        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/parameters", envVarParamJson);
     }
 
     /**
@@ -782,6 +789,71 @@ public class OidcFlowIT {
                 .isEqualTo(200);
     }
 
+    @Test
+    void jwtTokenIsMaskedInBuildLogAndResultingProperties() throws Exception {
+        waitForAgentIdle();
+        log("Triggering build for masking assertions...");
+        final var queueResponse = triggerBuild();
+        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
+        log("Build queued, id=" + buildId);
+        waitForBuildSuccess(buildId);
+
+        // Artifact contents are exempt from masking, so this gives us the literal JWT
+        // value that should be replaced with ******* everywhere it appears.
+        final var jwt = extractJwtFromBuild(buildId);
+        org.assertj.core.api.Assertions.assertThat(jwt)
+                .as("Sanity: jwt.txt artifact must contain a JWT")
+                .startsWith("eyJ");
+
+        final var resultingProperties = fetchResultingProperties(buildId);
+        org.assertj.core.api.Assertions.assertThat(resultingProperties)
+                .as("jwt.token must be masked in resulting-properties")
+                .contains("name=\"jwt.token\" value=\"*******\"");
+        org.assertj.core.api.Assertions.assertThat(resultingProperties)
+                .as("env.ARM_OIDC_TOKEN (which resolves to %jwt.token%) must be masked in resulting-properties")
+                .contains("name=\"env.ARM_OIDC_TOKEN\" value=\"*******\"");
+        org.assertj.core.api.Assertions.assertThat(resultingProperties)
+                .as("Raw JWT must not appear anywhere in resulting-properties")
+                .doesNotContain(jwt);
+
+        final var buildLog = fetchBuildLog(buildId);
+        org.assertj.core.api.Assertions.assertThat(buildLog)
+                .as("Raw JWT must not appear in the build log")
+                .doesNotContain(jwt);
+    }
+
+    private static String fetchResultingProperties(final String buildId) throws Exception {
+        final var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(
+                                tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId + "/resulting-properties"))
+                        .header("Authorization", superUserAuthHeader)
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Failed to fetch resulting-properties: " + response.statusCode() + " " + response.body());
+        }
+        return response.body();
+    }
+
+    private static String fetchBuildLog(final String buildId) throws Exception {
+        final var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(
+                                tcBaseUrl + "/httpAuth/downloadBuildLog.html?buildId=" + buildId))
+                        .header("Authorization", superUserAuthHeader)
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Failed to fetch build log: " + response.statusCode() + " " + response.body());
+        }
+        return response.body();
+    }
+
     private static String triggerBuild() throws Exception {
         final var body = """
                 {"buildType":{"id":"OidcTest_Build"}}
@@ -857,7 +929,7 @@ public class OidcFlowIT {
     }
 
     private static String extractJwtFromBuild(final String buildId) throws Exception {
-        // jwt.token is a password parameter — masked in resulting-properties.
+        // jwt.token is masked in resulting-properties via JwtPasswordsProvider.
         // The build step writes it to jwt.txt; we download that artifact instead.
         final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
