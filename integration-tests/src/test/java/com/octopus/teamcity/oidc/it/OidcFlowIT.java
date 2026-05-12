@@ -454,9 +454,13 @@ public class OidcFlowIT {
         // is built from these (project:<id>:build_type:<id>) so they need to match the
         // composite `sub` claim the plugin emits at build time. Using internal IDs instead
         // of the external IDs makes the trust binding rename-stable.
-        projectInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/projects/" + PROJECT_EXTERNAL_ID))
+        //
+        // TC's REST API omits `internalId` from the default response — it must be requested
+        // explicitly via `?fields=internalId`.
+        projectInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/projects/" + PROJECT_EXTERNAL_ID + "?fields=internalId"))
                 .get("internalId");
         buildTypeInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID))
+        buildTypeInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID + "?fields=internalId"))
                 .get("internalId");
 
         // Add JWT build feature — audience is the Octopus ExternalId GUID.
