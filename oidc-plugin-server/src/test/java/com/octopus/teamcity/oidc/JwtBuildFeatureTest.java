@@ -117,30 +117,37 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void describeParametersIncludesAlgorithmAndTtl() {
+    public void describeParametersShowsFullSubjectTemplateByDefault() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of("algorithm", "ES256", "ttl_minutes", "5"));
-        assertThat(description).contains("ES256").contains("5m");
+        final var description = feature.describeParameters(Map.of());
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger>");
     }
 
     @Test
     public void describeParametersIncludesAudienceWhenPresent() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("audience", "api://my-app"));
-        assertThat(description).contains("api://my-app");
+        assertThat(description).contains("\naud:api://my-app");
     }
 
     @Test
     public void describeParametersOmitsAudienceWhenBlank() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of("algorithm", "RS256", "ttl_minutes", "10"));
+        final var description = feature.describeParameters(Map.of("audience", ""));
         assertThat(description).doesNotContain("aud:");
     }
 
     @Test
-    public void describeParametersDefaultsToRS256AndTenMinutesWhenParamsMissing() {
+    public void describeParametersOmitsOptionalDimensionsWhenSubjectScopingIsNone() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of());
-        assertThat(description).contains("RS256").contains("10m");
+        final var description = feature.describeParameters(Map.of("subject_dimensions", "none"));
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>");
+    }
+
+    @Test
+    public void describeParametersIncludesOnlyConfiguredDimensions() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var description = feature.describeParameters(Map.of("subject_dimensions", "branch"));
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>");
     }
 }

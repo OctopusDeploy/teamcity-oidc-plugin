@@ -103,20 +103,79 @@ public class JwtIssuanceAndVerificationTest {
         final var branch = mock(Branch.class);
         when(branch.getName()).thenReturn("refs/heads/main");
         when(runningBuild.getBranch()).thenReturn(branch);
-        when(runningBuild.getBuildTypeExternalId()).thenReturn("My_BuildType");
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
 
         final var jwt = SignedJWT.parse(issueToken(Map.of("audience", "my-cloud-audience", "ttl_minutes", "5")));
         final var claims = jwt.getJWTClaimsSet();
 
         assertThat(claims.getIssuer()).isEqualTo("https://teamcity.example.com");
         assertThat(claims.getAudience()).containsExactly("my-cloud-audience");
-        assertThat(claims.getSubject()).isEqualTo("My_BuildType");
+        assertThat(claims.getSubject())
+                .isEqualTo("project:project7:build_type:bt42:branch:refs/heads/main:trigger_type:unknown");
         assertThat(claims.getStringClaim("branch")).isEqualTo("refs/heads/main");
         assertThat(claims.getIssueTime()).isNotNull();
         assertThat(claims.getExpirationTime()).isNotNull();
 
         final var ttlSeconds = (claims.getExpirationTime().getTime() - claims.getIssueTime().getTime()) / 1000;
         assertThat(ttlSeconds).isEqualTo(5 * 60);
+    }
+
+    @Test
+    public void subjectIsMinimalCompositeWhenNoOptionalDimensionsConfigured() throws Exception {
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
+
+        final var jwt = SignedJWT.parse(issueToken(Map.of("subject_dimensions", "none")));
+        final var sub = jwt.getJWTClaimsSet().getSubject();
+
+        assertThat(sub).isEqualTo("project:project7:build_type:bt42");
+    }
+
+    @Test
+    public void subjectIncludesOnlyConfiguredOptionalDimensions() throws Exception {
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
+        final var branch = mock(Branch.class);
+        when(branch.getName()).thenReturn("refs/heads/main");
+        when(runningBuild.getBranch()).thenReturn(branch);
+
+        final var jwt = SignedJWT.parse(issueToken(Map.of("subject_dimensions", "branch")));
+        final var sub = jwt.getJWTClaimsSet().getSubject();
+
+        assertThat(sub).isEqualTo("project:project7:build_type:bt42:branch:refs/heads/main");
+    }
+
+    @Test
+    public void branchAndTriggerTypeClaimsAreAlwaysEmittedRegardlessOfSubjectScoping() throws Exception {
+        final var branch = mock(Branch.class);
+        when(branch.getName()).thenReturn("refs/heads/main");
+        when(runningBuild.getBranch()).thenReturn(branch);
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
+
+        final var jwt = SignedJWT.parse(issueToken(Map.of("subject_dimensions", "none")));
+        final var claims = jwt.getJWTClaimsSet();
+
+        assertThat(claims.getSubject()).isEqualTo("project:project7:build_type:bt42");
+        assertThat(claims.getStringClaim("branch")).isEqualTo("refs/heads/main");
+        assertThat(claims.getStringClaim("trigger_type")).isEqualTo("unknown");
+    }
+
+    @Test
+    public void jwtIncludesBothExternalAndInternalIdClaims() throws Exception {
+        when(runningBuild.getBuildTypeExternalId()).thenReturn("MyProject_MyBuildType");
+        when(runningBuild.getProjectExternalId()).thenReturn("MyProject");
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
+
+        final var jwt = SignedJWT.parse(issueToken(Map.of()));
+        final var claims = jwt.getJWTClaimsSet();
+
+        assertThat(claims.getStringClaim("build_type_external_id")).isEqualTo("MyProject_MyBuildType");
+        assertThat(claims.getStringClaim("project_external_id")).isEqualTo("MyProject");
+        assertThat(claims.getStringClaim("build_type_internal_id")).isEqualTo("bt42");
+        assertThat(claims.getStringClaim("project_internal_id")).isEqualTo("project7");
     }
 
     @Test

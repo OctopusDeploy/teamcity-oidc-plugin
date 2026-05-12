@@ -272,8 +272,8 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void mandatoryClaimsAlwaysIncludedRegardlessOfClaimsConfig() throws Exception {
-        enableBuildFeature(Map.of("claims", ""));
+    public void mandatoryClaimsAlwaysIncludedRegardlessOfSubjectDimensions() throws Exception {
+        enableBuildFeature(Map.of("subject_dimensions", ""));
         when(runningBuild.getBuildTypeExternalId()).thenReturn("BuildType_1");
         when(runningBuild.getProjectExternalId()).thenReturn("Project_1");
         stubTrigger();
@@ -285,30 +285,37 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void onlyConfiguredOptionalClaimsAreIncluded() throws Exception {
-        enableBuildFeature(Map.of("claims", "branch"));
-        stubBranch("refs/heads/main");
-
-        final var claims = runAndParseToken(newContext()).getJWTClaimsSet();
-
-        assertThat(claims.getStringClaim("branch")).isEqualTo("refs/heads/main");
-        assertThat(claims.getClaim("trigger_type")).isNull();
-    }
-
-    @Test
-    public void claimsWithWhitespaceAroundCommasAreAllIncluded() throws Exception {
-        enableBuildFeature(Map.of("claims", "branch, trigger_type"));
+    public void subjectIncludesOnlyConfiguredOptionalDimensions() throws Exception {
+        enableBuildFeature(Map.of("subject_dimensions", "branch"));
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
         stubBranch("refs/heads/main");
         stubUserTrigger();
 
         final var claims = runAndParseToken(newContext()).getJWTClaimsSet();
 
+        assertThat(claims.getSubject())
+                .isEqualTo("project:project7:build_type:bt42:branch:refs/heads/main");
         assertThat(claims.getStringClaim("branch")).isEqualTo("refs/heads/main");
         assertThat(claims.getStringClaim("trigger_type")).isEqualTo("user");
     }
 
     @Test
-    public void allClaimsIncludedWhenClaimsParamAbsent() throws Exception {
+    public void subjectDimensionsWithWhitespaceAroundCommasAreAllParsed() throws Exception {
+        enableBuildFeature(Map.of("subject_dimensions", "branch, trigger_type"));
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
+        stubBranch("refs/heads/main");
+        stubUserTrigger();
+
+        final var claims = runAndParseToken(newContext()).getJWTClaimsSet();
+
+        assertThat(claims.getSubject())
+                .isEqualTo("project:project7:build_type:bt42:branch:refs/heads/main:trigger_type:user");
+    }
+
+    @Test
+    public void allClaimsIncludedWhenSubjectDimensionsParamAbsent() throws Exception {
         enableBuildFeature(Map.of());
         when(runningBuild.getBuildTypeExternalId()).thenReturn("BuildType_1");
         when(runningBuild.getProjectExternalId()).thenReturn("Project_1");
@@ -320,13 +327,18 @@ public class JwtBuildStartContextTest {
     }
 
     @Test
-    public void unknownClaimNamesAreIgnoredAndDoNotAppearInToken() throws Exception {
-        enableBuildFeature(Map.of("claims", "branch,injected_claim,__proto__"));
+    public void unknownDimensionNamesAreIgnoredAndDoNotAppearInSubjectOrToken() throws Exception {
+        enableBuildFeature(Map.of("subject_dimensions", "branch,injected_claim,__proto__"));
+        when(runningBuild.getBuildTypeId()).thenReturn("bt42");
+        when(runningBuild.getProjectId()).thenReturn("project7");
         stubBranch("refs/heads/main");
+        stubUserTrigger();
 
         final var claims = runAndParseToken(newContext()).getJWTClaimsSet();
 
-        assertThat(claims.getStringClaim("branch")).isEqualTo("refs/heads/main");
+        assertThat(claims.getSubject())
+                .doesNotContain("injected_claim")
+                .doesNotContain("__proto__");
         assertThat(claims.getClaim("injected_claim")).isNull();
         assertThat(claims.getClaim("__proto__")).isNull();
     }

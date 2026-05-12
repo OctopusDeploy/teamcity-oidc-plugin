@@ -149,6 +149,8 @@ public class OidcDiscoveryComplianceTest {
         assertThat(claims).contains(
                 "build_type_external_id",
                 "project_external_id",
+                "build_type_internal_id",
+                "project_internal_id",
                 "branch",
                 "trigger_type");
     }

@@ -5,25 +5,24 @@
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 <%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
-<%@ page import="com.octopus.teamcity.oidc.OidcSettingsManager" %>
 <%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
+<%@ page import="jetbrains.buildServer.users.SUser" %>
 <%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
-<%@ page import="org.springframework.web.context.support.WebApplicationContextUtils" %>
 <%
     pageContext.setAttribute("jwtRootUrlNeedsHttps", !JwtBuildFeature.isRootUrlHttps());
 
-    final var jwtSamples = JwtBuildFeature.sampleClaimsFor(request.getParameter("id"));
+    final JwtBuildFeature.SampleClaims jwtSamples = JwtBuildFeature.sampleClaimsFor(request.getParameter("id"));
     pageContext.setAttribute("sampleBranch", jwtSamples.branch());
     pageContext.setAttribute("sampleTriggerType", jwtSamples.triggerType());
     pageContext.setAttribute("sampleHasVcsRoot", jwtSamples.hasVcsRoot());
+    pageContext.setAttribute("projectInternalId", jwtSamples.projectInternalId());
+    pageContext.setAttribute("buildTypeInternalId", jwtSamples.buildTypeInternalId());
 
-    final var editJwtSettingsManager = WebApplicationContextUtils
-            .getRequiredWebApplicationContext(application)
-            .getBean(OidcSettingsManager.class);
-    final var maxTokenLifetimeMinutes = editJwtSettingsManager.load().maxTokenLifetimeMinutes();
-    pageContext.setAttribute("maxTokenLifetimeMinutes", maxTokenLifetimeMinutes);
+    // OidcSettingsManager lives in the plugin's child Spring context, not TC's root web
+    // context, so WebApplicationContextUtils can't see it. Use the static accessor instead.
+    pageContext.setAttribute("maxTokenLifetimeMinutes", JwtBuildFeature.maxTokenLifetimeMinutes());
 
-    final var editJwtCurrentUser = SessionUser.getUser(request);
+    final SUser editJwtCurrentUser = SessionUser.getUser(request);
     pageContext.setAttribute("currentUserCanConfigureMax",
             editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
 %>
@@ -64,47 +63,37 @@
         </td>
     </tr>
     <tr>
-        <th><label>Claims:</label></th>
+        <th><label>Subject scoping:</label></th>
         <td>
             <%-- Hidden field holds the comma-separated value that TC saves; JS keeps it in sync --%>
-            <props:hiddenProperty name="claims" id="claims"/>
-            <table class="jwt-claims-table">
-                <thead>
-                    <tr>
-                        <th>Claim</th>
-                        <th>Sample value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td><label title="Always included &mdash; required to identify the source project"><input type="checkbox" checked disabled title="Always included &mdash; required to identify the source project"/> project_external_id</label></td>
-                    <td><span class="smallNote"><code>${fn:escapeXml(buildForm.project.externalId)}</code></span></td>
-                </tr>
-                <tr>
-                    <td><label title="Always included &mdash; required to identify the source build configuration"><input type="checkbox" checked disabled title="Always included &mdash; required to identify the source build configuration"/> build_type_external_id</label></td>
-                    <td><span class="smallNote"><code>${fn:escapeXml(buildForm.externalId)}</code></span></td>
-                </tr>
+            <props:hiddenProperty name="subject_dimensions" id="subject_dimensions"/>
+            <span class="smallNote">
+                Choose which dimensions appear in <code>sub</code>; claims are emitted separately in the token regardless.
+            </span>
+            <%-- Sample values for the live preview, exposed via HTML data-* so JS can read them
+                 without needing to inline-escape into a script literal. --%>
+            <div id="jwtSubjectPreviewData" style="display:none;"
+                 data-project-id="${fn:escapeXml(projectInternalId)}"
+                 data-build-type-id="${fn:escapeXml(buildTypeInternalId)}"
+                 data-sample-branch="${fn:escapeXml(sampleBranch)}"
+                 data-sample-trigger-type="${fn:escapeXml(sampleTriggerType)}"></div>
+            <ul class="jwt-subject-dimensions">
+                <li><label title="Always included - required to identify the source project"><input type="checkbox" checked disabled/> project</label></li>
+                <li><label title="Always included - required to identify the source build configuration"><input type="checkbox" checked disabled/> build_type</label></li>
                 <c:if test="${sampleHasVcsRoot}">
-                <tr>
-                    <td><label><input type="checkbox" class="jwt-claim-cb" value="branch"/> branch</label></td>
-                    <td>
-                        <c:if test="${not empty sampleBranch}"><span class="smallNote"><code>${fn:escapeXml(sampleBranch)}</code></span></c:if>
-                        <c:if test="${empty sampleBranch}"><span class="smallNote jwt-claims-sample-example">e.g. <code>refs/heads/main</code></span></c:if>
-                    </td>
-                </tr>
+                <li><label><input type="checkbox" class="jwt-subject-dimension-cb" value="branch"/> branch</label></li>
                 </c:if>
-                <tr>
-                    <td><label><input type="checkbox" class="jwt-claim-cb" value="trigger_type"/> trigger_type</label></td>
-                    <td>
-                        <c:if test="${not empty sampleTriggerType}"><span class="smallNote"><code>${fn:escapeXml(sampleTriggerType)}</code></span></c:if>
-                        <c:if test="${empty sampleTriggerType}"><span class="smallNote jwt-claims-sample-example">e.g. <code>user</code></span></c:if>
-                        <span class="smallNote jwt-claims-tooltip"
-                              title="Possible values: user, snapshotDependency, vcsTrigger, schedulingTrigger, retryBuildTrigger, buildDependencyTrigger, finishBuildTrigger, perforceShelveTrigger, unknown">[?]</span>
-                    </td>
-                </tr>
-                </tbody>
-            </table>
-            <span class="error" id="error_claims"></span>
+                <li>
+                    <label><input type="checkbox" class="jwt-subject-dimension-cb" value="trigger_type"/> trigger_type</label>
+                    <span class="smallNote jwt-subject-dimensions-tooltip"
+                          title="Possible values: user, snapshotDependency, vcsTrigger, schedulingTrigger, retryBuildTrigger, buildDependencyTrigger, finishBuildTrigger, perforceShelveTrigger, unknown">[?]</span>
+                </li>
+            </ul>
+            <div class="jwt-subject-preview">
+                <label for="jwtSubjectPreview">Resulting <code>sub</code> claim:</label>
+                <input id="jwtSubjectPreview" type="text" readonly/>
+            </div>
+            <span class="error" id="error_subject_dimensions"></span>
         </td>
     </tr>
     <tr>
@@ -256,22 +245,61 @@
             placeholder.append($j('span#jwtTestConnectionBtnHolder').children());
         }
 
-        // Initialise claim checkboxes from stored comma-separated value.
-        // Blank = all claims enabled, so tick all boxes when the field is empty.
-        // ALL_CLAIMS is derived from the rendered checkboxes so it stays in sync
+        // Initialise checkboxes from the stored subject-scoping value.
+        // Blank = all optional dimensions enabled (the default for a fresh feature).
+        // "none" = no optional dimensions; subject contains only project + build_type.
+        // ALL_DIMENSIONS is derived from the rendered checkboxes so it stays in sync
         // when rows are conditionally hidden (e.g. branch row when no VCS root).
-        const ALL_CLAIMS = $j('.jwt-claim-cb').map(function() { return $j(this).val(); }).get();
-        const stored = $j('#claims').val().trim();
-        const enabled = stored === '' ? ALL_CLAIMS : stored.split(/\s*,\s*/);
-        $j('.jwt-claim-cb').each(function() {
+        const ALL_DIMENSIONS = $j('.jwt-subject-dimension-cb').map(function() { return $j(this).val(); }).get();
+        const stored = $j('#subject_dimensions').val().trim();
+        let enabled;
+        if (stored === '') {
+            enabled = ALL_DIMENSIONS;
+        } else if (stored === 'none') {
+            enabled = [];
+        } else {
+            enabled = stored.split(/\s*,\s*/);
+        }
+        $j('.jwt-subject-dimension-cb').each(function() {
             $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
         });
 
-        // Sync hidden field on every checkbox change.
-        // All checked → store blank (= "all"); partial → store comma-separated list.
-        $j('.jwt-claim-cb').on('change', function() {
-            const checked = $j('.jwt-claim-cb:checked').map(function() { return $j(this).val(); }).get();
-            $j('#claims').val(checked.length === ALL_CLAIMS.length ? '' : checked.join(','));
+        // Live preview of the resulting sub claim. Uses real sample values from the
+        // last finished build when available, falling back to <name> placeholders
+        // so the shape of the composed sub is always visible.
+        const previewData = $j('#jwtSubjectPreviewData');
+        const PROJECT_ID = previewData.attr('data-project-id');
+        const BUILD_TYPE_ID = previewData.attr('data-build-type-id');
+        const SAMPLE_BRANCH = previewData.attr('data-sample-branch') || '<branch>';
+        const SAMPLE_TRIGGER_TYPE = previewData.attr('data-sample-trigger-type') || '<trigger_type>';
+
+        function updatePreview() {
+            let sub = 'project:' + PROJECT_ID + ':build_type:' + BUILD_TYPE_ID;
+            if ($j('.jwt-subject-dimension-cb[value="branch"]').is(':checked')) {
+                sub += ':branch:' + SAMPLE_BRANCH;
+            }
+            if ($j('.jwt-subject-dimension-cb[value="trigger_type"]').is(':checked')) {
+                sub += ':trigger_type:' + SAMPLE_TRIGGER_TYPE;
+            }
+            $j('#jwtSubjectPreview').val(sub);
+        }
+
+        // Sync hidden field and preview on every checkbox change.
+        // All checked → blank (= "all"); none checked → "none"; partial → comma-separated.
+        $j('.jwt-subject-dimension-cb').on('change', function() {
+            const checked = $j('.jwt-subject-dimension-cb:checked').map(function() { return $j(this).val(); }).get();
+            let value;
+            if (checked.length === ALL_DIMENSIONS.length) {
+                value = '';
+            } else if (checked.length === 0) {
+                value = 'none';
+            } else {
+                value = checked.join(',');
+            }
+            $j('#subject_dimensions').val(value);
+            updatePreview();
         });
+
+        updatePreview();
     });
 </script>
