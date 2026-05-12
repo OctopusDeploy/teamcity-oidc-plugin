@@ -44,8 +44,11 @@ public class OidcFlowIT {
     private static final String TC_HTTPS_BASE = "https://teamcity-tls";
 
     private static final String BUILD_CONFIG_EXTERNAL_ID = "OidcTest_Build";
+    private static final String PROJECT_EXTERNAL_ID = "OidcTest";
     static String octopusExternalId; // fetched after service account creation, used as JWT audience
     static String octopusServiceAccountId; // fetched after service account creation
+    static String projectInternalId; // fetched after project creation, used in Octopus OIDC subject
+    static String buildTypeInternalId; // fetched after build type creation, used in Octopus OIDC subject
 
     private static final String CONTAINER_PREFIX = "jwt-it-"
             + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
@@ -447,12 +450,23 @@ public class OidcFlowIT {
                 """;
         tcPost("/httpAuth/app/rest/buildTypes", buildConfigJson);
 
-        // Add JWT build feature — audience is the Octopus ExternalId GUID
+        // Fetch the internal IDs that TC auto-assigns. The Octopus OIDC identity subject
+        // is built from these (project:<id>:build_type:<id>) so they need to match the
+        // composite `sub` claim the plugin emits at build time. Using internal IDs instead
+        // of the external IDs makes the trust binding rename-stable.
+        projectInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/projects/" + PROJECT_EXTERNAL_ID))
+                .get("internalId");
+        buildTypeInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID))
+                .get("internalId");
+
+        // Add JWT build feature — audience is the Octopus ExternalId GUID.
+        // subject_dimensions=none keeps the `sub` to the minimal `project:<id>:build_type:<id>`
+        // form so it matches Octopus's literal-subject federated credential.
         final var featureJson = """
                 {"type":"oidc-plugin","properties":{"property":[
                   {"name":"audience","value":"%s"},
                   {"name":"ttl_minutes","value":"10"},
-                  {"name":"enabled_claims","value":"sub,iss,aud"}
+                  {"name":"subject_dimensions","value":"none"}
                 ]}}
                 """.formatted(audience);
         tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
@@ -546,6 +560,21 @@ public class OidcFlowIT {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IllegalStateException("TC POST " + path + " returned " + response.statusCode() + ": " + response.body());
         }
+    }
+
+    private static String tcGet(final String path) throws Exception {
+        final var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(tcBaseUrl + path))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Accept", "application/json")
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("TC GET " + path + " returned " + response.statusCode() + ": " + response.body());
+        }
+        return response.body();
     }
 
     private static void authorizeAgent() throws Exception {
@@ -730,10 +759,14 @@ public class OidcFlowIT {
     }
 
     private static void attachOctopusOidcIdentity() throws Exception {
+        // Subject must match the composite `sub` claim the plugin emits. With
+        // subject_dimensions=none on the build feature, the plugin emits
+        // `project:<project_internal_id>:build_type:<build_type_internal_id>`.
+        final var subject = "project:" + projectInternalId + ":build_type:" + buildTypeInternalId;
         octopusPost("/api/serviceaccounts/" + octopusServiceAccountId + "/oidcidentities/create/v1", """
                 {"ServiceAccountId":"%s","Name":"TeamCity Build",
                  "Issuer":"%s","Subject":"%s"}
-                """.formatted(octopusServiceAccountId, TC_HTTPS_BASE, BUILD_CONFIG_EXTERNAL_ID));
+                """.formatted(octopusServiceAccountId, TC_HTTPS_BASE, subject));
     }
 
     @Test
