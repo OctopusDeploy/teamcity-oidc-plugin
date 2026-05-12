@@ -459,7 +459,6 @@ public class OidcFlowIT {
         // explicitly via `?fields=internalId`.
         projectInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/projects/" + PROJECT_EXTERNAL_ID + "?fields=internalId"))
                 .get("internalId");
-        buildTypeInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID))
         buildTypeInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID + "?fields=internalId"))
                 .get("internalId");
 
