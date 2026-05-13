@@ -106,7 +106,10 @@ public class JwtIssuanceAndVerificationTest {
         when(runningBuild.getBuildTypeId()).thenReturn("bt42");
         when(runningBuild.getProjectId()).thenReturn("project7");
 
-        final var jwt = SignedJWT.parse(issueToken(Map.of("audience", "my-cloud-audience", "ttl_minutes", "5")));
+        final var jwt = SignedJWT.parse(issueToken(Map.of(
+                "audience", "my-cloud-audience",
+                "ttl_minutes", "5",
+                "subject_dimensions", "branch,trigger_type")));
         final var claims = jwt.getJWTClaimsSet();
 
         assertThat(claims.getIssuer()).isEqualTo("https://teamcity.example.com");
@@ -122,11 +125,11 @@ public class JwtIssuanceAndVerificationTest {
     }
 
     @Test
-    public void subjectIsMinimalCompositeWhenNoOptionalDimensionsConfigured() throws Exception {
+    public void subjectDefaultsToMinimalCompositeWhenSubjectDimensionsUnset() throws Exception {
         when(runningBuild.getBuildTypeId()).thenReturn("bt42");
         when(runningBuild.getProjectId()).thenReturn("project7");
 
-        final var jwt = SignedJWT.parse(issueToken(Map.of("subject_dimensions", "none")));
+        final var jwt = SignedJWT.parse(issueToken(Map.of()));
         final var sub = jwt.getJWTClaimsSet().getSubject();
 
         assertThat(sub).isEqualTo("project:project7:build_type:bt42");
@@ -154,7 +157,8 @@ public class JwtIssuanceAndVerificationTest {
         when(runningBuild.getBuildTypeId()).thenReturn("bt42");
         when(runningBuild.getProjectId()).thenReturn("project7");
 
-        final var jwt = SignedJWT.parse(issueToken(Map.of("subject_dimensions", "none")));
+        // No subject_dimensions configured → sub is minimal but the flat claims are still emitted.
+        final var jwt = SignedJWT.parse(issueToken(Map.of()));
         final var claims = jwt.getJWTClaimsSet();
 
         assertThat(claims.getSubject()).isEqualTo("project:project7:build_type:bt42");

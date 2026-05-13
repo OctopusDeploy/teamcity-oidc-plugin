@@ -246,20 +246,11 @@
         }
 
         // Initialise checkboxes from the stored subject-scoping value.
-        // Blank = all optional dimensions enabled (the default for a fresh feature).
-        // "none" = no optional dimensions; subject contains only project + build_type.
-        // ALL_DIMENSIONS is derived from the rendered checkboxes so it stays in sync
-        // when rows are conditionally hidden (e.g. branch row when no VCS root).
-        const ALL_DIMENSIONS = $j('.jwt-subject-dimension-cb').map(function() { return $j(this).val(); }).get();
+        // Blank = no optional dimensions (the default for a fresh feature); the resulting
+        // `sub` is just project:<id>:build_type:<id>. Comma-separated names enable the
+        // listed dimensions.
         const stored = $j('#subject_dimensions').val().trim();
-        let enabled;
-        if (stored === '') {
-            enabled = ALL_DIMENSIONS;
-        } else if (stored === 'none') {
-            enabled = [];
-        } else {
-            enabled = stored.split(/\s*,\s*/);
-        }
+        const enabled = stored === '' ? [] : stored.split(/\s*,\s*/);
         $j('.jwt-subject-dimension-cb').each(function() {
             $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
         });
@@ -285,18 +276,10 @@
         }
 
         // Sync hidden field and preview on every checkbox change.
-        // All checked → blank (= "all"); none checked → "none"; partial → comma-separated.
+        // None checked → blank; some/all checked → comma-separated list.
         $j('.jwt-subject-dimension-cb').on('change', function() {
             const checked = $j('.jwt-subject-dimension-cb:checked').map(function() { return $j(this).val(); }).get();
-            let value;
-            if (checked.length === ALL_DIMENSIONS.length) {
-                value = '';
-            } else if (checked.length === 0) {
-                value = 'none';
-            } else {
-                value = checked.join(',');
-            }
-            $j('#subject_dimensions').val(value);
+            $j('#subject_dimensions').val(checked.join(','));
             updatePreview();
         });
 

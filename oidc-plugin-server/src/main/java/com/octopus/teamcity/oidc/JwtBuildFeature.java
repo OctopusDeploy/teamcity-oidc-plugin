@@ -6,11 +6,24 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class JwtBuildFeature extends BuildFeature {
 
     static final String FEATURE_TYPE = "oidc-plugin";
+
+    /**
+     * Optional dimensions that may be appended to the composite {@code sub} claim. Listed in
+     * a configured-order that matches the emitted sub layout. Used by:
+     * <ul>
+     *   <li>{@link JwtIssuanceService} to decide which segments to compose into {@code sub}</li>
+     *   <li>{@link #getParametersProcessor} to validate user input at save time</li>
+     * </ul>
+     */
+    public static final Set<String> ALL_OPTIONAL_SUBJECT_DIMENSIONS = Set.of("branch", "trigger_type");
 
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
     private static volatile SBuildServer staticBuildServer;
@@ -119,8 +132,6 @@ public class JwtBuildFeature extends BuildFeature {
         final boolean includeBranch;
         final boolean includeTriggerType;
         if (raw.isEmpty()) {
-            includeBranch = includeTriggerType = true;
-        } else if ("none".equals(raw)) {
             includeBranch = includeTriggerType = false;
         } else {
             final var dims = java.util.Arrays.asList(raw.split("\\s*,\\s*"));
@@ -169,6 +180,19 @@ public class JwtBuildFeature extends BuildFeature {
                 }
             } catch (final NumberFormatException e) {
                 errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));
+            }
+            final var subjectDimensions = params.getOrDefault("subject_dimensions", "");
+            if (!subjectDimensions.isBlank()) {
+                final var unknown = Arrays.stream(subjectDimensions.split("\\s*,\\s*"))
+                        .filter(s -> !s.isBlank())
+                        .filter(s -> !ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(s))
+                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+                if (!unknown.isEmpty()) {
+                    errors.add(new InvalidProperty("subject_dimensions",
+                            "Unknown subject dimension(s): " + String.join(", ", unknown)
+                                    + ". Allowed values: " + String.join(", ", ALL_OPTIONAL_SUBJECT_DIMENSIONS)
+                                    + ", or leave blank for no optional dimensions."));
+                }
             }
             return errors;
         };

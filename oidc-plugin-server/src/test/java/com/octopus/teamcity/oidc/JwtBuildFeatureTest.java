@@ -117,10 +117,63 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void describeParametersShowsFullSubjectTemplateByDefault() {
+    public void validationAcceptsBlankSubjectDimensions() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor.process(Map.of("subject_dimensions", ""))).isEmpty();
+        assertThat(processor.process(Map.of())).isEmpty();
+    }
+
+    @Test
+    public void validationAcceptsKnownSubjectDimensions() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor.process(Map.of("subject_dimensions", "branch"))).isEmpty();
+        assertThat(processor.process(Map.of("subject_dimensions", "trigger_type"))).isEmpty();
+        assertThat(processor.process(Map.of("subject_dimensions", "branch,trigger_type"))).isEmpty();
+        assertThat(processor.process(Map.of("subject_dimensions", "branch, trigger_type"))).isEmpty();
+    }
+
+    @Test
+    public void validationRejectsUnknownSubjectDimension() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        final var errors = processor.process(Map.of("subject_dimensions", "brnach"));
+
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("subject_dimensions");
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getInvalidReason).asString()
+                .contains("brnach")
+                .contains("branch")
+                .contains("trigger_type");
+    }
+
+    @Test
+    public void validationRejectsLegacyNoneSentinel() {
+        // "none" used to be a valid sentinel meaning "no optional dimensions". After the
+        // default flip, leaving the field blank produces the same result, so "none" is now
+        // an unknown dimension name and the validator should reject it on save. This nudges
+        // direct-edit users to update their config rather than silently doing what they
+        // expected but for the wrong reason.
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        final var errors = processor.process(Map.of("subject_dimensions", "none"));
+
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("subject_dimensions");
+    }
+
+    @Test
+    public void describeParametersShowsMinimalSubjectTemplateByDefault() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of());
-        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger>");
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>");
     }
 
     @Test
@@ -138,10 +191,10 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void describeParametersOmitsOptionalDimensionsWhenSubjectScopingIsNone() {
+    public void describeParametersIncludesAllConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of("subject_dimensions", "none"));
-        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>");
+        final var description = feature.describeParameters(Map.of("subject_dimensions", "branch,trigger_type"));
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger>");
     }
 
     @Test

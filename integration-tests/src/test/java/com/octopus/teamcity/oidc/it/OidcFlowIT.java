@@ -463,13 +463,13 @@ public class OidcFlowIT {
                 .get("internalId");
 
         // Add JWT build feature — audience is the Octopus ExternalId GUID.
-        // subject_dimensions=none keeps the `sub` to the minimal `project:<id>:build_type:<id>`
-        // form so it matches Octopus's literal-subject federated credential.
+        // Subject scoping is left at the default (no optional dimensions), so `sub` is the
+        // minimal `project:<id>:build_type:<id>` form that matches Octopus's literal-subject
+        // federated credential.
         final var featureJson = """
                 {"type":"oidc-plugin","properties":{"property":[
                   {"name":"audience","value":"%s"},
-                  {"name":"ttl_minutes","value":"10"},
-                  {"name":"subject_dimensions","value":"none"}
+                  {"name":"ttl_minutes","value":"10"}
                 ]}}
                 """.formatted(audience);
         tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);

@@ -34,7 +34,6 @@ public class JwtIssuanceService {
     private static final Logger LOG = Logger.getLogger(JwtIssuanceService.class.getName());
 
     private static final Pattern SUBJECT_DIMENSIONS_SPLIT = Pattern.compile("\\s*,\\s*");
-    private static final Set<String> ALL_OPTIONAL_SUBJECT_DIMENSIONS = Set.of("branch", "trigger_type");
 
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final JwtKeyManager keyManager;
@@ -157,24 +156,23 @@ public class JwtIssuanceService {
      * Parses the {@code subject_dimensions} build feature parameter into the set of optional
      * dimensions that should appear in the {@code sub} claim. The semantics:
      * <ul>
-     *   <li>{@code null} or empty → all known optional dimensions (default for a fresh feature)</li>
-     *   <li>{@code "none"} → no optional dimensions; {@code sub} contains only project + build_type</li>
+     *   <li>{@code null} or empty → no optional dimensions (default for a fresh feature);
+     *       {@code sub} is just {@code project:&lt;id&gt;:build_type:&lt;id&gt;}</li>
      *   <li>comma-separated list → only the named dimensions (unknown names are ignored with a log)</li>
      * </ul>
      */
     private Set<String> parseSubjectDimensions(final String raw, final SBuild build) {
-        if (raw.isBlank()) return ALL_OPTIONAL_SUBJECT_DIMENSIONS;
-        if ("none".equals(raw.trim())) return Set.of();
+        if (raw.isBlank()) return Set.of();
         final var requested = new HashSet<>(Arrays.asList(SUBJECT_DIMENSIONS_SPLIT.split(raw)));
         final var unknown = requested.stream()
-                .filter(c -> !ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(c))
+                .filter(c -> !JwtBuildFeature.ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(c))
                 .collect(Collectors.toSet());
         if (!unknown.isEmpty()) {
             LOG.warning("JWT plugin: ignoring unrecognised subject dimensions for build "
                     + build.getBuildId() + ": "
                     + unknown.stream().map(JwtIssuanceService::sanitize).collect(Collectors.toSet()));
         }
-        return requested.stream().filter(ALL_OPTIONAL_SUBJECT_DIMENSIONS::contains).collect(Collectors.toSet());
+        return requested.stream().filter(JwtBuildFeature.ALL_OPTIONAL_SUBJECT_DIMENSIONS::contains).collect(Collectors.toSet());
     }
 
     /**
