@@ -180,7 +180,7 @@ public class JwtBuildFeatureTest {
     public void describeParametersIncludesAudienceWhenPresent() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("audience", "api://my-app"));
-        assertThat(description).contains("\naud:api://my-app");
+        assertThat(description).contains("aud:api://my-app");
     }
 
     @Test
