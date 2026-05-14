@@ -259,18 +259,18 @@
         // last finished build when available, falling back to <name> placeholders
         // so the shape of the composed sub is always visible.
         const previewData = $j('#jwtSubjectPreviewData');
-        const PROJECT_ID = previewData.attr('data-project-id');
-        const BUILD_TYPE_ID = previewData.attr('data-build-type-id');
-        const SAMPLE_BRANCH = previewData.attr('data-sample-branch') || '<branch>';
-        const SAMPLE_TRIGGER_TYPE = previewData.attr('data-sample-trigger-type') || '<trigger_type>';
+        const projectId = previewData.attr('data-project-id');
+        const buildTypeId = previewData.attr('data-build-type-id');
+        const sampleBranch = previewData.attr('data-sample-branch') || '<branch>';
+        const sampleTriggerType = previewData.attr('data-sample-trigger-type') || '<trigger_type>';
 
         function updatePreview() {
-            let sub = 'project:' + PROJECT_ID + ':build_type:' + BUILD_TYPE_ID;
+            let sub = 'project:' + projectId + ':build_type:' + buildTypeId;
             if ($j('.jwt-subject-dimension-cb[value="branch"]').is(':checked')) {
-                sub += ':branch:' + SAMPLE_BRANCH;
+                sub += ':branch:' + sampleBranch;
             }
             if ($j('.jwt-subject-dimension-cb[value="trigger_type"]').is(':checked')) {
-                sub += ':trigger_type:' + SAMPLE_TRIGGER_TYPE;
+                sub += ':trigger_type:' + sampleTriggerType;
             }
             $j('#jwtSubjectPreview').val(sub);
         }
