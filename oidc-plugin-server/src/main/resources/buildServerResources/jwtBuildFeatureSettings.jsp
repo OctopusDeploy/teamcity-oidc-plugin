@@ -16,7 +16,7 @@
 
   <p class="jwt-intro">
     Turns TeamCity into an OIDC provider. During each build, this plugin issues a short-lived,
-    cryptographically signed JWT that cloud services can verify against the public keys below &mdash;
+    cryptographically signed JWT that cloud services can verify against the public keys below -
     so your builds can authenticate without storing long-lived credentials anywhere.
   </p>
   <p class="jwt-intro">
@@ -97,7 +97,7 @@
           <button class="jwt-btn jwt-btn-primary" type="button" onclick="jwtSaveRotationSettings()">Save</button>
           <button class="jwt-btn" type="button" onclick="jwtRotateNow()">Rotate now</button>
         </div>
-        <span class="jwt-hint">6-field cron (sec min hr day month weekday) &mdash; e.g. <code>0 0 3 * * SUN</code> = Sundays at 03:00 UTC</span>
+        <span class="jwt-hint">6-field cron (sec min hr day month weekday) - e.g. <code>0 0 3 * * SUN</code> = Sundays at 03:00 UTC</span>
         <span id="jwtSaveResult" style="display:none"></span>
         <span id="jwtRotateResult" style="display:none"></span>
         <span id="jwtRotateWarning" style="display:none"></span>
