@@ -88,7 +88,10 @@ Also kill the background Maven process.
 
 **Java:** Always use `final var` for local variables.
 
-**JavaScript:** Always use `const` for variables that are not reassigned, `let` otherwise. Never use `var`.
+**JavaScript:**
+- Use `const` for variables that are not reassigned, `let` otherwise. Never use `var`.
+- Prefer arrow functions (`(x) => ...`) over `function(x) { ... }` for callbacks and any code that doesn't need its own `this` binding.
+- Prefer modern array methods: `arr.includes(x)` over `arr.indexOf(x) !== -1`; destructure where it reads cleaner (e.g. `([k, v]) => ...` instead of `(e) => e[0] + e[1]`).
 
 ## TeamCity's built-in escaping
 
