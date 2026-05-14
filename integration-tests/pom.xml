@@ -95,9 +95,14 @@
                 </configuration>
             </plugin>
             <!--
-                Downloads Chromium browser binaries before integration tests run.
-                Playwright bundles a CLI that installs browsers; it must run in a
-                forked JVM because CLI.main() calls System.exit() when finished.
+                Downloads Chromium browser binaries and the system shared libraries
+                it links against (libnss3, libatk, libgbm, etc) before integration
+                tests run. The --with-deps flag asks Playwright to apt-get install
+                the deps itself, which requires a Debian/Ubuntu base image (we use
+                maven:3.9-eclipse-temurin-21 in docker-compose.yml).
+
+                Must run in a forked JVM because CLI.main() calls System.exit() when
+                finished, which would kill Surefire/Failsafe if it shared the JVM.
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -118,6 +123,7 @@
                                 <classpath/>
                                 <argument>com.microsoft.playwright.CLI</argument>
                                 <argument>install</argument>
+                                <argument>--with-deps</argument>
                                 <argument>chromium</argument>
                             </arguments>
                         </configuration>
