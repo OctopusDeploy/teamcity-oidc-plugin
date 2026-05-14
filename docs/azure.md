@@ -21,7 +21,7 @@ In your build steps, use the managed identity's Client ID with the same PowerShe
 In the app registration, go to **Certificates & secrets → Federated credentials → Add credential**.
 
 - **Federated credential scenario:** Other issuer
-- **Issuer:** your TeamCity root URL (e.g. `https://teamcity.example.com`)
+- **Issuer:** your TeamCity root URL (e.g. `https://teamcity.example.com`), or the value of **Override issuer URL** if one is configured under Administration → OIDC / JWT
 - **Subject identifier:** the composite identifier emitted in the token's `sub` claim (e.g. `project:project7:build_type:bt42`)
 - **Audience:** `api://AzureADTokenExchange`
 - **Name:** a descriptive label (e.g. `teamcity-my-project-deploy`)
@@ -47,7 +47,7 @@ In the OIDC Identity Token build feature:
 
 ## Using the token in build steps
 
-Log in using the Azure PowerShell module:
+Log in using the Azure PowerShell module (`Az.Accounts`):
 
 ```powershell
 Connect-AzAccount `
@@ -58,6 +58,8 @@ Connect-AzAccount `
 ```
 
 All subsequent `Az` commands in the same step will use that identity.
+
+> **Prerequisite:** The `Az.Accounts` module must be available on the agent. The simplest approach is to run the build step in Microsoft's Azure PowerShell container image — set the runner to **Docker** with image `mcr.microsoft.com/azure-powershell:latest`. Alternatively, install once on the agent with `Install-Module -Name Az.Accounts -Scope CurrentUser -Force -AllowClobber`.
 
 > **Note:** `az login --federated-token` is not yet a publicly supported Azure CLI feature ([azure-cli#24756](https://github.com/Azure/azure-cli/issues/24756)) and fails when the token expires mid-build. Use the PowerShell module until official CLI support ships.
 
