@@ -8,7 +8,7 @@ When a build starts, the plugin issues a signed JWT and injects it as the masked
 
 - TeamCity 2025.11+
 - The TeamCity server root URL must be configured as `https://`
-- A custom encryption key must be configured via TeamCity's `TEAMCITY_ENCRYPTION_KEYS` environment variable. Without it, the plugin's private signing keys are only obfuscated on disk — anyone with read access to a data-directory backup can recover them and forge tokens that every cloud account configured to trust this TeamCity will accept. See [Key Management](docs/key-management.md#key-storage-and-encryption).
+- A custom encryption key is strongly recommended to be configured via TeamCity's `TEAMCITY_ENCRYPTION_KEYS` environment variable. Without it, the plugin's private signing keys are only obfuscated on disk — anyone with read access to a data-directory backup can recover them and forge tokens that every cloud account configured to trust this TeamCity will accept. See [Key Management](docs/key-management.md#key-storage-and-encryption).
 
 ## Installation
 
