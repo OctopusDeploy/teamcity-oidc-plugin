@@ -2,7 +2,7 @@
 
 In Octopus Deploy, go to **Configuration → Users → Your Service Account → OpenID Connect** and create a new OIDC Identity.
 
-- Set the **issuer** to your TeamCity root URL.
+- Set the **issuer** to your TeamCity root URL, or to the value of **Override issuer URL** if one is configured under Administration → OIDC / JWT.
 - Set the **subject** to the composite identifier that matches the tokens this build feature issues. The plugin emits `sub` in the form `project:<project_internal_id>:build_type:<build_type_internal_id>` with optional dimensions appended (see the [Subject claim reference](configuration.md#subject-claim)). The TeamCity internal IDs are visible in the build type's URL (`.../buildType/bt42`) and are immutable across renames.
 - Copy the **Service Account Id** and use it as the **Audience** in the build feature configuration.
 

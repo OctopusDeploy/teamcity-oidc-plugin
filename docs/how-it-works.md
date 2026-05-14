@@ -60,7 +60,7 @@ The plugin serves two public endpoints (no authentication required):
 | `GET /.well-known/openid-configuration` | OIDC discovery document |
 | `GET /.well-known/jwks.json` | Public key set for signature verification |
 
-The issuer is your TeamCity root URL (e.g. `https://teamcity.example.com`).
+The issuer is your TeamCity root URL (e.g. `https://teamcity.example.com`), or the value of **Override issuer URL** if one is configured under Administration → OIDC / JWT. The override is intended for deployments behind a reverse proxy where the public-facing URL differs from the server's root URL; see the [Configuration Reference](configuration.md#server-wide-settings) for details.
 
 Both endpoints return `503 Service Unavailable` during server startup while keys are being loaded.
 

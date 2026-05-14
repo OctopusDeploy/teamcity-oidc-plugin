@@ -27,8 +27,10 @@ Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBu
 
 The plugin uses TeamCity's `Encryption` infrastructure to encrypt key files at rest:
 
-- **With `TEAMCITY_ENCRYPTION_KEYS` set** (recommended): AES-256 encryption using a server-specific key. A file read from disk without that key (e.g. in a backup) cannot be decrypted.
+- **With `TEAMCITY_ENCRYPTION_KEYS` set**: AES-256 encryption using a server-specific key. A file read from disk without that key (e.g. in a backup) cannot be decrypted.
 - **Without a custom key**: the server's default scramble strategy is used (obfuscation only). File permissions are the sole meaningful protection in this case.
+
+> **Warning:** Configuring `TEAMCITY_ENCRYPTION_KEYS` is strongly recommended for any production deployment. Without it, the only protection on the private signing keys is the 0600 file permission on the data directory — and that protection does not travel with backups, snapshots, or anyone with shell access to the server. An attacker who recovers the deobfuscated key files can sign JWTs that every cloud account configured to trust this TeamCity (AWS roles, Azure federated credentials, Octopus service accounts, etc.) will accept.
 
 To configure a custom encryption key, follow the [TeamCity Encryption Settings documentation](https://www.jetbrains.com/help/teamcity/teamcity-configuration-and-maintenance.html#encryption-settings). The `TEAMCITY_ENCRYPTION_KEYS` environment variable is the recommended approach — set it via the OS service manager so the key is never written to disk alongside the data it protects.
 

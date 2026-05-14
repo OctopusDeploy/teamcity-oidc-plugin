@@ -9,7 +9,7 @@ TeamCity can authenticate to AWS using [IAM Roles Anywhere / OIDC federation](ht
 In the AWS Console, go to **IAM → Identity providers → Add provider**.
 
 - **Provider type:** OpenID Connect
-- **Provider URL:** your TeamCity root URL (e.g. `https://teamcity.example.com`)
+- **Provider URL:** your TeamCity root URL (e.g. `https://teamcity.example.com`), or the value of **Override issuer URL** if one is configured under Administration → OIDC / JWT
 - **Audience:** `sts.amazonaws.com`
 
 Click **Get thumbprint**, then **Add provider**.
