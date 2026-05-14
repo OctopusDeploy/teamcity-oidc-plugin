@@ -117,30 +117,90 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void describeParametersIncludesAlgorithmAndTtl() {
+    public void validationAcceptsBlankSubjectDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of("algorithm", "ES256", "ttl_minutes", "5"));
-        assertThat(description).contains("ES256").contains("5m");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor.process(Map.of("subject_dimensions", ""))).isEmpty();
+        assertThat(processor.process(Map.of())).isEmpty();
+    }
+
+    @Test
+    public void validationAcceptsKnownSubjectDimensions() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor.process(Map.of("subject_dimensions", "branch"))).isEmpty();
+        assertThat(processor.process(Map.of("subject_dimensions", "trigger_type"))).isEmpty();
+        assertThat(processor.process(Map.of("subject_dimensions", "branch,trigger_type"))).isEmpty();
+        assertThat(processor.process(Map.of("subject_dimensions", "branch, trigger_type"))).isEmpty();
+    }
+
+    @Test
+    public void validationRejectsUnknownSubjectDimension() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        final var errors = processor.process(Map.of("subject_dimensions", "brnach"));
+
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("subject_dimensions");
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getInvalidReason).asString()
+                .contains("brnach")
+                .contains("branch")
+                .contains("trigger_type");
+    }
+
+    @Test
+    public void validationRejectsLegacyNoneSentinel() {
+        // "none" used to be a valid sentinel meaning "no optional dimensions". After the
+        // default flip, leaving the field blank produces the same result, so "none" is now
+        // an unknown dimension name and the validator should reject it on save. This nudges
+        // direct-edit users to update their config rather than silently doing what they
+        // expected but for the wrong reason.
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        final var errors = processor.process(Map.of("subject_dimensions", "none"));
+
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("subject_dimensions");
+    }
+
+    @Test
+    public void describeParametersShowsMinimalSubjectTemplateByDefault() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var description = feature.describeParameters(Map.of());
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>");
     }
 
     @Test
     public void describeParametersIncludesAudienceWhenPresent() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("audience", "api://my-app"));
-        assertThat(description).contains("api://my-app");
+        assertThat(description).contains("aud:api://my-app");
     }
 
     @Test
     public void describeParametersOmitsAudienceWhenBlank() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of("algorithm", "RS256", "ttl_minutes", "10"));
+        final var description = feature.describeParameters(Map.of("audience", ""));
         assertThat(description).doesNotContain("aud:");
     }
 
     @Test
-    public void describeParametersDefaultsToRS256AndTenMinutesWhenParamsMissing() {
+    public void describeParametersIncludesAllConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
-        final var description = feature.describeParameters(Map.of());
-        assertThat(description).contains("RS256").contains("10m");
+        final var description = feature.describeParameters(Map.of("subject_dimensions", "branch,trigger_type"));
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger>");
+    }
+
+    @Test
+    public void describeParametersIncludesOnlyConfiguredDimensions() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var description = feature.describeParameters(Map.of("subject_dimensions", "branch"));
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>");
     }
 }

@@ -15,9 +15,9 @@ sequenceDiagram
     TC->>Plugin: updateParameters(buildStartContext)
     Plugin->>Plugin: find JWT build features on this build
     alt JWT build feature is configured
-        Plugin->>Plugin: read ttl_minutes, algorithm, audience, claims
+        Plugin->>Plugin: read ttl_minutes, algorithm, audience, subject_dimensions
         Plugin->>Plugin: check root URL is HTTPS
-        Plugin->>Plugin: assemble JWT claims<br/>(sub=buildTypeExternalId, iss=rootUrl, aud, iat, exp, …)
+        Plugin->>Plugin: assemble JWT claims<br/>(sub=project:&lt;id&gt;:build_type:&lt;id&gt;[:branch:…][:trigger_type:…],<br/>project_internal_id, build_type_internal_id,<br/>project_external_id, build_type_external_id,<br/>branch, trigger_type, iss, aud, iat, nbf, exp, jti)
         Plugin->>KM: sign(claims, algorithm)
         KM-->>Plugin: SignedJWT
         Plugin->>TC: addSharedParameter("jwt.token", token)

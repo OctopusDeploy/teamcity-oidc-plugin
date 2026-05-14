@@ -135,8 +135,12 @@ public class JwtTestControllerTest {
     // ---- step=jwt ----
 
     private void mockBuildType(final String externalId) {
+        mockBuildType(externalId, "bt-" + externalId);
+    }
+
+    private void mockBuildType(final String externalId, final String internalId) {
         final var buildType = mock(SBuildType.class);
-        when(buildType.getExternalId()).thenReturn(externalId);
+        when(buildType.getInternalId()).thenReturn(internalId);
         when(buildType.getProjectId()).thenReturn("project1");
         when(buildServer.getProjectManager()).thenReturn(projectManager);
         when(projectManager.findBuildTypeByExternalId(externalId)).thenReturn(buildType);
@@ -172,8 +176,8 @@ public class JwtTestControllerTest {
     }
 
     @Test
-    void jwtStepUsesBuildTypeExternalIdAsSubject() throws Exception {
-        mockBuildType("MyProject_MyBuild");
+    void jwtStepUsesCompositeSubject() throws Exception {
+        mockBuildType("MyProject_MyBuild", "bt42");
         final var session = createMockSession();
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
@@ -182,8 +186,8 @@ public class JwtTestControllerTest {
 
         assertThat((Boolean) result.get("ok")).isTrue();
         final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
-        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("MyProject_MyBuild");
-        assertThat(result.getAsString("message")).contains("sub: MyProject_MyBuild");
+        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("project:project1:build_type:bt42");
+        assertThat(result.getAsString("message")).contains("sub: project:project1:build_type:bt42");
     }
 
     @Test
@@ -197,7 +201,7 @@ public class JwtTestControllerTest {
 
         assertThat((Boolean) result.get("ok")).isTrue();
         final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
-        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("MyBuildType");
+        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("project:project1:build_type:bt-MyBuildType");
     }
 
     @Test

@@ -22,11 +22,17 @@ In the app registration, go to **Certificates & secrets → Federated credential
 
 - **Federated credential scenario:** Other issuer
 - **Issuer:** your TeamCity root URL (e.g. `https://teamcity.example.com`)
-- **Subject identifier:** the build type external ID (e.g. `MyProject_DeployBuild`)
+- **Subject identifier:** the composite identifier emitted in the token's `sub` claim (e.g. `project:project7:build_type:bt42`)
 - **Audience:** `api://AzureADTokenExchange`
 - **Name:** a descriptive label (e.g. `teamcity-my-project-deploy`)
 
-The subject identifier must match the `sub` claim in the token exactly. Add one federated credential per build type that needs access, or use a separate app registration per team/environment.
+The subject identifier must match the `sub` claim in the token **exactly** — Azure federated credentials do not support wildcards. The plugin emits `sub` in the form `project:<project_internal_id>:build_type:<build_type_internal_id>[:branch:<branch>][:trigger_type:<trigger>]`; the optional segments are controlled by the **Subject scoping** checkboxes on the build feature.
+
+For Azure, it is typically easiest to **uncheck `branch` and `trigger_type`** in the build feature so that `sub` is the minimal `project:<id>:build_type:<id>` form — one federated credential per build type, regardless of which branch built or how the build was triggered. The exact `sub` value is shown live in the build feature's "Resulting `sub` claim" preview; copy it directly into Azure's Subject identifier field.
+
+The TeamCity internal IDs are visible in the build type URL (`.../buildType/bt42`) and are immutable across renames, so the federated credential keeps matching even if an admin renames the project or build type.
+
+Add one federated credential per build type that needs access, or use a separate app registration per team/environment.
 
 ### 3. Assign Azure roles
 
@@ -57,6 +63,8 @@ All subsequent `Az` commands in the same step will use that identity.
 
 ## Restricting access further
 
-The subject identifier in the federated credential is matched against the `sub` claim. You can scope access more narrowly by creating separate app registrations (and assigning different roles) for different build types or environments.
+The subject identifier in the federated credential is matched against the `sub` claim. You can scope access more narrowly by:
 
-If you include the `branch` claim in the token, you can use [Azure attribute-based access control (ABAC)](https://learn.microsoft.com/en-us/azure/role-based-access-control/conditions-overview) conditions on storage resources to enforce branch-level restrictions. For most use cases, separate federated credentials per environment (staging vs. production) is simpler.
+- **Including more dimensions in `sub`** — tick `branch` and/or `trigger_type` in the build feature's Subject scoping section. A federated credential with subject `project:project7:build_type:bt42:branch:refs/heads/main:trigger_type:user` only matches builds of that specific build type on `main` triggered by a user. Note: because Azure has no wildcards, you'd need one federated credential per concrete `(branch, trigger_type)` combination you want to allow.
+- **Multiple app registrations** — create separate app registrations for different environments (staging vs. production), each with its own role assignments and federated credential(s).
+- **Azure ABAC on resources** — the token always carries the `branch` claim as a flat key/value pair. [Azure attribute-based access control](https://learn.microsoft.com/en-us/azure/role-based-access-control/conditions-overview) conditions on storage resources can use it for branch-level restrictions without changing the federated credential. This is typically simpler than maintaining a credential per branch.

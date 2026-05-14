@@ -112,6 +112,7 @@ public class WellKnownPublicFilter implements Filter {
         final var claims = new JSONArray();
         Collections.addAll(claims, "sub", "iss", "aud", "iat", "nbf", "exp",
                 "build_type_external_id", "project_external_id",
+                "build_type_internal_id", "project_internal_id",
                 "branch", "trigger_type");
 
         final var doc = new JSONObject();

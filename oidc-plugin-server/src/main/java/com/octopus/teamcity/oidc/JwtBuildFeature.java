@@ -6,14 +6,28 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class JwtBuildFeature extends BuildFeature {
 
     static final String FEATURE_TYPE = "oidc-plugin";
 
+    /**
+     * Optional dimensions that may be appended to the composite {@code sub} claim. Listed in
+     * a configured-order that matches the emitted sub layout. Used by:
+     * <ul>
+     *   <li>{@link JwtIssuanceService} to decide which segments to compose into {@code sub}</li>
+     *   <li>{@link #getParametersProcessor} to validate user input at save time</li>
+     * </ul>
+     */
+    public static final Set<String> ALL_OPTIONAL_SUBJECT_DIMENSIONS = Set.of("branch", "trigger_type");
+
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
     private static volatile SBuildServer staticBuildServer;
+    private static volatile OidcSettingsManager staticOidcSettingsManager;
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcIssuerUrlProvider issuerUrlProvider;
@@ -28,6 +42,7 @@ public class JwtBuildFeature extends BuildFeature {
         this.oidcSettingsManager = oidcSettingsManager;
         staticIssuerUrlProvider = issuerUrlProvider;
         staticBuildServer = buildServer;
+        staticOidcSettingsManager = oidcSettingsManager;
     }
 
     /** Used by the edit JSP to check the issuer URL without Spring context access. */
@@ -35,13 +50,34 @@ public class JwtBuildFeature extends BuildFeature {
         return staticIssuerUrlProvider != null && OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
     }
 
-    /** Sample claim values from the most recent finished build, used by the edit JSP. */
-    public record SampleClaims(@NotNull String branch, @NotNull String triggerType, boolean hasVcsRoot) {}
+    /**
+     * Used by the edit JSP to read the configured max token lifetime without going through
+     * Spring's {@code WebApplicationContextUtils}, which only sees TC's root web context and
+     * not the plugin's child context.
+     */
+    public static int maxTokenLifetimeMinutes() {
+        final var manager = staticOidcSettingsManager;
+        return manager == null
+                ? OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES
+                : manager.load().maxTokenLifetimeMinutes();
+    }
+
+    /**
+     * Sample claim values from the most recent finished build, plus the build type's
+     * internal IDs — all used by the edit JSP to populate the subject preview. The
+     * internal IDs are exposed here because {@code EditBuildTypeForm} only exposes the
+     * external ID; we need the internal IDs to render the composite {@code sub} preview.
+     */
+    public record SampleClaims(@NotNull String branch,
+                               @NotNull String triggerType,
+                               boolean hasVcsRoot,
+                               @NotNull String projectInternalId,
+                               @NotNull String buildTypeInternalId) {}
 
     public static SampleClaims sampleClaimsFor(@Nullable final String buildTypeIdParam) {
         final var server = staticBuildServer;
         if (server == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
-            return new SampleClaims("", "", false);
+            return new SampleClaims("", "", false, "", "");
         }
         // The build feature edit dialog passes id as "buildType:<externalId>".
         // Strip the prefix when present so findBuildTypeByExternalId resolves it.
@@ -49,14 +85,18 @@ public class JwtBuildFeature extends BuildFeature {
                 ? buildTypeIdParam.substring("buildType:".length())
                 : buildTypeIdParam;
         final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
-        if (buildType == null) return new SampleClaims("", "", false);
+        if (buildType == null) return new SampleClaims("", "", false, "", "");
         final var hasVcsRoot = !buildType.getVcsRoots().isEmpty();
+        final var projectInternalId = buildType.getProjectId();
+        final var buildTypeInternalId = buildType.getInternalId();
         final var history = buildType.getHistory();
-        if (history.isEmpty()) return new SampleClaims("", "", hasVcsRoot);
+        if (history.isEmpty()) {
+            return new SampleClaims("", "", hasVcsRoot, projectInternalId, buildTypeInternalId);
+        }
         final var lastBuild = history.get(0);
         final var branchName = ClaimsResolver.resolveBranchName(lastBuild);
         final var triggerType = ClaimsResolver.resolveTriggerType(lastBuild.getTriggeredBy());
-        return new SampleClaims(branchName, triggerType, hasVcsRoot);
+        return new SampleClaims(branchName, triggerType, hasVcsRoot, projectInternalId, buildTypeInternalId);
     }
 
     @NotNull
@@ -74,14 +114,33 @@ public class JwtBuildFeature extends BuildFeature {
     @NotNull
     @Override
     public String describeParameters(@NotNull final java.util.Map<String, String> params) {
-        final var algorithm = params.getOrDefault("algorithm", "RS256");
-        final var ttl = params.getOrDefault("ttl_minutes", "10");
         final var audience = params.get("audience");
         final var sb = new StringBuilder();
-        sb.append("alg: ").append(algorithm).append(", ttl: ").append(ttl).append("m");
+        // Show the sub claim's template form — concrete project/build_type IDs and the
+        // branch/trigger values aren't available here (no build context), but the template
+        // matches what the consumer (e.g. Octopus) will see and helps admins differentiate
+        // features with different subject scoping.
+        sb.append("sub:").append(subjectTemplate(params.get("subject_dimensions")));
         if (audience != null && !audience.isBlank()) {
-            sb.append(", aud: ").append(audience);
+            sb.append("\naud:").append(audience);
         }
+        return sb.toString();
+    }
+
+    private static String subjectTemplate(@Nullable final String subjectDimensionsParam) {
+        final var raw = subjectDimensionsParam == null ? "" : subjectDimensionsParam.trim();
+        final boolean includeBranch;
+        final boolean includeTriggerType;
+        if (raw.isEmpty()) {
+            includeBranch = includeTriggerType = false;
+        } else {
+            final var dims = java.util.Arrays.asList(raw.split("\\s*,\\s*"));
+            includeBranch = dims.contains("branch");
+            includeTriggerType = dims.contains("trigger_type");
+        }
+        final var sb = new StringBuilder("project:<project_id>:build_type:<build_type_id>");
+        if (includeBranch) sb.append(":branch:<branch>");
+        if (includeTriggerType) sb.append(":trigger_type:<trigger>");
         return sb.toString();
     }
 
@@ -121,6 +180,19 @@ public class JwtBuildFeature extends BuildFeature {
                 }
             } catch (final NumberFormatException e) {
                 errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));
+            }
+            final var subjectDimensions = params.getOrDefault("subject_dimensions", "");
+            if (!subjectDimensions.isBlank()) {
+                final var unknown = Arrays.stream(subjectDimensions.split("\\s*,\\s*"))
+                        .filter(s -> !s.isBlank())
+                        .filter(s -> !ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(s))
+                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+                if (!unknown.isEmpty()) {
+                    errors.add(new InvalidProperty("subject_dimensions",
+                            "Unknown subject dimension(s): " + String.join(", ", unknown)
+                                    + ". Allowed values: " + String.join(", ", ALL_OPTIONAL_SUBJECT_DIMENSIONS)
+                                    + ", or leave blank for no optional dimensions."));
+                }
             }
             return errors;
         };

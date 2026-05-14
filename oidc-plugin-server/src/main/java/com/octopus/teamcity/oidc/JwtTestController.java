@@ -192,7 +192,7 @@ public class JwtTestController extends BaseController {
         if (!user.isPermissionGrantedForProject(buildType.getProjectId(), Permission.EDIT_PROJECT)) {
             throw new TestStepException("Access denied for project: " + buildType.getProjectId());
         }
-        final var subject = buildType.getExternalId();
+        final var subject = "project:" + buildType.getProjectId() + ":build_type:" + buildType.getInternalId();
 
         final var now = new Date();
         final var claims = new JWTClaimsSet.Builder()

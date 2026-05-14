@@ -33,8 +33,7 @@ import java.util.stream.Collectors;
 public class JwtIssuanceService {
     private static final Logger LOG = Logger.getLogger(JwtIssuanceService.class.getName());
 
-    private static final Pattern CLAIMS_SPLIT = Pattern.compile("\\s*,\\s*");
-    private static final Set<String> ALL_CUSTOM_CLAIMS = Set.of("branch", "trigger_type");
+    private static final Pattern SUBJECT_DIMENSIONS_SPLIT = Pattern.compile("\\s*,\\s*");
 
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final JwtKeyManager keyManager;
@@ -104,42 +103,30 @@ public class JwtIssuanceService {
             final var rawAudience = params.getOrDefault("audience", "");
             final var audience = rawAudience.isBlank() ? issuerUrl : rawAudience;
 
-            final var claimsParam = params.get("claims");
-            final Set<String> requestedClaims = (claimsParam == null || claimsParam.isBlank())
-                    ? ALL_CUSTOM_CLAIMS
-                    : new HashSet<>(Arrays.asList(CLAIMS_SPLIT.split(claimsParam)));
-            final var unknownClaims = requestedClaims.stream()
-                    .filter(c -> !ALL_CUSTOM_CLAIMS.contains(c))
-                    .collect(Collectors.toSet());
-            if (!unknownClaims.isEmpty()) {
-                LOG.warning("JWT plugin: ignoring unrecognised claim names for build "
-                        + build.getBuildId() + ": "
-                        + unknownClaims.stream().map(JwtIssuanceService::sanitize).collect(Collectors.toSet()));
-            }
-            final var enabledClaims = requestedClaims.stream()
-                    .filter(ALL_CUSTOM_CLAIMS::contains)
-                    .collect(Collectors.toSet());
+            final var subjectDimensions = parseSubjectDimensions(subjectDimensionsParam(params), build);
+
+            final var branchName = ClaimsResolver.resolveBranchName(build);
+            final var triggerType = ClaimsResolver.resolveTriggerType(build.getTriggeredBy());
+
+            final var subject = composeSubject(build, subjectDimensions, branchName, triggerType);
 
             final var now = Instant.now();
             final var claimsBuilder = new JWTClaimsSet.Builder()
                     .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
-                    .subject(build.getBuildTypeExternalId())
+                    .subject(subject)
                     .audience(List.of(audience))
                     .issuer(issuerUrl)
                     .issueTime(Date.from(now))
                     .notBeforeTime(Date.from(now))
                     .expirationTime(Date.from(now.plus(ttlMinutes, ChronoUnit.MINUTES)))
                     .claim("build_type_external_id", build.getBuildTypeExternalId())
-                    .claim("project_external_id", build.getProjectExternalId());
+                    .claim("project_external_id", build.getProjectExternalId())
+                    .claim("build_type_internal_id", build.getBuildTypeId())
+                    .claim("project_internal_id", build.getProjectId())
+                    .claim("trigger_type", triggerType);
 
-            if (enabledClaims.contains("branch")) {
-                final var branchName = ClaimsResolver.resolveBranchName(build);
-                if (!branchName.isEmpty()) {
-                    claimsBuilder.claim("branch", branchName);
-                }
-            }
-            if (enabledClaims.contains("trigger_type")) {
-                claimsBuilder.claim("trigger_type", ClaimsResolver.resolveTriggerType(build.getTriggeredBy()));
+            if (!branchName.isEmpty()) {
+                claimsBuilder.claim("branch", branchName);
             }
 
             final var signedJWT = keyManager.sign(claimsBuilder.build(), algorithmName);
@@ -158,5 +145,57 @@ public class JwtIssuanceService {
 
     private static String sanitize(final String s) {
         return s == null ? "" : s.replaceAll("[\\r\\n\\t]", "_");
+    }
+
+    private static String subjectDimensionsParam(final java.util.Map<String, String> params) {
+        final var raw = params.get("subject_dimensions");
+        return raw == null ? "" : raw;
+    }
+
+    /**
+     * Parses the {@code subject_dimensions} build feature parameter into the set of optional
+     * dimensions that should appear in the {@code sub} claim. The semantics:
+     * <ul>
+     *   <li>{@code null} or empty → no optional dimensions (default for a fresh feature);
+     *       {@code sub} is just {@code project:&lt;id&gt;:build_type:&lt;id&gt;}</li>
+     *   <li>comma-separated list → only the named dimensions (unknown names are ignored with a log)</li>
+     * </ul>
+     */
+    private Set<String> parseSubjectDimensions(final String raw, final SBuild build) {
+        if (raw.isBlank()) return Set.of();
+        final var requested = new HashSet<>(Arrays.asList(SUBJECT_DIMENSIONS_SPLIT.split(raw)));
+        final var unknown = requested.stream()
+                .filter(c -> !JwtBuildFeature.ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(c))
+                .collect(Collectors.toSet());
+        if (!unknown.isEmpty()) {
+            LOG.warning("JWT plugin: ignoring unrecognised subject dimensions for build "
+                    + build.getBuildId() + ": "
+                    + unknown.stream().map(JwtIssuanceService::sanitize).collect(Collectors.toSet()));
+        }
+        return requested.stream().filter(JwtBuildFeature.ALL_OPTIONAL_SUBJECT_DIMENSIONS::contains).collect(Collectors.toSet());
+    }
+
+    /**
+     * Composes the {@code sub} claim as a colon-separated key:value string, in the style of
+     * GitHub Actions' {@code repo:org/repo:ref:...}. Always includes {@code project} and
+     * {@code build_type} (using the rename-stable internal IDs); appends {@code branch} and
+     * {@code trigger_type} only when configured via the build feature, mirroring the
+     * Octopus Deploy convention where trust policies match on {@code sub} with wildcards.
+     */
+    private String composeSubject(final SBuild build,
+                                  final Set<String> dimensions,
+                                  final String branchName,
+                                  final String triggerType) {
+        final var sb = new StringBuilder("project:")
+                .append(build.getProjectId())
+                .append(":build_type:")
+                .append(build.getBuildTypeId());
+        if (dimensions.contains("branch") && !branchName.isEmpty()) {
+            sb.append(":branch:").append(branchName);
+        }
+        if (dimensions.contains("trigger_type")) {
+            sb.append(":trigger_type:").append(triggerType);
+        }
+        return sb.toString();
     }
 }
