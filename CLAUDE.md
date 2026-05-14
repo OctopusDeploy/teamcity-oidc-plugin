@@ -55,10 +55,10 @@ Add to `/etc/hosts` (once):
 ### Logging in via Chrome MCP
 
 TeamCity exposes two ports:
-- **Caddy (HTTPS)** — `https://teamcity-tls:<caddy-port>` (self-signed cert, browser will warn)
-- **TC direct (HTTP)** — `http://localhost:<tc-port>` — use this to avoid cert issues with Chrome MCP
+- **Caddy (HTTPS)** — `https://teamcity-tls:<caddy-port>` (self-signed cert, browser will warn). The Caddy port is auto-allocated and changes on each restart.
+- **TC direct (HTTP)** — `http://localhost:18111` in manual mode. The host port is pinned to `18111` so the URL is stable across container restarts (see `MANUAL_TC_HOST_PORT` in `OidcFlowIT`). Use this with Chrome MCP to skip the Caddy self-signed cert warning.
 
-Find the direct HTTP port:
+Outside manual mode the direct HTTP port is auto-allocated — find it with:
 
 ```bash
 docker ps --format "{{.Names}}: {{.Ports}}" | grep teamcity
@@ -84,6 +84,46 @@ docker ps --format "{{.Names}}" | grep "jwt-it-" | xargs docker rm -f
 
 Also kill the background Maven process.
 
+### Iterating on JSP / CSS changes against the running stack
+
+In manual mode the TeamCity direct HTTP port is pinned to `18111` (so the URL stays
+constant). The super-user token **regenerates on each restart** — re-fetch it from the
+container logs after restarting:
+
+```bash
+docker logs <teamcity-container> 2>&1 | grep "Super user authentication token" | tail -1
+```
+
+**CSS changes** hot-reload. Push the file and hard-refresh the browser:
+
+```bash
+TC=$(docker ps --format "{{.Names}}" | grep teamcity | head -1)
+docker cp oidc-plugin-server/src/main/resources/buildServerResources/jwt-admin.css \
+  "$TC":/opt/teamcity/webapps/ROOT/plugins/teamcity-oidc-plugin/jwt-admin.css
+```
+
+**JSP changes require a TeamCity restart.** Pushing the JSP file alone is not enough —
+Jasper caches the compiled JSP class in JVM memory and does not recheck the source mtime,
+so subsequent requests keep serving the stale compiled class even after `docker cp` and
+clearing `/opt/teamcity/work/Catalina/...`. Rebuild the zip, copy it into `datadir/plugins`,
+and `docker restart` the container:
+
+```bash
+JAVA_HOME=/Users/matt/.jenv/versions/21 mvn package -DskipTests
+TC=$(docker ps --format "{{.Names}}" | grep teamcity | head -1)
+docker cp target/Octopus.TeamCity.OIDC.1.0-SNAPSHOT.zip \
+  "$TC":/data/teamcity_server/datadir/plugins/Octopus.TeamCity.OIDC.1.0-SNAPSHOT.zip
+docker restart "$TC"
+```
+
+Then wait for HTTP 200 on the new port:
+
+```bash
+until PORT=$(docker ps --format "{{.Names}}: {{.Ports}}" | grep teamcity | grep -oE "[0-9]+->8111" | grep -oE "^[0-9]+"); \
+      [ -n "$PORT" ] && curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PORT/login.html" 2>/dev/null | grep -q "200"; \
+      do sleep 3; done; echo "READY $PORT"
+```
+
 ## Code style
 
 **Java:** Always use `final var` for local variables.
@@ -92,6 +132,19 @@ Also kill the background Maven process.
 - Use `const` for variables that are not reassigned, `let` otherwise. Never use `var`.
 - Prefer arrow functions (`(x) => ...`) over `function(x) { ... }` for callbacks and any code that doesn't need its own `this` binding.
 - Prefer modern array methods: `arr.includes(x)` over `arr.indexOf(x) !== -1`; destructure where it reads cleaner (e.g. `([k, v]) => ...` instead of `(e) => e[0] + e[1]`).
+- **JSP scriptlets** are the exception: TC's bundled Jasper compiles JSP scriptlets with Java 8 source level, which does not recognise `var`. Use explicit types (`final JwtBuildFeature.SampleClaims samples = ...`) in `<% ... %>` blocks. The `editJwtBuildFeature.jsp` file documents this exception inline.
+
+## Plugin JSPs and Spring
+
+`WebApplicationContextUtils.getRequiredWebApplicationContext(application)` returns TeamCity's
+**root** web application context, not the plugin's child Spring context — calling
+`.getBean(MyPluginBean.class)` on it throws "No WebApplicationContext found" at runtime even
+though the JSP compiles cleanly.
+
+To expose a plugin bean to its JSP, add a static accessor on a class the plugin already
+registers as a Spring bean (e.g. `JwtBuildFeature`), assign the bean to a `static volatile`
+field in the constructor, and call the accessor from the JSP. See
+`JwtBuildFeature.maxTokenLifetimeMinutes()` for the pattern.
 
 ## TeamCity's built-in escaping
 

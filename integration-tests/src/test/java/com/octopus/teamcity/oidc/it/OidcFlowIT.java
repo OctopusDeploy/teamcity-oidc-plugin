@@ -1,5 +1,8 @@
 package com.octopus.teamcity.oidc.it;
 
+import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.PortBinding;
+import com.github.dockerjava.api.model.Ports;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,13 @@ import java.util.Base64;
 public class OidcFlowIT {
 
     private static final int TC_PORT = 8111;
+    /**
+     * Fixed host port used for the TeamCity container in manual mode (-Dmanual). Stable across
+     * restarts so the browser URL doesn't change between container restarts. CI runs use the
+     * auto-allocated port to avoid clashes between parallel test invocations.
+     */
+    private static final int MANUAL_TC_HOST_PORT = 18111;
+    private static final boolean MANUAL_MODE = System.getProperty("manual") != null;
     private static final String TC_IMAGE = "jetbrains/teamcity-server:2025.11";
     private static final String AGENT_IMAGE = "jetbrains/teamcity-agent:2025.11";
     private static final String OCTOPUS_IMAGE = "octopusdeploy/octopusdeploy:2025.4";
@@ -200,6 +210,13 @@ public class OidcFlowIT {
                         "chmod 644 /opt/java/openjdk/lib/security/cacerts" +
                         " && chown -R tcuser:tcuser /data/teamcity_server/datadir/plugins" +
                         " && exec runuser -u tcuser -- /run-services.sh");
+                // In manual mode, pin the TC host port so the browser URL is stable across
+                // container restarts. CI keeps the testcontainers auto-allocated port.
+                if (MANUAL_MODE) {
+                    cmd.getHostConfig().withPortBindings(new PortBinding(
+                            Ports.Binding.bindPort(MANUAL_TC_HOST_PORT),
+                            new ExposedPort(TC_PORT)));
+                }
             })
             .waitingFor(
                     Wait.forHttp("/mnt/").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5))
@@ -1099,12 +1116,17 @@ public class OidcFlowIT {
         final var superUserToken = superUserAuthHeader.replace("Basic ", "");
         final var decodedToken = new String(Base64.getDecoder().decode(superUserToken)).split(":", 2)[1];
 
+        // Direct HTTP URL — port is fixed at MANUAL_TC_HOST_PORT in manual mode so the URL
+        // is stable across container restarts. Use this URL with Chrome MCP to skip the
+        // Caddy self-signed cert warning.
+        final var directHttpUrl = "http://localhost:" + teamcity.getMappedPort(TC_PORT);
         System.out.println();
         System.out.println("╔══════════════════════════════════════════════════════════════════╗");
         System.out.println("║  Stack is ready for manual testing                               ║");
         System.out.println("║                                                                  ║");
         System.out.printf( "║  TeamCity:    %-51s║%n", httpsUrl);
         System.out.printf( "║  Alt URL:     %-51s║%n", altHttpsUrl);
+        System.out.printf( "║  Direct HTTP: %-51s║%n", directHttpUrl);
         System.out.printf( "║  Login:       %-51s║%n", "(empty username)");
         System.out.printf( "║  Password:    %-51s║%n", decodedToken);
         System.out.println("║                                                                  ║");
