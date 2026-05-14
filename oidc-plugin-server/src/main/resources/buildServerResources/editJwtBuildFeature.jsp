@@ -142,9 +142,9 @@
     let _jwtTokenRef = null;
     const _jwtTestUrl = '${pageContext.request.contextPath}/admin/jwtTest.html';
 
-    window.jwtTestOpen = function() {
+    window.jwtTestOpen = () => {
         _jwtTokenRef = null;
-        ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(function(id) {
+        ['jwtRow0','jwtRow1','jwtRow2','jwtRow3'].forEach(id => {
             const el = document.getElementById(id);
             el.textContent = id === 'jwtRow3' ? '' : '○ Pending';
             el.style.color = '#888';
@@ -156,19 +156,19 @@
         jwtTestRunChecks();
     }
 
-    window.jwtTestClose = function() {
+    window.jwtTestClose = () => {
         document.getElementById('jwtTestModal').style.display = 'none';
     }
 
-    window.jwtSetRow = function(id, ok, message) {
+    window.jwtSetRow = (id, ok, message) => {
         const el = document.getElementById(id);
         el.textContent = (ok ? '\u2713 ' : '\u2717 ') + message;
         el.style.color = ok ? '#7ec87e' : '#e06c75';
     }
 
-    window.jwtPost = function(params) {
+    window.jwtPost = (params) => {
         const body = Object.entries(params)
-            .map(function(e) { return encodeURIComponent(e[0]) + '=' + encodeURIComponent(e[1]); })
+            .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
             .join('&');
         const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
         const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
@@ -179,10 +179,10 @@
                 'X-TC-CSRF-Token': csrf
             },
             body: body
-        }).then(function(r) { return r.json(); });
+        }).then(r => r.json());
     }
 
-    window.jwtTestRunChecks = async function() {
+    window.jwtTestRunChecks = async () => {
         const algorithm = document.getElementById('algorithm').value;
         const ttl = document.getElementById('ttl_minutes').value || '10';
         const audience = document.getElementById('audience').value;
@@ -208,7 +208,7 @@
         document.getElementById('jwtExchangeBtn').disabled = false;
     };
 
-    window.jwtTestExchange = async function() {
+    window.jwtTestExchange = async () => {
         const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
         if (!serviceUrl) return;
         const algorithm = document.getElementById('algorithm').value;
@@ -231,14 +231,14 @@
         document.getElementById('jwtExchangeBtn').disabled = false;
     };
 
-    (function() {
+    (() => {
         // Hide the empty groupingTitle row the l:settingsGroup tag always renders
-        document.querySelectorAll('tr.groupingTitle').forEach(function(tr) {
+        document.querySelectorAll('tr.groupingTitle').forEach(tr => {
             if (!tr.textContent.trim()) tr.style.display = 'none';
         });
     })();
 
-    $j(document).ready(function() {
+    $j(document).ready(() => {
         const placeholder = $j('span#editBuildFeatureAdditionalButtons');
         if (placeholder.length) {
             placeholder.empty();
@@ -251,8 +251,8 @@
         // listed dimensions.
         const stored = $j('#subject_dimensions').val().trim();
         const enabled = stored === '' ? [] : stored.split(/\s*,\s*/);
-        $j('.jwt-subject-dimension-cb').each(function() {
-            $j(this).prop('checked', enabled.indexOf($j(this).val()) !== -1);
+        $j('.jwt-subject-dimension-cb').each((_, el) => {
+            $j(el).prop('checked', enabled.includes(el.value));
         });
 
         // Live preview of the resulting sub claim. Uses real sample values from the
@@ -277,8 +277,8 @@
 
         // Sync hidden field and preview on every checkbox change.
         // None checked → blank; some/all checked → comma-separated list.
-        $j('.jwt-subject-dimension-cb').on('change', function() {
-            const checked = $j('.jwt-subject-dimension-cb:checked').map(function() { return $j(this).val(); }).get();
+        $j('.jwt-subject-dimension-cb').on('change', () => {
+            const checked = $j('.jwt-subject-dimension-cb:checked').map((_, el) => el.value).get();
             $j('#subject_dimensions').val(checked.join(','));
             updatePreview();
         });

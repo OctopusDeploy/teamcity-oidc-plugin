@@ -320,7 +320,7 @@
       });
   };
 
-  (function() {
+  (() => {
     const raw = '${jwksBase64}';
     if (!raw) {
       document.getElementById('jwtKeyCount').textContent = 'Keys not yet available (server startup in progress)';
