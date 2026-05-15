@@ -97,7 +97,7 @@
             <!--
                 Downloads Chromium browser binaries and the system shared libraries
                 it links against (libnss3, libatk, libgbm, etc) before integration
-                tests run. The --with-deps flag asks Playwright to apt-get install
+                tests run. The `with-deps` flag asks Playwright to apt-get install
                 the deps itself, which requires a Debian/Ubuntu base image (we use
                 maven:3.9-eclipse-temurin-21 in docker-compose.yml).
 
