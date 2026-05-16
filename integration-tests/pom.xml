@@ -66,6 +66,13 @@
             <version>2.0.18</version>
             <scope>test</scope>
         </dependency>
+        <!-- Browser automation for UI integration tests -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.52.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -86,6 +93,42 @@
                 <configuration>
                     <skipTests>true</skipTests>
                 </configuration>
+            </plugin>
+            <!--
+                Downloads Chromium browser binaries and the system shared libraries
+                it links against (libnss3, libatk, libgbm, etc) before integration
+                tests run. The `with-deps` flag asks Playwright to apt-get install
+                the deps itself, which requires a Debian/Ubuntu base image (we use
+                maven:3.9-eclipse-temurin-21 in docker-compose.yml).
+
+                Must run in a forked JVM because CLI.main() calls System.exit() when
+                finished, which would kill Surefire/Failsafe if it shared the JVM.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>playwright-install-chromium</id>
+                        <phase>pre-integration-test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <classpathScope>test</classpathScope>
+                            <arguments>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>com.microsoft.playwright.CLI</argument>
+                                <argument>install</argument>
+                                <argument>--with-deps</argument>
+                                <argument>chromium</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <!--
                 Failsafe runs *IT.java files during the integration-test phase,
