@@ -59,24 +59,10 @@ public class OidcSettingsManager {
             var cacheLifetime = defaults.jwksCacheLifetimeMinutes();
             final var rawCache = obj.get("jwksCacheLifetimeMinutes");
             if (rawCache instanceof final Number n) {
-                final var parsed = n.intValue();
-                if (parsed >= OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES) {
-                    cacheLifetime = clampJwksCacheLifetime(parsed);
-                } else {
-                    LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + parsed
-                            + "' in oidc-settings.json — falling back to default ("
-                            + defaults.jwksCacheLifetimeMinutes() + ").");
-                }
+                cacheLifetime = validateOrDefaultJwksCacheLifetime(n.intValue(), cacheLifetime, n);
             } else if (rawCache instanceof final String s) {
                 try {
-                    final var parsed = Integer.parseInt(s);
-                    if (parsed >= OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES) {
-                        cacheLifetime = clampJwksCacheLifetime(parsed);
-                    } else {
-                        LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + s
-                                + "' in oidc-settings.json — falling back to default ("
-                                + defaults.jwksCacheLifetimeMinutes() + ").");
-                    }
+                    cacheLifetime = validateOrDefaultJwksCacheLifetime(Integer.parseInt(s), cacheLifetime, s);
                 } catch (final NumberFormatException ignored) {
                     LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + s
                             + "' in oidc-settings.json — falling back to default ("
@@ -140,6 +126,25 @@ public class OidcSettingsManager {
         return Math.clamp(value,
                 OidcSettings.MIN_TOKEN_LIFETIME_MINUTES,
                 OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES);
+    }
+
+    /**
+     * Validates and clamps a parsed jwksCacheLifetimeMinutes value. Returns the clamped value
+     * if at or above MIN (so we trust the caller meant a real value and clamp down to MAX if
+     * needed); returns the default and logs a warning if below MIN — we don't silently clamp
+     * values like -5 up to 1, because that interpretation is too speculative.
+     *
+     * <p>{@code raw} is included in the warning message for traceability.
+     */
+    private static int validateOrDefaultJwksCacheLifetime(final int parsed,
+                                                          final int defaultValue,
+                                                          final Object raw) {
+        if (parsed < OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES) {
+            LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + raw
+                    + "' in oidc-settings.json — falling back to default (" + defaultValue + ").");
+            return defaultValue;
+        }
+        return clampJwksCacheLifetime(parsed);
     }
 
     private static int clampJwksCacheLifetime(final int value) {

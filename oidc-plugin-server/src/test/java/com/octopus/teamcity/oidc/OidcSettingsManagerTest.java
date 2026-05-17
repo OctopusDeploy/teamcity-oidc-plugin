@@ -113,7 +113,7 @@ public class OidcSettingsManagerTest {
     void missingJwksCacheLifetimeLoadsAsDefault() throws Exception {
         final var file = new File(tempDir, "oidc-settings.json");
         // Pre-upgrade file shape: no jwksCacheLifetimeMinutes key.
-        java.nio.file.Files.writeString(file.toPath(),
+        Files.writeString(file.toPath(),
                 "{\"maxTokenLifetimeMinutes\":600}");
         final var manager = new OidcSettingsManager(tempDir);
         assertThat(manager.load().jwksCacheLifetimeMinutes())
@@ -123,7 +123,7 @@ public class OidcSettingsManagerTest {
     @Test
     void invalidJwksCacheLifetimeInJsonFallsBackToDefault() throws Exception {
         final var file = new File(tempDir, "oidc-settings.json");
-        java.nio.file.Files.writeString(file.toPath(),
+        Files.writeString(file.toPath(),
                 "{\"jwksCacheLifetimeMinutes\":-5}");
         final var manager = new OidcSettingsManager(tempDir);
         assertThat(manager.load().jwksCacheLifetimeMinutes())
