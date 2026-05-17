@@ -180,8 +180,12 @@
       },
       body: body
     })
-    .then(r => { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
-    .then(onSuccess)
+    // The controllers return JSON for both success (2xx) and known-case errors
+    // (400 validation, 409 warmup-in-progress) — pass the parsed body to
+    // onSuccess regardless of status code so callers can render the structured
+    // message. Only unexpected failures (network, non-JSON body e.g. 5xx HTML)
+    // fall through to onError.
+    .then(r => r.json().then(onSuccess, onError))
     .catch(onError);
   };
 
@@ -239,14 +243,16 @@
   const jwtRotateNow = () => {
     jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
       data => {
-        const rotated = data.status === 'rotated';
-        jwtShowResult('jwtRotateResult', rotated ? 'ok' : 'error', rotated ? 'Keys rotated successfully' : (data.message || 'Rotation failed'));
-        if (rotated && data.warning) {
-          jwtShowResult('jwtRotateWarning', 'warn', data.warning);
-        } else {
-          document.getElementById('jwtRotateWarning').style.display = 'none';
-        }
-        if (rotated) {
+        if (data.status === 'rotated') {
+          const msg = data.activeAt
+            ? 'Rotation started — new key will become active at ' + data.activeAt
+            : 'Keys rotated successfully';
+          jwtShowResult('jwtRotateResult', 'ok', msg);
+          if (data.warning) {
+            jwtShowResult('jwtRotateWarning', 'warn', data.warning);
+          } else {
+            document.getElementById('jwtRotateWarning').style.display = 'none';
+          }
           const now = new Date();
           const formatted = now.getUTCFullYear() + '-' +
             String(now.getUTCMonth() + 1).padStart(2, '0') + '-' +
@@ -255,6 +261,15 @@
             String(now.getUTCMinutes()).padStart(2, '0') + ' UTC';
           document.getElementById('jwtLastRotatedDate').textContent = formatted;
           jwtRefreshKeyTable();
+        } else if (data.status === 'warmupInProgress') {
+          // 409 path: a previous rotation's warmup is still in progress. Show the
+          // structured message (which names the activation time) as a warning, not
+          // a hard error — the rotation is recoverable by waiting.
+          jwtShowResult('jwtRotateResult', 'warn', data.message);
+          document.getElementById('jwtRotateWarning').style.display = 'none';
+        } else {
+          jwtShowResult('jwtRotateResult', 'error', data.message || 'Rotation failed');
+          document.getElementById('jwtRotateWarning').style.display = 'none';
         }
       },
       () => jwtShowResult('jwtRotateResult', 'error', 'Request failed')
