@@ -18,6 +18,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,6 +94,19 @@ public class KeyRotationTest {
                 rsa2.getKeyID(), rsa3.getKeyID(),
                 rsa3072_2.getKeyID(), rsa3072_3.getKeyID(),
                 ec2.getKeyID(), ec3.getKeyID());
+    }
+
+    @Test
+    void rotatedKeysHaveActivateAtCloseToNow() throws Exception {
+        final var beforeRotate = Instant.now();
+        keyManager.rotateKey();
+        final var afterRotate = Instant.now();
+        // Reload from disk to confirm the timestamp made it through serialisation.
+        final var fresh = TestJwtKeyManagerFactory.create(serverPaths);
+        final var rsaSlot = fresh.getRsaKeySlot();
+        assertThat(rsaSlot.activateAt())
+                .isAfterOrEqualTo(beforeRotate.minusSeconds(1))
+                .isBeforeOrEqualTo(afterRotate.plusSeconds(1));
     }
 
     // --- helpers ---

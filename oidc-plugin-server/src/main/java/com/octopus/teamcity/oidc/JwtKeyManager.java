@@ -144,6 +144,13 @@ public class JwtKeyManager {
         return requireReady().ecKey();
     }
 
+    /** Package-private — for tests only. */
+    @NotNull KeySlot getRsaKeySlot() { return requireReady().rsa(); }
+    /** Package-private — for tests only. */
+    @NotNull KeySlot getEcKeySlot() { return requireReady().ec(); }
+    /** Package-private — for tests only. */
+    @NotNull KeySlot getRsa3072KeySlot() { return requireReady().rsa3072(); }
+
     public @NotNull List<JWK> getPublicKeys() {
         final var snapshot = requireReady();
         final List<JWK> result = new ArrayList<>();
@@ -273,70 +280,101 @@ public class JwtKeyManager {
         final var retiredRsa3072 = loadRetiredRsa3072Key();
 
         keys.set(new KeyMaterial(
-                new KeySlot(rsa, Instant.EPOCH),
-                retiredRsa == null ? null : new KeySlot(retiredRsa, Instant.EPOCH),
-                new KeySlot(ec, Instant.EPOCH),
-                retiredEc == null ? null : new KeySlot(retiredEc, Instant.EPOCH),
-                new KeySlot(rsa3072, Instant.EPOCH),
-                retiredRsa3072 == null ? null : new KeySlot(retiredRsa3072, Instant.EPOCH)));
+                new KeySlot(rsa.jwk(), rsa.activateAt()),
+                retiredRsa == null ? null : new KeySlot(retiredRsa.jwk(), retiredRsa.activateAt()),
+                new KeySlot(ec.jwk(), ec.activateAt()),
+                retiredEc == null ? null : new KeySlot(retiredEc.jwk(), retiredEc.activateAt()),
+                new KeySlot(rsa3072.jwk(), rsa3072.activateAt()),
+                retiredRsa3072 == null ? null : new KeySlot(retiredRsa3072.jwk(), retiredRsa3072.activateAt())));
         lastLoadedMaxMtime = maxKeyFileMtime();
         LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
     }
 
-    private RSAKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
+    private ParsedKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "rsa-key.json");
         if (keyFile.exists()) {
             LOG.info("JWT plugin: reading existing RSA key from " + keyFile);
-            return parseRsaKey(keyFile);
+            final var parsed = parseKeyEnvelope(keyFile);
+            if (!(parsed.jwk() instanceof RSAKey)) {
+                throw new IOException("Expected RSA key in rsa-key.json");
+            }
+            return parsed;
         }
         LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
-        saveKeyToFile(newKey, "rsa-key.json", Instant.now());
-        return newKey;
+        final var now = Instant.now();
+        saveKeyToFile(newKey, "rsa-key.json", now);
+        return new ParsedKey(newKey, now);
     }
 
     @Nullable
-    private RSAKey loadRetiredRsaKey() throws IOException, ParseException {
+    private ParsedKey loadRetiredRsaKey() throws IOException, ParseException {
         final var f = new File(keyDirectory, "retired-rsa-key.json");
         if (!f.exists()) return null;
         LOG.info("JWT plugin: reading retired RSA key from " + f);
-        return parseRsaKey(f);
+        final var parsed = parseKeyEnvelope(f);
+        if (!(parsed.jwk() instanceof RSAKey)) {
+            throw new IOException("Expected RSA key in retired-rsa-key.json");
+        }
+        return parsed;
     }
 
-    private ECKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
+    private ParsedKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
         final var keyFile = new File(keyDirectory, "ec-key.json");
         if (keyFile.exists()) {
             LOG.info("JWT plugin: reading existing EC key from " + keyFile);
-            return parseEcKey(keyFile);
+            final var parsed = parseKeyEnvelope(keyFile);
+            if (!(parsed.jwk() instanceof ECKey)) {
+                throw new IOException("Expected EC key in ec-key.json");
+            }
+            return parsed;
         }
         LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
-        saveKeyToFile(newKey, "ec-key.json", Instant.now());
-        return newKey;
+        final var now = Instant.now();
+        saveKeyToFile(newKey, "ec-key.json", now);
+        return new ParsedKey(newKey, now);
     }
 
     @Nullable
-    private ECKey loadRetiredEcKey() throws IOException, ParseException {
+    private ParsedKey loadRetiredEcKey() throws IOException, ParseException {
         final var f = new File(keyDirectory, "retired-ec-key.json");
         if (!f.exists()) return null;
         LOG.info("JWT plugin: reading retired EC key from " + f);
-        return parseEcKey(f);
+        final var parsed = parseKeyEnvelope(f);
+        if (!(parsed.jwk() instanceof ECKey)) {
+            throw new IOException("Expected EC key in retired-ec-key.json");
+        }
+        return parsed;
     }
 
-    private RSAKey parseRsaKey(final File file) throws IOException, ParseException {
-        final var jwk = JWK.parse(encryption.decrypt(FileUtils.readFileToString(file, StandardCharsets.UTF_8)));
-        if (!(jwk instanceof RSAKey rsaKey)) {
-            throw new IOException("Expected RSA key in " + file.getName() + " but found key type: " + jwk.getKeyType());
+    private ParsedKey loadOrGenerateRsa3072Key() throws IOException, ParseException, JOSEException {
+        final var keyFile = new File(keyDirectory, "rsa3072-key.json");
+        if (keyFile.exists()) {
+            LOG.info("JWT plugin: reading existing RSA-3072 key from " + keyFile);
+            final var parsed = parseKeyEnvelope(keyFile);
+            if (!(parsed.jwk() instanceof RSAKey)) {
+                throw new IOException("Expected RSA key in rsa3072-key.json");
+            }
+            return parsed;
         }
-        return rsaKey;
+        LOG.info("JWT plugin: generating new RSA-3072 key to " + keyFile);
+        final var newKey = generateFreshRsa3072Key();
+        final var now = Instant.now();
+        saveKeyToFile(newKey, "rsa3072-key.json", now);
+        return new ParsedKey(newKey, now);
     }
 
-    private ECKey parseEcKey(final File file) throws IOException, ParseException {
-        final var jwk = JWK.parse(encryption.decrypt(FileUtils.readFileToString(file, StandardCharsets.UTF_8)));
-        if (!(jwk instanceof ECKey ecKey)) {
-            throw new IOException("Expected EC key in " + file.getName() + " but found key type: " + jwk.getKeyType());
+    @Nullable
+    private ParsedKey loadRetiredRsa3072Key() throws IOException, ParseException {
+        final var f = new File(keyDirectory, "retired-rsa3072-key.json");
+        if (!f.exists()) return null;
+        LOG.info("JWT plugin: reading retired RSA-3072 key from " + f);
+        final var parsed = parseKeyEnvelope(f);
+        if (!(parsed.jwk() instanceof RSAKey)) {
+            throw new IOException("Expected RSA key in retired-rsa3072-key.json");
         }
-        return ecKey;
+        return parsed;
     }
 
     private static RSAKey generateFreshRsaKey() throws JOSEException {
@@ -357,26 +395,6 @@ public class JwtKeyManager {
         return new RSAKey.Builder(key).issueTime(new java.util.Date()).build();
     }
 
-    private RSAKey loadOrGenerateRsa3072Key() throws IOException, ParseException, JOSEException {
-        final var keyFile = new File(keyDirectory, "rsa3072-key.json");
-        if (keyFile.exists()) {
-            LOG.info("JWT plugin: reading existing RSA-3072 key from " + keyFile);
-            return JWK.parse(encryption.decrypt(FileUtils.readFileToString(keyFile, StandardCharsets.UTF_8))).toRSAKey();
-        }
-        LOG.info("JWT plugin: generating new RSA-3072 key to " + keyFile);
-        final var newKey = generateFreshRsa3072Key();
-        saveKeyToFile(newKey, "rsa3072-key.json", Instant.now());
-        return newKey;
-    }
-
-    @Nullable
-    private RSAKey loadRetiredRsa3072Key() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "retired-rsa3072-key.json");
-        if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading retired RSA-3072 key from " + f);
-        return JWK.parse(encryption.decrypt(FileUtils.readFileToString(f, StandardCharsets.UTF_8))).toRSAKey();
-    }
-
     private static ECKey generateFreshEcKey() throws JOSEException {
         final var key = new ECKeyGenerator(Curve.P_256)
                 .keyUse(KeyUse.SIGNATURE)
@@ -386,13 +404,66 @@ public class JwtKeyManager {
         return new ECKey.Builder(key).issueTime(new java.util.Date()).build();
     }
 
+    /**
+     * Wraps a JWK and an activateAt instant into the on-disk envelope JSON shape.
+     * Why envelope rather than a custom JWK field: Nimbus's JWK.toPublicJWK() copies
+     * custom JWK parameters into the public output. If activateAt were a custom JWK
+     * member, it would leak into the public JWKS and reveal our internal rotation
+     * cadence to every consumer. The envelope keeps activateAt outside the JWK
+     * boundary so the public render path can never serialise it.
+     */
+    private static String toEnvelopeJson(@NotNull final JWK jwk, @NotNull final Instant activateAt) {
+        final var obj = new net.minidev.json.JSONObject();
+        obj.put("jwk", net.minidev.json.JSONValue.parse(jwk.toString()));
+        obj.put("activateAt", activateAt.toString());
+        return obj.toJSONString();
+    }
+
+    /**
+     * Reads either the new envelope format ({@code {"jwk": ..., "activateAt": ...}}) or
+     * the legacy bare-JWK format. Detection is by top-level keys: presence of {@code jwk}
+     * means envelope, presence of {@code kty} means legacy. Missing activateAt — whether
+     * because the file is legacy or because the envelope omits it — loads as
+     * {@code Instant.EPOCH}, which the rest of the manager treats as "eligible to sign
+     * right now."
+     */
+    private @NotNull ParsedKey parseKeyEnvelope(@NotNull final File file)
+            throws IOException, ParseException {
+        final var decrypted = encryption.decrypt(FileUtils.readFileToString(file, StandardCharsets.UTF_8));
+        final Object parsed;
+        try {
+            parsed = new net.minidev.json.parser.JSONParser(
+                    net.minidev.json.parser.JSONParser.MODE_PERMISSIVE).parse(decrypted);
+        } catch (final net.minidev.json.parser.ParseException e) {
+            throw new IOException("Key file " + file.getName() + " did not contain valid JSON", e);
+        }
+        if (!(parsed instanceof final net.minidev.json.JSONObject obj)) {
+            throw new IOException("Key file " + file.getName() + " did not contain a JSON object");
+        }
+        final var inner = obj.get("jwk");
+        if (inner != null) {
+            // Envelope format.
+            final var activateAtRaw = obj.get("activateAt");
+            final var activateAt = activateAtRaw instanceof final String s
+                    ? Instant.parse(s) : Instant.EPOCH;
+            return new ParsedKey(JWK.parse(inner.toString()), activateAt);
+        }
+        if (obj.get("kty") != null) {
+            // Legacy bare-JWK format.
+            return new ParsedKey(JWK.parse(decrypted), Instant.EPOCH);
+        }
+        throw new IOException("Key file " + file.getName() + " is neither envelope nor legacy JWK shape");
+    }
+
+    private record ParsedKey(@NotNull JWK jwk, @NotNull Instant activateAt) {}
+
     private void saveKeyToFile(@NotNull final JWK key, @NotNull final String fileName,
                                @NotNull final Instant activateAt) throws IOException {
-        // activateAt unused this task; envelope format lands in Task 6.
         final var target = new File(keyDirectory, fileName);
         final var temp = File.createTempFile("key-", ".tmp", keyDirectory);
         try {
-            FileUtils.writeStringToFile(temp, encryption.encrypt(key.toString()), StandardCharsets.UTF_8);
+            FileUtils.writeStringToFile(temp, encryption.encrypt(toEnvelopeJson(key, activateAt)),
+                    StandardCharsets.UTF_8);
             if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
                 Files.setPosixFilePermissions(temp.toPath(), Set.of(
                         PosixFilePermission.OWNER_READ,
