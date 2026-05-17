@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.text.ParseException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -215,7 +216,7 @@ public class JwtKeyManager {
 
         final var settings = oidcSettingsManager.load();
         final var activateAt = Instant.now().plus(
-                java.time.Duration.ofMinutes(settings.jwksCacheLifetimeMinutes()));
+                Duration.ofMinutes(settings.jwksCacheLifetimeMinutes()));
 
         // Generate all new keys before touching the filesystem so a key-generation
         // failure leaves the current keys intact.
@@ -304,6 +305,13 @@ public class JwtKeyManager {
         while (true) {
             final var k = keys.get();
             if (k == null || !k.hasAnyPending()) return;
+            if (k.pendingRsa() == null || k.pendingEc() == null || k.pendingRsa3072() == null) {
+                throw new IllegalStateException(
+                        "JWT plugin: inconsistent KeyMaterial — pending slots are not all-or-none "
+                        + "(rsa=" + (k.pendingRsa() != null) + ", ec=" + (k.pendingEc() != null)
+                        + ", rsa3072=" + (k.pendingRsa3072() != null) + "). "
+                        + "Rotation always writes all three together; this state should be unreachable.");
+            }
             final var now = Instant.now();
             if (!k.pendingRsa().isActiveAt(now)) return;
 
@@ -353,7 +361,10 @@ public class JwtKeyManager {
             deleteIfExists("pending-ec-key.json");
             deleteIfExists("pending-rsa3072-key.json");
 
-            lastLoadedMaxMtime = maxKeyFileMtime();
+            // Match the lock taken by refreshIfStale() so reads observe the post-write value.
+            synchronized (this) {
+                lastLoadedMaxMtime = maxKeyFileMtime();
+            }
         } catch (final IOException e) {
             LOG.log(Level.SEVERE, "JWT plugin: in-memory key promotion succeeded but on-disk "
                     + "update failed; next startup will reconcile", e);
