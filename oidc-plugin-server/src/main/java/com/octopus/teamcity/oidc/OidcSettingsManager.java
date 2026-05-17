@@ -56,7 +56,7 @@ public class OidcSettingsManager {
                 }
             }
 
-            return new OidcSettings(override, maxTtl);
+            return new OidcSettings(override, maxTtl, defaults.jwksCacheLifetimeMinutes());
         } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: failed to load OIDC settings from "
                     + settingsFile.getAbsolutePath()
