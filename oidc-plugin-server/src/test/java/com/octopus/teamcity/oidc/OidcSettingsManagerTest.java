@@ -101,4 +101,43 @@ public class OidcSettingsManagerTest {
         assertThat(perms).containsExactlyInAnyOrder(
                 PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
     }
+
+    @Test
+    void savesAndLoadsJwksCacheLifetime() {
+        final var manager = new OidcSettingsManager(tempDir);
+        manager.saveJwksCacheLifetimeMinutes(15);
+        assertThat(manager.load().jwksCacheLifetimeMinutes()).isEqualTo(15);
+    }
+
+    @Test
+    void missingJwksCacheLifetimeLoadsAsDefault() throws Exception {
+        final var file = new File(tempDir, "oidc-settings.json");
+        // Pre-upgrade file shape: no jwksCacheLifetimeMinutes key.
+        java.nio.file.Files.writeString(file.toPath(),
+                "{\"maxTokenLifetimeMinutes\":600}");
+        final var manager = new OidcSettingsManager(tempDir);
+        assertThat(manager.load().jwksCacheLifetimeMinutes())
+                .isEqualTo(OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES);
+    }
+
+    @Test
+    void invalidJwksCacheLifetimeInJsonFallsBackToDefault() throws Exception {
+        final var file = new File(tempDir, "oidc-settings.json");
+        java.nio.file.Files.writeString(file.toPath(),
+                "{\"jwksCacheLifetimeMinutes\":-5}");
+        final var manager = new OidcSettingsManager(tempDir);
+        assertThat(manager.load().jwksCacheLifetimeMinutes())
+                .isEqualTo(OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES);
+    }
+
+    @Test
+    void atomicJwksCacheLifetimeSavePreservesOtherFields() {
+        final var manager = new OidcSettingsManager(tempDir);
+        manager.save(new OidcSettings("https://example", 600, 10));
+        manager.saveJwksCacheLifetimeMinutes(20);
+        final var loaded = manager.load();
+        assertThat(loaded.overrideIssuerUrl()).isEqualTo("https://example");
+        assertThat(loaded.maxTokenLifetimeMinutes()).isEqualTo(600);
+        assertThat(loaded.jwksCacheLifetimeMinutes()).isEqualTo(20);
+    }
 }

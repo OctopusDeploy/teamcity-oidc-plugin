@@ -56,7 +56,35 @@ public class OidcSettingsManager {
                 }
             }
 
-            return new OidcSettings(override, maxTtl, defaults.jwksCacheLifetimeMinutes());
+            var cacheLifetime = defaults.jwksCacheLifetimeMinutes();
+            final var rawCache = obj.get("jwksCacheLifetimeMinutes");
+            if (rawCache instanceof final Number n) {
+                final var parsed = n.intValue();
+                if (parsed >= OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES) {
+                    cacheLifetime = clampJwksCacheLifetime(parsed);
+                } else {
+                    LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + parsed
+                            + "' in oidc-settings.json — falling back to default ("
+                            + defaults.jwksCacheLifetimeMinutes() + ").");
+                }
+            } else if (rawCache instanceof final String s) {
+                try {
+                    final var parsed = Integer.parseInt(s);
+                    if (parsed >= OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES) {
+                        cacheLifetime = clampJwksCacheLifetime(parsed);
+                    } else {
+                        LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + s
+                                + "' in oidc-settings.json — falling back to default ("
+                                + defaults.jwksCacheLifetimeMinutes() + ").");
+                    }
+                } catch (final NumberFormatException ignored) {
+                    LOG.warning("JWT plugin: invalid jwksCacheLifetimeMinutes '" + s
+                            + "' in oidc-settings.json — falling back to default ("
+                            + defaults.jwksCacheLifetimeMinutes() + ").");
+                }
+            }
+
+            return new OidcSettings(override, maxTtl, cacheLifetime);
         } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: failed to load OIDC settings from "
                     + settingsFile.getAbsolutePath()
@@ -82,12 +110,21 @@ public class OidcSettingsManager {
         save(load().withMaxTokenLifetimeMinutes(minutes));
     }
 
+    /**
+     * Atomically updates the JWKS cache lifetime while preserving all other fields.
+     * See {@link #saveOverrideIssuerUrl} for why this is preferable to load+save.
+     */
+    public synchronized void saveJwksCacheLifetimeMinutes(final int minutes) {
+        save(load().withJwksCacheLifetimeMinutes(minutes));
+    }
+
     synchronized void save(@NotNull final OidcSettings settings) {
         final var obj = new JSONObject();
         if (settings.overrideIssuerUrl() != null && !settings.overrideIssuerUrl().isBlank()) {
             obj.put("overrideIssuerUrl", settings.overrideIssuerUrl());
         }
         obj.put("maxTokenLifetimeMinutes", settings.maxTokenLifetimeMinutes());
+        obj.put("jwksCacheLifetimeMinutes", settings.jwksCacheLifetimeMinutes());
         try {
             FileUtils.writeStringToFile(settingsFile, obj.toJSONString(), StandardCharsets.UTF_8);
             if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
@@ -103,5 +140,11 @@ public class OidcSettingsManager {
         return Math.clamp(value,
                 OidcSettings.MIN_TOKEN_LIFETIME_MINUTES,
                 OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES);
+    }
+
+    private static int clampJwksCacheLifetime(final int value) {
+        return Math.clamp(value,
+                OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES,
+                OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES);
     }
 }
