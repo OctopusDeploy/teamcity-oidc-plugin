@@ -75,22 +75,22 @@ public class OidcSettingsTest {
 
     @Test
     void acceptsMinJwksCacheLifetime() {
-        final var s = new OidcSettings(null, OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES,
+        final var settings = new OidcSettings(null, OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES,
                 OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES);
-        assertThat(s.jwksCacheLifetimeMinutes()).isEqualTo(OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES);
+        assertThat(settings.jwksCacheLifetimeMinutes()).isEqualTo(OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES);
     }
 
     @Test
     void acceptsMaxJwksCacheLifetime() {
-        final var s = new OidcSettings(null, OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES,
+        final var settings = new OidcSettings(null, OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES,
                 OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES);
-        assertThat(s.jwksCacheLifetimeMinutes()).isEqualTo(OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES);
+        assertThat(settings.jwksCacheLifetimeMinutes()).isEqualTo(OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES);
     }
 
     @Test
     void defaultJwksCacheLifetimeInRange() {
-        final var s = OidcSettings.defaults();
-        assertThat(s.jwksCacheLifetimeMinutes()).isEqualTo(OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES);
+        final var settings = OidcSettings.defaults();
+        assertThat(settings.jwksCacheLifetimeMinutes()).isEqualTo(OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES);
     }
 
     @Test
@@ -107,5 +107,23 @@ public class OidcSettingsTest {
         assertThat(updated.overrideIssuerUrl()).isEqualTo("https://example");
         assertThat(updated.maxTokenLifetimeMinutes()).isEqualTo(100);
         assertThat(updated.jwksCacheLifetimeMinutes()).isEqualTo(20);
+    }
+
+    @Test
+    void withOverrideIssuerUrlPreservesJwksCacheLifetime() {
+        final var settings = new OidcSettings("https://example", 100, 5);
+        final var updated = settings.withOverrideIssuerUrl("https://other");
+        assertThat(updated.overrideIssuerUrl()).isEqualTo("https://other");
+        assertThat(updated.maxTokenLifetimeMinutes()).isEqualTo(100);
+        assertThat(updated.jwksCacheLifetimeMinutes()).isEqualTo(5);
+    }
+
+    @Test
+    void withMaxTokenLifetimeMinutesPreservesJwksCacheLifetime() {
+        final var settings = new OidcSettings("https://example", 100, 5);
+        final var updated = settings.withMaxTokenLifetimeMinutes(200);
+        assertThat(updated.overrideIssuerUrl()).isEqualTo("https://example");
+        assertThat(updated.maxTokenLifetimeMinutes()).isEqualTo(200);
+        assertThat(updated.jwksCacheLifetimeMinutes()).isEqualTo(5);
     }
 }
