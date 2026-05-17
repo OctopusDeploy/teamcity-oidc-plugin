@@ -32,6 +32,7 @@ import static org.mockito.Mockito.*;
 public class OidcDiscoveryComplianceTest {
 
     @Mock ServerPaths serverPaths;
+    @Mock OidcSettingsManager oidcSettingsManager;
 
     @TempDir File tempDir;
 
@@ -46,8 +47,9 @@ public class OidcDiscoveryComplianceTest {
     @BeforeEach
     void fetchDiscoveryDocument() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
+        lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://teamcity.example.com"));
+        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://teamcity.example.com"), oidcSettingsManager);
 
         final var request = mock(HttpServletRequest.class);
         final var response = mock(HttpServletResponse.class);

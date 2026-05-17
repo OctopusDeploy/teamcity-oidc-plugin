@@ -21,6 +21,8 @@ import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -31,6 +33,7 @@ public class WellKnownPublicFilterTest {
     @Mock private HttpServletRequest request;
     @Mock private HttpServletResponse response;
     @Mock private FilterChain chain;
+    @Mock private OidcSettingsManager oidcSettingsManager;
 
     @TempDir private File tempDir;
 
@@ -39,7 +42,8 @@ public class WellKnownPublicFilterTest {
     @BeforeEach
     void setUp() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), providerFor("https://tc.example.com"));
+        lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
+        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), providerFor("https://tc.example.com"), oidcSettingsManager);
     }
 
     private SBuildServer buildServerWithRootUrl(final String url) {
@@ -127,7 +131,7 @@ public class WellKnownPublicFilterTest {
     @Test
     public void trailingSlashesStrippedFromDiscoveryDocUrls() throws Exception {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), providerFor("https://teamcity.example.com/"));
+        filter = new WellKnownPublicFilter(TestJwtKeyManagerFactory.create(serverPaths), providerFor("https://teamcity.example.com/"), oidcSettingsManager);
         final var writer = stubResponseWriter();
         when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
         when(request.getContextPath()).thenReturn("");
@@ -203,7 +207,7 @@ public class WellKnownPublicFilterTest {
     public void registersWithNamedDelegateAndUnregistersOnDestroy() throws Exception {
         try (final MockedStatic<DelegatingFilter> mocked = mockStatic(DelegatingFilter.class)) {
             final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
-            final var f = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"));
+            final var f = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"), oidcSettingsManager);
 
             // Must use the named overload — the unnamed overload registers into a list with no
             // unregister API, leaving a ghost filter behind on plugin reload.
@@ -225,5 +229,50 @@ public class WellKnownPublicFilterTest {
 
         assertThat(writer.toString()).contains("\"keys\"");
         verifyNoInteractions(chain);
+    }
+
+    @Test
+    void jwksCacheControlHeaderUsesConfiguredLifetime() throws Exception {
+        when(oidcSettingsManager.load()).thenReturn(new OidcSettings(null,
+                OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES, 5));
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).setHeader("Cache-Control", "max-age=300, stale-while-revalidate=300");
+    }
+
+    @Test
+    void discoveryCacheControlHeaderUsesConfiguredLifetime() throws Exception {
+        when(oidcSettingsManager.load()).thenReturn(new OidcSettings(null,
+                OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES, 5));
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.OIDC_DISCOVERY_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).setHeader("Cache-Control", "max-age=300, stale-while-revalidate=300");
+    }
+
+    @Test
+    void cacheControlReflectsCurrentSettingOnEachRequest() throws Exception {
+        when(oidcSettingsManager.load())
+                .thenReturn(new OidcSettings(null, OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES, 1))
+                .thenReturn(new OidcSettings(null, OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES, 7));
+        stubResponseWriter();
+        when(request.getRequestURI()).thenReturn(WellKnownPublicFilter.JWKS_PATH);
+        when(request.getContextPath()).thenReturn("");
+
+        filter.doFilter(request, response, chain);
+        filter.doFilter(request, response, chain);
+
+        final var captor = ArgumentCaptor.forClass(String.class);
+        verify(response, times(2)).setHeader(eq("Cache-Control"), captor.capture());
+        assertThat(captor.getAllValues()).containsExactly(
+                "max-age=60, stale-while-revalidate=60",
+                "max-age=420, stale-while-revalidate=420");
     }
 }

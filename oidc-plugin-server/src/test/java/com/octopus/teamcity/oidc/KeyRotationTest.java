@@ -27,6 +27,7 @@ import static org.mockito.Mockito.*;
 public class KeyRotationTest {
 
     @Mock private ServerPaths serverPaths;
+    @Mock private OidcSettingsManager oidcSettingsManager;
 
     @TempDir private File tempDir;
 
@@ -36,6 +37,7 @@ public class KeyRotationTest {
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
     }
 
     @Test
@@ -106,7 +108,7 @@ public class KeyRotationTest {
     }
 
     private JSONArray jwksKeys() throws Exception {
-        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"));
+        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"), oidcSettingsManager);
         final var request = mock(HttpServletRequest.class);
         final var response = mock(HttpServletResponse.class);
         final var writer = new StringWriter();

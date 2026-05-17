@@ -28,6 +28,7 @@ public class KeyRotationControllerTest {
     @Mock private WebControllerManager controllerManager;
     @Mock private ServerPaths serverPaths;
     @Mock private CSRFFilter csrfFilter;
+    @Mock private OidcSettingsManager oidcSettingsManager;
     @Mock private HttpServletRequest request;
     @Mock private HttpServletResponse response;
 
@@ -43,15 +44,17 @@ public class KeyRotationControllerTest {
         settingsManager = new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
         // Default: CSRF check passes. lenient() because some tests never reach doHandle.
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
+        // Default: use default OIDC settings. lenient() because some tests never reach doHandle.
+        lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
     }
 
     private KeyRotationController controller() {
-        return new KeyRotationController(controllerManager, keyManager, settingsManager, csrfFilter);
+        return new KeyRotationController(controllerManager, keyManager, settingsManager, oidcSettingsManager, csrfFilter);
     }
 
     @Test
     public void registersAtAdminPath() {
-        new KeyRotationController(controllerManager, keyManager, settingsManager, csrfFilter);
+        new KeyRotationController(controllerManager, keyManager, settingsManager, oidcSettingsManager, csrfFilter);
         verify(controllerManager).registerController(eq(KeyRotationController.PATH), any(KeyRotationController.class));
     }
 
@@ -120,9 +123,11 @@ public class KeyRotationControllerTest {
 
     @Test
     public void noWarningWhenRotatingAfterMinGap() throws Exception {
-        // Simulate a previous rotation well outside the minimum gap
+        // Simulate a previous rotation well outside the minimum gap.
+        // Default settings: 10 min cache × 60 × 2 = 1200s gap.
+        final var defaultMinGapSeconds = OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES * 60L * 2L;
         settingsManager.updateLastRotatedAt(
-                java.time.Instant.now().minusSeconds(KeyRotationController.MIN_ROTATION_GAP_SECONDS + 60));
+                java.time.Instant.now().minusSeconds(defaultMinGapSeconds + 60));
 
         final var writer = new StringWriter();
         when(request.getMethod()).thenReturn("POST");

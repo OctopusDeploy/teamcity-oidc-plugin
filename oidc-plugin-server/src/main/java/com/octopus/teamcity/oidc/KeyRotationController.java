@@ -24,31 +24,28 @@ public class KeyRotationController extends BaseController {
 
     static final String PATH = "/admin/jwtKeyRotate.html";
 
-    // Worst-case JWKS staleness = max-age + stale-while-revalidate. Rotating twice within this
-    // window drops the first retired key before all caches have refreshed, which can cause
-    // verification failures for tokens signed with that key.
-    static final long MIN_ROTATION_GAP_SECONDS =
-            WellKnownPublicFilter.JWKS_MAX_AGE_SECONDS
-            + WellKnownPublicFilter.JWKS_STALE_WHILE_REVALIDATE_SECONDS;
-
     @NotNull private final JwtKeyManager keyManager;
     @NotNull private final RotationSettingsManager settingsManager;
+    @NotNull private final OidcSettingsManager oidcSettingsManager;
     @NotNull private final CSRFFilter csrfFilter;
 
     @Autowired
     public KeyRotationController(@NotNull final WebControllerManager controllerManager,
                                  @NotNull final JwtKeyManager keyManager,
                                  @NotNull final RotationSettingsManager settingsManager,
+                                 @NotNull final OidcSettingsManager oidcSettingsManager,
                                  @NotNull final ExtensionHolder extensionHolder) {
-        this(controllerManager, keyManager, settingsManager, new CSRFFilter(extensionHolder));
+        this(controllerManager, keyManager, settingsManager, oidcSettingsManager, new CSRFFilter(extensionHolder));
     }
 
     KeyRotationController(@NotNull final WebControllerManager controllerManager,
                           @NotNull final JwtKeyManager keyManager,
                           @NotNull final RotationSettingsManager settingsManager,
+                          @NotNull final OidcSettingsManager oidcSettingsManager,
                           @NotNull final CSRFFilter csrfFilter) {
         this.keyManager = keyManager;
         this.settingsManager = settingsManager;
+        this.oidcSettingsManager = oidcSettingsManager;
         this.csrfFilter = csrfFilter;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: KeyRotationController registered at " + PATH);
@@ -77,6 +74,12 @@ public class KeyRotationController extends BaseController {
         }
 
         try {
+            final var cacheLifetimeMinutes = oidcSettingsManager.load().jwksCacheLifetimeMinutes();
+            // Why ×2: a consumer's cache can be at most max-age + stale-while-revalidate stale.
+            // We set those equal to jwksCacheLifetimeMinutes, so worst-case staleness is 2× that.
+            // Rotating again inside this window can drop the retired key before stale caches refresh.
+            final var minRotationGapSeconds = cacheLifetimeMinutes * 60L * 2L;
+
             final var lastRotatedAt = settingsManager.load().lastRotatedAt();
             final var secondsSinceLast = lastRotatedAt != null
                     ? Duration.between(lastRotatedAt, Instant.now()).getSeconds()
@@ -90,10 +93,10 @@ public class KeyRotationController extends BaseController {
             response.setContentType("application/json;charset=UTF-8");
             final var result = new JSONObject();
             result.put("status", "rotated");
-            if (secondsSinceLast < MIN_ROTATION_GAP_SECONDS) {
+            if (secondsSinceLast < minRotationGapSeconds) {
                 final var warning = "Warning: Keys were rotated again after only " + secondsSinceLast + "s — verifiers "
                         + "with cached JWKS may fail to validate tokens signed by the previous key "
-                        + "until their cache refreshes (up to " + MIN_ROTATION_GAP_SECONDS + "s).";
+                        + "until their cache refreshes (up to " + minRotationGapSeconds + "s).";
                 result.put("warning", warning);
                 LOG.warning("JWT plugin: " + warning);
             }

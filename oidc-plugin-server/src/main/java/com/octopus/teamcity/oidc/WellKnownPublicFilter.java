@@ -23,16 +23,16 @@ public class WellKnownPublicFilter implements Filter {
     static final String AUTHORIZE_PATH = "/oidc/authorize";
     static final String DELEGATE_NAME = "octopus-oidc-well-known";
 
-    static final long JWKS_MAX_AGE_SECONDS = 60L;
-    static final long JWKS_STALE_WHILE_REVALIDATE_SECONDS = 60L;
-
     private final JwtKeyManager keyManager;
     private final OidcIssuerUrlProvider issuerUrlProvider;
+    private final OidcSettingsManager oidcSettingsManager;
 
     public WellKnownPublicFilter(@NotNull final JwtKeyManager keyManager,
-                                 @NotNull final OidcIssuerUrlProvider issuerUrlProvider) {
+                                 @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
+                                 @NotNull final OidcSettingsManager oidcSettingsManager) {
         this.keyManager = keyManager;
         this.issuerUrlProvider = issuerUrlProvider;
+        this.oidcSettingsManager = oidcSettingsManager;
         DelegatingFilter.registerDelegate(DELEGATE_NAME, this);
         LOG.info("JWT plugin: WellKnownPublicFilter registered in DelegatingFilter chain as " + DELEGATE_NAME);
     }
@@ -56,8 +56,9 @@ public class WellKnownPublicFilter implements Filter {
             }
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Access-Control-Allow-Origin", "*");
-            resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
-                    + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
+            final var jwksLifetimeSeconds = oidcSettingsManager.load().jwksCacheLifetimeMinutes() * 60L;
+            resp.setHeader("Cache-Control", "max-age=" + jwksLifetimeSeconds
+                    + ", stale-while-revalidate=" + jwksLifetimeSeconds);
             final var publicKeys = keyManager.getPublicKeys();
             final var jwks = new JWKSet(publicKeys != null ? publicKeys : List.of());
             LOG.fine("JWT plugin: serving JWKS (" + jwks.getKeys().size() + " key(s)) from WellKnownPublicFilter");
@@ -72,8 +73,9 @@ public class WellKnownPublicFilter implements Filter {
             }
             resp.setContentType("application/json;charset=UTF-8");
             resp.setHeader("Access-Control-Allow-Origin", "*");
-            resp.setHeader("Cache-Control", "max-age=" + JWKS_MAX_AGE_SECONDS
-                    + ", stale-while-revalidate=" + JWKS_STALE_WHILE_REVALIDATE_SECONDS);
+            final var discoveryLifetimeSeconds = oidcSettingsManager.load().jwksCacheLifetimeMinutes() * 60L;
+            resp.setHeader("Cache-Control", "max-age=" + discoveryLifetimeSeconds
+                    + ", stale-while-revalidate=" + discoveryLifetimeSeconds);
             final var issuer = issuerUrlProvider.getIssuerUrl();
             LOG.fine("JWT plugin: serving OIDC discovery from WellKnownPublicFilter, issuer=" + issuer);
 
