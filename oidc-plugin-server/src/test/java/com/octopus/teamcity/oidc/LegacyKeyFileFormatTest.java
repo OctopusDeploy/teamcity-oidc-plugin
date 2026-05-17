@@ -54,6 +54,10 @@ class LegacyKeyFileFormatTest {
         final var manager = TestJwtKeyManagerFactory.create(serverPaths);
         final var firstKid = manager.getRsaKey().getKeyID();
         manager.rotateKey();
+        // Rotation creates pending; force activation by setting activateAt to a recent past time
+        // (not EPOCH) so the reloaded activateAt still satisfies isAfter(Instant.EPOCH).
+        manager.__testOverridePendingActivateAt(Instant.now().minusSeconds(10));
+        manager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         final var rotatedKid = manager.getRsaKey().getKeyID();
         assertThat(rotatedKid).isNotEqualTo(firstKid);
 

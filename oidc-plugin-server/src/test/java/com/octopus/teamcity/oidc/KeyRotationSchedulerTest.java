@@ -70,6 +70,9 @@ public class KeyRotationSchedulerTest {
 
         new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
 
+        // Rotation now creates a pending key; force activation to verify the rotation occurred.
+        km.__testOverridePendingActivateAt(Instant.EPOCH);
+        km.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 
@@ -131,6 +134,9 @@ public class KeyRotationSchedulerTest {
         new KeyRotationScheduler(buildServer, km, mgr, nodes); // no serverStartup() call
 
         Thread.sleep(3000);
+        // Rotation now creates a pending key; force activation to verify the rotation occurred.
+        km.__testOverridePendingActivateAt(Instant.EPOCH);
+        km.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 

@@ -74,8 +74,14 @@ public class KeyRotationControllerTest {
             controller().doHandle(request, response);
         }
 
-        assertThat(keyManager.getRsaKey().getKeyID()).isNotEqualTo(originalRsaKid);
-        assertThat(keyManager.getEcKey().getKeyID()).isNotEqualTo(originalEcKid);
+        // Rotation now creates pending keys (warmup-delayed activation); current is unchanged.
+        // Verify the pending slots were created with different kids, and the response says "rotated".
+        assertThat(keyManager.getRsaKey().getKeyID()).isEqualTo(originalRsaKid);
+        assertThat(keyManager.getEcKey().getKeyID()).isEqualTo(originalEcKid);
+        assertThat(keyManager.getRsaPendingSlot()).isNotNull();
+        assertThat(keyManager.getRsaPendingSlot().jwk().getKeyID()).isNotEqualTo(originalRsaKid);
+        assertThat(keyManager.getEcPendingSlot()).isNotNull();
+        assertThat(keyManager.getEcPendingSlot().jwk().getKeyID()).isNotEqualTo(originalEcKid);
         assertThat(writer.toString()).contains("rotated");
     }
 

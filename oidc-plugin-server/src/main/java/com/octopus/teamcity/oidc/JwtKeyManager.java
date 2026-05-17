@@ -36,7 +36,8 @@ public class JwtKeyManager {
 
     private static final String[] KEY_FILE_NAMES = {
             "rsa-key.json", "ec-key.json", "rsa3072-key.json",
-            "retired-rsa-key.json", "retired-ec-key.json", "retired-rsa3072-key.json"
+            "retired-rsa-key.json", "retired-ec-key.json", "retired-rsa3072-key.json",
+            "pending-rsa-key.json", "pending-ec-key.json", "pending-rsa3072-key.json"
     };
 
     record KeyMaterial(
@@ -45,7 +46,10 @@ public class JwtKeyManager {
             @NotNull KeySlot ec,
             @Nullable KeySlot retiredEc,
             @NotNull KeySlot rsa3072,
-            @Nullable KeySlot retiredRsa3072
+            @Nullable KeySlot retiredRsa3072,
+            @Nullable KeySlot pendingRsa,
+            @Nullable KeySlot pendingEc,
+            @Nullable KeySlot pendingRsa3072
     ) {
         // Convenience accessors so existing call sites keep their shape.
         @NotNull RSAKey rsaKey() { return (RSAKey) rsa.jwk(); }
@@ -54,10 +58,15 @@ public class JwtKeyManager {
         @Nullable ECKey retiredEcKey() { return retiredEc == null ? null : (ECKey) retiredEc.jwk(); }
         @NotNull RSAKey rsa3072Key() { return (RSAKey) rsa3072.jwk(); }
         @Nullable RSAKey retiredRsa3072Key() { return retiredRsa3072 == null ? null : (RSAKey) retiredRsa3072.jwk(); }
+
+        boolean hasAnyPending() {
+            return pendingRsa != null || pendingEc != null || pendingRsa3072 != null;
+        }
     }
 
     private final File keyDirectory;
     private final Encryption encryption;
+    private final OidcSettingsManager oidcSettingsManager;
 
     /**
      * Keys are null until {@link #notifyTeamCityServerStartupCompleted()} fires. All callers must check
@@ -88,6 +97,7 @@ public class JwtKeyManager {
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
             throw new RuntimeException("Failed to create key directory");
+        this.oidcSettingsManager = new OidcSettingsManager(this.keyDirectory);
     }
 
     /**
@@ -127,9 +137,9 @@ public class JwtKeyManager {
         return new RotationSettingsManager(keyDirectory);
     }
 
-    /** Spring factory-method: creates an {@link OidcSettingsManager} sharing the same key directory. */
+    /** Spring factory-method: returns the internal {@link OidcSettingsManager} for this key directory. */
     public OidcSettingsManager createOidcSettingsManager() {
-        return new OidcSettingsManager(keyDirectory);
+        return oidcSettingsManager;
     }
 
     public RSAKey getRsaKey() {
@@ -150,44 +160,82 @@ public class JwtKeyManager {
     @NotNull KeySlot getEcKeySlot() { return requireReady().ec(); }
     /** Package-private — for tests only. */
     @NotNull KeySlot getRsa3072KeySlot() { return requireReady().rsa3072(); }
+    /** Package-private — for tests only. */
+    @Nullable KeySlot getRsaPendingSlot() { return requireReady().pendingRsa(); }
+    /** Package-private — for tests only. */
+    @Nullable KeySlot getEcPendingSlot() { return requireReady().pendingEc(); }
+    /** Package-private — for tests only. */
+    @Nullable KeySlot getRsa3072PendingSlot() { return requireReady().pendingRsa3072(); }
+
+    /**
+     * Test-only hook to force pending activateAt timestamps into the past so that the
+     * next sign() promotes them. Avoids needing a mockable Clock just for two test cases.
+     */
+    synchronized void __testOverridePendingActivateAt(@NotNull final Instant instant) {
+        final var k = requireReady();
+        if (k.pendingRsa() == null) throw new IllegalStateException("no pending state to override");
+        keys.set(new KeyMaterial(
+                k.rsa(), k.retiredRsa(),
+                k.ec(), k.retiredEc(),
+                k.rsa3072(), k.retiredRsa3072(),
+                new KeySlot(k.pendingRsa().jwk(), instant),
+                new KeySlot(k.pendingEc().jwk(), instant),
+                new KeySlot(k.pendingRsa3072().jwk(), instant)));
+    }
 
     public @NotNull List<JWK> getPublicKeys() {
         final var snapshot = requireReady();
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsaKey().toPublicJWK());
         if (snapshot.retiredRsaKey() != null) result.add(snapshot.retiredRsaKey().toPublicJWK());
+        if (snapshot.pendingRsa() != null) result.add(snapshot.pendingRsa().jwk().toPublicJWK());
         result.add(snapshot.rsa3072Key().toPublicJWK());
         if (snapshot.retiredRsa3072Key() != null) result.add(snapshot.retiredRsa3072Key().toPublicJWK());
+        if (snapshot.pendingRsa3072() != null) result.add(snapshot.pendingRsa3072().jwk().toPublicJWK());
         result.add(snapshot.ecKey().toPublicJWK());
         if (snapshot.retiredEcKey() != null) result.add(snapshot.retiredEcKey().toPublicJWK());
+        if (snapshot.pendingEc() != null) result.add(snapshot.pendingEc().jwk().toPublicJWK());
         return Collections.unmodifiableList(result);
     }
 
-    public synchronized void rotateKey() throws JOSEException, IOException {
+    public synchronized void rotateKey()
+            throws JOSEException, IOException, PendingRotationInProgressException {
         final var current = requireReady();
+        if (current.hasAnyPending()) {
+            // Why reject rather than replace: silently discarding the previous pending
+            // key would let a misclicked "Rotate Now" or an overlapping cron tick wipe
+            // out an in-flight warmup the admin chose deliberately. Surfacing the
+            // collision as an exception lets the caller respond appropriately (controller
+            // returns 409; scheduler logs and skips).
+            final var firstPending = current.pendingRsa() != null ? current.pendingRsa()
+                    : current.pendingEc() != null ? current.pendingEc()
+                    : current.pendingRsa3072();
+            throw new PendingRotationInProgressException(firstPending.activateAt());
+        }
+
+        final var settings = oidcSettingsManager.load();
+        final var activateAt = Instant.now().plus(
+                java.time.Duration.ofMinutes(settings.jwksCacheLifetimeMinutes()));
+
         // Generate all new keys before touching the filesystem so a key-generation
         // failure leaves the current keys intact.
         final var newRsa = generateFreshRsaKey();
         final var newRsa3072 = generateFreshRsa3072Key();
         final var newEc = generateFreshEcKey();
 
-        // Write new keys to temp files then rename atomically so no reader ever sees
+        // Write new keys to pending files then rename atomically so no reader ever sees
         // a partially-written key file, even if the JVM is killed mid-rotation.
-        saveKeyToFile(current.rsaKey(), "retired-rsa-key.json", current.rsa().activateAt());
-        saveKeyToFile(current.rsa3072Key(), "retired-rsa3072-key.json", current.rsa3072().activateAt());
-        saveKeyToFile(current.ecKey(), "retired-ec-key.json", current.ec().activateAt());
-        final var now = Instant.now();
-        saveKeyToFile(newRsa, "rsa-key.json", now);
-        saveKeyToFile(newRsa3072, "rsa3072-key.json", now);
-        saveKeyToFile(newEc, "ec-key.json", now);
+        saveKeyToFile(newRsa, "pending-rsa-key.json", activateAt);
+        saveKeyToFile(newRsa3072, "pending-rsa3072-key.json", activateAt);
+        saveKeyToFile(newEc, "pending-ec-key.json", activateAt);
 
         keys.set(new KeyMaterial(
-                new KeySlot(newRsa, now),
-                new KeySlot(current.rsaKey(), current.rsa().activateAt()),
-                new KeySlot(newEc, now),
-                new KeySlot(current.ecKey(), current.ec().activateAt()),
-                new KeySlot(newRsa3072, now),
-                new KeySlot(current.rsa3072Key(), current.rsa3072().activateAt())));
+                current.rsa(), current.retiredRsa(),
+                current.ec(), current.retiredEc(),
+                current.rsa3072(), current.retiredRsa3072(),
+                new KeySlot(newRsa, activateAt),
+                new KeySlot(newEc, activateAt),
+                new KeySlot(newRsa3072, activateAt)));
         // Record that this node's in-memory state matches what we just wrote, so the next
         // refreshIfStale() doesn't misread our own writes as an external change.
         lastLoadedMaxMtime = maxKeyFileMtime();
@@ -200,6 +248,8 @@ public class JwtKeyManager {
      * @throws IllegalArgumentException if {@code algorithm} is not {@code "RS256"} or {@code "ES256"}
      */
     public SignedJWT sign(@NotNull final JWTClaimsSet claims, @NotNull final String algorithm) throws JOSEException {
+        promotePendingIfDue();
+
         final JWSHeader header;
         final JWSSigner signer;
         if ("ES256".equals(algorithm)) {
@@ -230,6 +280,91 @@ public class JwtKeyManager {
         final var jwt = new SignedJWT(header, claims);
         jwt.sign(signer);
         return jwt;
+    }
+
+    /**
+     * If any algorithm has a pending slot whose activateAt is at or before now, atomically
+     * promote it: pending becomes current, current becomes retired, the previously-retired
+     * key is dropped. All three algorithms promote together (they were rotated together;
+     * they share a single activateAt).
+     *
+     * <p>Why lazy-on-sign and not a scheduled task: the only thing that depends on the
+     * promotion having happened is sign() itself. JWKS render is correct either way — it
+     * just emits all non-null publics, which is the same set before and after promotion
+     * with the exception of the dropped previously-retired key (which is fine to drop
+     * lazily because the warmup window has by definition elapsed). No timer means no
+     * persistence-on-restart concerns and no HA timer-ownership problems.
+     *
+     * <p>Why CAS rather than a synchronized method: synchronized would serialise every
+     * sign() — and most sign() calls do nothing here, since promotion only happens once
+     * per warmup. CAS is the cheapest concurrency primitive that gets us the invariant
+     * "the promotion happens exactly once, regardless of how many nodes race."
+     */
+    private void promotePendingIfDue() {
+        while (true) {
+            final var k = keys.get();
+            if (k == null || !k.hasAnyPending()) return;
+            final var now = Instant.now();
+            if (!k.pendingRsa().isActiveAt(now)) return;
+
+            final var promoted = new KeyMaterial(
+                    k.pendingRsa(),     new KeySlot(k.rsaKey(), k.rsa().activateAt()),
+                    k.pendingEc(),      new KeySlot(k.ecKey(), k.ec().activateAt()),
+                    k.pendingRsa3072(), new KeySlot(k.rsa3072Key(), k.rsa3072().activateAt()),
+                    null, null, null);
+
+            if (keys.compareAndSet(k, promoted)) {
+                promoteOnDisk(promoted);
+                return;
+            }
+            // Lost the CAS race; loop and re-read.
+        }
+    }
+
+    /**
+     * Mirror of the in-memory promotion on disk: rewrite the current key files with the
+     * pending content, rewrite the retired files with the previously-current content,
+     * delete the pending files. The on-disk update happens after the in-memory CAS
+     * succeeded, so concurrent JWKS reads on the same node see the promoted state
+     * regardless of where the disk write is in flight.
+     *
+     * <p>The CAS in promotePendingIfDue() guarantees exactly one caller wins and calls
+     * this method per rotation cycle, so no additional synchronization is needed here.
+     *
+     * <p>Crash recovery: if the JVM dies between the in-memory CAS and the last delete,
+     * the next loadKeys() will see overlapping pending+current+retired files. Since the
+     * pending's activateAt is in the past (we just promoted), the startup-time
+     * promotePendingIfDue() will idempotently complete what we couldn't.
+     */
+    private void promoteOnDisk(@NotNull final KeyMaterial promoted) {
+        try {
+            saveKeyToFile(promoted.rsaKey(),     "rsa-key.json",     promoted.rsa().activateAt());
+            saveKeyToFile(promoted.rsa3072Key(), "rsa3072-key.json", promoted.rsa3072().activateAt());
+            saveKeyToFile(promoted.ecKey(),      "ec-key.json",      promoted.ec().activateAt());
+
+            if (promoted.retiredRsaKey() != null)
+                saveKeyToFile(promoted.retiredRsaKey(), "retired-rsa-key.json", promoted.retiredRsa().activateAt());
+            if (promoted.retiredRsa3072Key() != null)
+                saveKeyToFile(promoted.retiredRsa3072Key(), "retired-rsa3072-key.json", promoted.retiredRsa3072().activateAt());
+            if (promoted.retiredEcKey() != null)
+                saveKeyToFile(promoted.retiredEcKey(), "retired-ec-key.json", promoted.retiredEc().activateAt());
+
+            deleteIfExists("pending-rsa-key.json");
+            deleteIfExists("pending-ec-key.json");
+            deleteIfExists("pending-rsa3072-key.json");
+
+            lastLoadedMaxMtime = maxKeyFileMtime();
+        } catch (final IOException e) {
+            LOG.log(Level.SEVERE, "JWT plugin: in-memory key promotion succeeded but on-disk "
+                    + "update failed; next startup will reconcile", e);
+        }
+    }
+
+    private void deleteIfExists(final String fileName) {
+        final var f = new File(keyDirectory, fileName);
+        if (f.exists() && !f.delete()) {
+            LOG.warning("JWT plugin: failed to delete " + f);
+        }
     }
 
     private KeyMaterial requireReady() {
@@ -278,6 +413,9 @@ public class JwtKeyManager {
         final var retiredEc = loadRetiredEcKey();
         final var rsa3072 = loadOrGenerateRsa3072Key();
         final var retiredRsa3072 = loadRetiredRsa3072Key();
+        final var pendingRsa = loadPendingRsaKey();
+        final var pendingEc = loadPendingEcKey();
+        final var pendingRsa3072 = loadPendingRsa3072Key();
 
         keys.set(new KeyMaterial(
                 new KeySlot(rsa.jwk(), rsa.activateAt()),
@@ -285,9 +423,17 @@ public class JwtKeyManager {
                 new KeySlot(ec.jwk(), ec.activateAt()),
                 retiredEc == null ? null : new KeySlot(retiredEc.jwk(), retiredEc.activateAt()),
                 new KeySlot(rsa3072.jwk(), rsa3072.activateAt()),
-                retiredRsa3072 == null ? null : new KeySlot(retiredRsa3072.jwk(), retiredRsa3072.activateAt())));
+                retiredRsa3072 == null ? null : new KeySlot(retiredRsa3072.jwk(), retiredRsa3072.activateAt()),
+                pendingRsa == null ? null : new KeySlot(pendingRsa.jwk(), pendingRsa.activateAt()),
+                pendingEc == null ? null : new KeySlot(pendingEc.jwk(), pendingEc.activateAt()),
+                pendingRsa3072 == null ? null : new KeySlot(pendingRsa3072.jwk(), pendingRsa3072.activateAt())));
         lastLoadedMaxMtime = maxKeyFileMtime();
         LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
+
+        // If the server was down longer than the warmup, or a previous shutdown crashed
+        // mid-activation, the pending's activateAt is already in the past. Run the same
+        // promotion logic the sign() path uses so we recover before serving any traffic.
+        promotePendingIfDue();
     }
 
     private ParsedKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
@@ -373,6 +519,42 @@ public class JwtKeyManager {
         final var parsed = parseKeyEnvelope(f);
         if (!(parsed.jwk() instanceof RSAKey)) {
             throw new IOException("Expected RSA key in retired-rsa3072-key.json");
+        }
+        return parsed;
+    }
+
+    @Nullable
+    private ParsedKey loadPendingRsaKey() throws IOException, ParseException {
+        final var f = new File(keyDirectory, "pending-rsa-key.json");
+        if (!f.exists()) return null;
+        LOG.info("JWT plugin: reading pending RSA key from " + f);
+        final var parsed = parseKeyEnvelope(f);
+        if (!(parsed.jwk() instanceof RSAKey)) {
+            throw new IOException("Expected RSA key in pending-rsa-key.json");
+        }
+        return parsed;
+    }
+
+    @Nullable
+    private ParsedKey loadPendingEcKey() throws IOException, ParseException {
+        final var f = new File(keyDirectory, "pending-ec-key.json");
+        if (!f.exists()) return null;
+        LOG.info("JWT plugin: reading pending EC key from " + f);
+        final var parsed = parseKeyEnvelope(f);
+        if (!(parsed.jwk() instanceof ECKey)) {
+            throw new IOException("Expected EC key in pending-ec-key.json");
+        }
+        return parsed;
+    }
+
+    @Nullable
+    private ParsedKey loadPendingRsa3072Key() throws IOException, ParseException {
+        final var f = new File(keyDirectory, "pending-rsa3072-key.json");
+        if (!f.exists()) return null;
+        LOG.info("JWT plugin: reading pending RSA-3072 key from " + f);
+        final var parsed = parseKeyEnvelope(f);
+        if (!(parsed.jwk() instanceof RSAKey)) {
+            throw new IOException("Expected RSA key in pending-rsa3072-key.json");
         }
         return parsed;
     }

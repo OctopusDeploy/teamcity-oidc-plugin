@@ -166,7 +166,11 @@ public class JwtKeyManagerTest {
         final var nodeB = TestJwtKeyManagerFactory.create(serverPaths);
         final var initialKid = nodeA.getRsaKey().getKeyID();
 
+        // nodeB rotates: creates pending files; force activation on nodeB and run sign()
+        // so nodeB promotes pending to current (and writes the promoted state to disk).
         nodeB.rotateKey();
+        nodeB.__testOverridePendingActivateAt(Instant.EPOCH);
+        nodeB.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
 
         // Bump mtimes to a known later instant so the test is robust against filesystem
         // timestamp granularity (rotation finishing within the same millisecond as load).
@@ -176,6 +180,7 @@ public class JwtKeyManagerTest {
             Files.setLastModifiedTime(f.toPath(), future);
         }
 
+        // nodeA sees the promoted key (current changed) and the retired key in JWKS.
         assertThat(nodeA.getRsaKey().getKeyID())
                 .isNotEqualTo(initialKid)
                 .isEqualTo(nodeB.getRsaKey().getKeyID());
