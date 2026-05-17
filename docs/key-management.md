@@ -21,6 +21,47 @@ flowchart TD
 
 Automatic rotation can be configured via a cron schedule in the plugin settings. The scheduler checks once per hour and triggers rotation if the next scheduled time has passed.
 
+## Rotation warmup
+
+When `rotateKey()` fires (manually via the admin UI or via the rotation cron), the
+newly-generated key is **published in JWKS immediately** but **does not sign new
+tokens** until a warmup window has elapsed. During the window, the previously-current
+key continues to sign; the new key sits in a "pending" state, visible to consumers
+verifying signatures but not yet producing any.
+
+The warmup window equals the `JWKS cache lifetime` setting (default: 10 minutes,
+see the [Configuration Reference](configuration.md#server-wide-settings)). Setting this
+high makes the warmup more forgiving of consumers with longer JWKS cache lifetimes;
+setting it low makes rotation take effect sooner.
+
+The warmup defends against consumers that respect the JWKS `Cache-Control` header and
+served from cache between the rotation and the new key starting to sign. Without the
+warmup, such a consumer would reject the first tokens signed with the new key because
+its cached JWKS doesn't yet contain the new `kid`. With the warmup, every well-behaved
+consumer has at least one full cache lifetime to refresh JWKS before any token uses
+the new key.
+
+```mermaid
+sequenceDiagram
+    participant Admin
+    participant Plugin as TC OIDC Plugin
+    participant JWKS as /.well-known/jwks.json
+    participant Build
+
+    Admin->>Plugin: Rotate
+    Plugin->>JWKS: Now publishes {retired, current, pending}
+    Note over Plugin: Warmup window starts (jwksCacheLifetimeMinutes)
+    Build->>Plugin: Sign during warmup
+    Plugin-->>Build: Token signed with current (unchanged)
+    Note over Plugin: Warmup elapses, next sign() promotes
+    Build->>Plugin: Sign after warmup
+    Plugin-->>Build: Token signed with the formerly-pending key
+    Plugin->>JWKS: Now publishes {old-retired-dropped, ex-current as retired, ex-pending as current}
+```
+
+A second rotation while a warmup is in progress is rejected with HTTP 409. The
+scheduler's next cron tick (max one hour later) retries automatically.
+
 ## Key storage and encryption
 
 Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS). On non-POSIX filesystems (e.g. Windows), permission restriction is skipped and the file is created with default OS permissions. If permission setting fails on a POSIX filesystem, the write is aborted and the existing keys are unchanged.
