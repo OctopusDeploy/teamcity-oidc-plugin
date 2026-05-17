@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
+import java.time.Duration;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,6 +156,24 @@ public class KeyRotationSchedulerTest {
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
         assertThat(mgr.load().lastRotatedAt()).isEqualTo(Instant.parse("2000-01-01T00:00:00Z"));
+    }
+
+    @Test
+    void cronTickDuringWarmupLogsInfoAndContinues() throws Exception {
+        // Arrange: cron is due, rotation throws PendingRotationInProgressException.
+        final var mockKeyManager = mock(JwtKeyManager.class);
+        final var mockSettingsManager = mock(RotationSettingsManager.class);
+        when(mockSettingsManager.load()).thenReturn(new RotationSettings(true,
+                RotationSettings.DEFAULT_SCHEDULE, Instant.parse("2000-01-01T00:00:00Z")));
+        doThrow(new PendingRotationInProgressException(Instant.now().plus(Duration.ofMinutes(5))))
+                .when(mockKeyManager).rotateKey();
+
+        // Act
+        new KeyRotationScheduler(buildServer, mockKeyManager, mockSettingsManager, nodes)
+                .checkAndRotateIfDue();
+
+        // Assert: lastRotatedAt was NOT updated (rotation didn't happen).
+        verify(mockSettingsManager, never()).updateLastRotatedAt(any());
     }
 
     @Test
