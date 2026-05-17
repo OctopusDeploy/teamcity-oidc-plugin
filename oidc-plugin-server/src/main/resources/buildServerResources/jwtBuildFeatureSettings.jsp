@@ -118,6 +118,22 @@
   <div class="jwt-sec">
     <div class="jwt-sec-title">JWKS</div>
 
+    <div class="jwt-field-row">
+      <div class="jwt-field-label"><label for="jwksCacheLifetimeMinutes">Cache lifetime (minutes)</label></div>
+      <div class="jwt-field-body">
+        <div class="jwt-field-inline">
+          <input class="jwt-inp" type="number" id="jwksCacheLifetimeMinutes"
+                 min="<c:out value="${jwksCacheLifetimeMin}"/>"
+                 max="<c:out value="${jwksCacheLifetimeMax}"/>"
+                 style="width:7em;"
+                 value="<c:out value="${jwksCacheLifetimeMinutes}"/>"/>
+          <button class="jwt-btn jwt-btn-primary" type="button" onclick="jwtSaveJwksCacheLifetime()">Save</button>
+        </div>
+        <span class="jwt-hint">Sent as the <code>Cache-Control: max-age</code> on the JWKS and discovery endpoints (in seconds = minutes &times; 60), and is also the post-rotation warmup window: a newly-rotated key is published in JWKS immediately but does not sign tokens until this many minutes have passed. Default <c:out value="${jwksCacheLifetimeDefault}"/>; range <c:out value="${jwksCacheLifetimeMin}"/>&#8211;<c:out value="${jwksCacheLifetimeMax}"/>.</span>
+        <span id="jwtJwksCacheResult" style="display:none"></span>
+      </div>
+    </div>
+
     <div class="jwt-jwks-toolbar">
       <span id="jwtKeyCount" class="jwt-key-count"></span>
       <a class="jwt-btn" id="jwtJwksDownload"
@@ -198,6 +214,15 @@
       'maxTokenLifetimeMinutes=' + encodeURIComponent(value),
       data => jwtShowResult('jwtMaxTtlResult', data.state, data.message),
       () => jwtShowResult('jwtMaxTtlResult', 'error', 'Request failed')
+    );
+  };
+
+  const jwtSaveJwksCacheLifetime = () => {
+    const value = document.getElementById('jwksCacheLifetimeMinutes').value;
+    jwtAdminPost(jwtContextPath + '/admin/jwtOidcSettings.html',
+      'jwksCacheLifetimeMinutes=' + encodeURIComponent(value),
+      data => jwtShowResult('jwtJwksCacheResult', data.state, data.message),
+      () => jwtShowResult('jwtJwksCacheResult', 'error', 'Request failed')
     );
   };
 

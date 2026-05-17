@@ -96,8 +96,13 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
 
         model.put("overrideIssuerUrl", issuerUrlProvider.getOverrideUrl().orElse(""));
         model.put("effectiveIssuerUrl", issuerUrlProvider.getIssuerUrl());
-        model.put("maxTokenLifetimeMinutes", oidcSettingsManager.load().maxTokenLifetimeMinutes());
+        final var oidcSettings = oidcSettingsManager.load();
+        model.put("maxTokenLifetimeMinutes", oidcSettings.maxTokenLifetimeMinutes());
         model.put("maxTokenLifetimeAbsoluteMax", OidcSettings.ABSOLUTE_MAX_TOKEN_LIFETIME_MINUTES);
+        model.put("jwksCacheLifetimeMinutes", oidcSettings.jwksCacheLifetimeMinutes());
+        model.put("jwksCacheLifetimeMin", OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES);
+        model.put("jwksCacheLifetimeMax", OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES);
+        model.put("jwksCacheLifetimeDefault", OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES);
     }
 
     @Override
