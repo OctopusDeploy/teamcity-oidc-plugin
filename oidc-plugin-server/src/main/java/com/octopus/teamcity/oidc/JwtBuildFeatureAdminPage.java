@@ -94,6 +94,21 @@ public class JwtBuildFeatureAdminPage extends AdminPage {
             model.put("nextDue", null);
         }
 
+        // Guard with isReady(): the admin page may render during server startup before
+        // keys are loaded; hasPending() and getPendingActivateAt() both call requireReady()
+        // which throws in that window. The startup path uses the same isReady() check at
+        // line 59 above to fall back to the "keys not yet available" message.
+        final var hasPending = keyManager.isReady() && keyManager.hasPending();
+        model.put("hasPending", hasPending);
+        if (hasPending) {
+            final var activeAt = keyManager.getPendingActivateAt();
+            model.put("pendingActivateAt", activeAt == null
+                    ? null
+                    : FMT.format(activeAt) + " UTC");
+        } else {
+            model.put("pendingActivateAt", null);
+        }
+
         model.put("overrideIssuerUrl", issuerUrlProvider.getOverrideUrl().orElse(""));
         model.put("effectiveIssuerUrl", issuerUrlProvider.getIssuerUrl());
         final var oidcSettings = oidcSettingsManager.load();
