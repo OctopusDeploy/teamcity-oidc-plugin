@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.text.ParseException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -39,13 +40,21 @@ public class JwtKeyManager {
     };
 
     record KeyMaterial(
-            RSAKey rsa,
-            @Nullable RSAKey retiredRsa,
-            ECKey ec,
-            @Nullable ECKey retiredEc,
-            RSAKey rsa3072,
-            @Nullable RSAKey retiredRsa3072
-    ) {}
+            @NotNull KeySlot rsa,
+            @Nullable KeySlot retiredRsa,
+            @NotNull KeySlot ec,
+            @Nullable KeySlot retiredEc,
+            @NotNull KeySlot rsa3072,
+            @Nullable KeySlot retiredRsa3072
+    ) {
+        // Convenience accessors so existing call sites keep their shape.
+        @NotNull RSAKey rsaKey() { return (RSAKey) rsa.jwk(); }
+        @Nullable RSAKey retiredRsaKey() { return retiredRsa == null ? null : (RSAKey) retiredRsa.jwk(); }
+        @NotNull ECKey ecKey() { return (ECKey) ec.jwk(); }
+        @Nullable ECKey retiredEcKey() { return retiredEc == null ? null : (ECKey) retiredEc.jwk(); }
+        @NotNull RSAKey rsa3072Key() { return (RSAKey) rsa3072.jwk(); }
+        @Nullable RSAKey retiredRsa3072Key() { return retiredRsa3072 == null ? null : (RSAKey) retiredRsa3072.jwk(); }
+    }
 
     private final File keyDirectory;
     private final Encryption encryption;
@@ -124,26 +133,26 @@ public class JwtKeyManager {
     }
 
     public RSAKey getRsaKey() {
-        return requireReady().rsa();
+        return requireReady().rsaKey();
     }
 
     public RSAKey getRsa3072Key() {
-        return requireReady().rsa3072();
+        return requireReady().rsa3072Key();
     }
 
     public ECKey getEcKey() {
-        return requireReady().ec();
+        return requireReady().ecKey();
     }
 
     public @NotNull List<JWK> getPublicKeys() {
         final var snapshot = requireReady();
         final List<JWK> result = new ArrayList<>();
-        result.add(snapshot.rsa().toPublicJWK());
-        if (snapshot.retiredRsa() != null) result.add(snapshot.retiredRsa().toPublicJWK());
-        result.add(snapshot.rsa3072().toPublicJWK());
-        if (snapshot.retiredRsa3072() != null) result.add(snapshot.retiredRsa3072().toPublicJWK());
-        result.add(snapshot.ec().toPublicJWK());
-        if (snapshot.retiredEc() != null) result.add(snapshot.retiredEc().toPublicJWK());
+        result.add(snapshot.rsaKey().toPublicJWK());
+        if (snapshot.retiredRsaKey() != null) result.add(snapshot.retiredRsaKey().toPublicJWK());
+        result.add(snapshot.rsa3072Key().toPublicJWK());
+        if (snapshot.retiredRsa3072Key() != null) result.add(snapshot.retiredRsa3072Key().toPublicJWK());
+        result.add(snapshot.ecKey().toPublicJWK());
+        if (snapshot.retiredEcKey() != null) result.add(snapshot.retiredEcKey().toPublicJWK());
         return Collections.unmodifiableList(result);
     }
 
@@ -157,14 +166,21 @@ public class JwtKeyManager {
 
         // Write new keys to temp files then rename atomically so no reader ever sees
         // a partially-written key file, even if the JVM is killed mid-rotation.
-        saveKeyToFile(current.rsa(), "retired-rsa-key.json");
-        saveKeyToFile(current.rsa3072(), "retired-rsa3072-key.json");
-        saveKeyToFile(current.ec(), "retired-ec-key.json");
-        saveKeyToFile(newRsa, "rsa-key.json");
-        saveKeyToFile(newRsa3072, "rsa3072-key.json");
-        saveKeyToFile(newEc, "ec-key.json");
+        saveKeyToFile(current.rsaKey(), "retired-rsa-key.json", current.rsa().activateAt());
+        saveKeyToFile(current.rsa3072Key(), "retired-rsa3072-key.json", current.rsa3072().activateAt());
+        saveKeyToFile(current.ecKey(), "retired-ec-key.json", current.ec().activateAt());
+        final var now = Instant.now();
+        saveKeyToFile(newRsa, "rsa-key.json", now);
+        saveKeyToFile(newRsa3072, "rsa3072-key.json", now);
+        saveKeyToFile(newEc, "ec-key.json", now);
 
-        keys.set(new KeyMaterial(newRsa, current.rsa(), newEc, current.ec(), newRsa3072, current.rsa3072()));
+        keys.set(new KeyMaterial(
+                new KeySlot(newRsa, now),
+                new KeySlot(current.rsaKey(), current.rsa().activateAt()),
+                new KeySlot(newEc, now),
+                new KeySlot(current.ecKey(), current.ec().activateAt()),
+                new KeySlot(newRsa3072, now),
+                new KeySlot(current.rsa3072Key(), current.rsa3072().activateAt())));
         // Record that this node's in-memory state matches what we just wrote, so the next
         // refreshIfStale() doesn't misread our own writes as an external change.
         lastLoadedMaxMtime = maxKeyFileMtime();
@@ -249,14 +265,20 @@ public class JwtKeyManager {
     }
 
     private void loadKeys() throws IOException, ParseException, JOSEException {
+        final var rsa = loadOrGenerateRsaKey();
+        final var retiredRsa = loadRetiredRsaKey();
+        final var ec = loadOrGenerateEcKey();
+        final var retiredEc = loadRetiredEcKey();
+        final var rsa3072 = loadOrGenerateRsa3072Key();
+        final var retiredRsa3072 = loadRetiredRsa3072Key();
+
         keys.set(new KeyMaterial(
-                loadOrGenerateRsaKey(),
-                loadRetiredRsaKey(),
-                loadOrGenerateEcKey(),
-                loadRetiredEcKey(),
-                loadOrGenerateRsa3072Key(),
-                loadRetiredRsa3072Key()
-        ));
+                new KeySlot(rsa, Instant.EPOCH),
+                retiredRsa == null ? null : new KeySlot(retiredRsa, Instant.EPOCH),
+                new KeySlot(ec, Instant.EPOCH),
+                retiredEc == null ? null : new KeySlot(retiredEc, Instant.EPOCH),
+                new KeySlot(rsa3072, Instant.EPOCH),
+                retiredRsa3072 == null ? null : new KeySlot(retiredRsa3072, Instant.EPOCH)));
         lastLoadedMaxMtime = maxKeyFileMtime();
         LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
     }
@@ -269,7 +291,7 @@ public class JwtKeyManager {
         }
         LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
-        saveKeyToFile(newKey, "rsa-key.json");
+        saveKeyToFile(newKey, "rsa-key.json", Instant.now());
         return newKey;
     }
 
@@ -289,7 +311,7 @@ public class JwtKeyManager {
         }
         LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
-        saveKeyToFile(newKey, "ec-key.json");
+        saveKeyToFile(newKey, "ec-key.json", Instant.now());
         return newKey;
     }
 
@@ -343,7 +365,7 @@ public class JwtKeyManager {
         }
         LOG.info("JWT plugin: generating new RSA-3072 key to " + keyFile);
         final var newKey = generateFreshRsa3072Key();
-        saveKeyToFile(newKey, "rsa3072-key.json");
+        saveKeyToFile(newKey, "rsa3072-key.json", Instant.now());
         return newKey;
     }
 
@@ -364,7 +386,9 @@ public class JwtKeyManager {
         return new ECKey.Builder(key).issueTime(new java.util.Date()).build();
     }
 
-    private void saveKeyToFile(@NotNull final JWK key, @NotNull final String fileName) throws IOException {
+    private void saveKeyToFile(@NotNull final JWK key, @NotNull final String fileName,
+                               @NotNull final Instant activateAt) throws IOException {
+        // activateAt unused this task; envelope format lands in Task 6.
         final var target = new File(keyDirectory, fileName);
         final var temp = File.createTempFile("key-", ".tmp", keyDirectory);
         try {
