@@ -169,6 +169,21 @@ public class JwtKeyManager {
     @Nullable KeySlot getRsa3072PendingSlot() { return requireReady().pendingRsa3072(); }
 
     /**
+     * Returns the activateAt of any in-flight pending warmup, or {@code null} if no
+     * warmup is in progress. All three algorithms share the same activateAt (they're
+     * rotated together), so we just return the RSA one.
+     */
+    @Nullable
+    public Instant getPendingActivateAt() {
+        final var k = requireReady();
+        return k.pendingRsa() == null ? null : k.pendingRsa().activateAt();
+    }
+
+    public boolean hasPending() {
+        return requireReady().hasAnyPending();
+    }
+
+    /**
      * Test-only hook to force pending activateAt timestamps into the past so that the
      * next sign() promotes them. Avoids needing a mockable Clock just for two test cases.
      */
