@@ -18,6 +18,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -111,18 +112,25 @@ public class KeyRotationTest {
     }
 
     @Test
-    void rotatedKeysHaveActivateAtCloseToNow() throws Exception {
+    void rotatedKeysHaveActivateAtCloseToNowPlusWarmup() throws Exception {
+        // Rotation creates a pending key whose activateAt is "now + jwksCacheLifetimeMinutes".
+        // The bound matters in both directions: the lower bound proves the warmup was
+        // applied at all (rejecting a regression that sets activateAt = now); the upper
+        // bound proves we didn't grossly overshoot the configured cache lifetime.
+        final var warmupMinutes = OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
         final var beforeRotate = Instant.now();
         keyManager.rotateKey();
         final var afterRotate = Instant.now();
-        // Reload from disk to confirm the timestamp made it through serialisation.
-        // Rotation now creates a pending key; the activateAt on the pending slot should
-        // be now + warmup (default 10 minutes). We just verify it's at or after beforeRotate.
+
+        // Reload from disk to confirm the timestamp survived serialisation through the envelope.
         final var fresh = TestJwtKeyManagerFactory.create(serverPaths);
         final var pendingRsaSlot = fresh.getRsaPendingSlot();
         assertThat(pendingRsaSlot).isNotNull();
         assertThat(pendingRsaSlot.activateAt())
-                .isAfterOrEqualTo(beforeRotate.minusSeconds(1));
+                .as("pending activateAt must be in the future by ~%d minutes (warmup applied)", warmupMinutes)
+                .isAfter(beforeRotate)
+                .isAfterOrEqualTo(beforeRotate.plus(Duration.ofMinutes(warmupMinutes)).minusSeconds(1))
+                .isBeforeOrEqualTo(afterRotate.plus(Duration.ofMinutes(warmupMinutes)).plusSeconds(1));
     }
 
     @Test
