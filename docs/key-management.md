@@ -21,6 +21,64 @@ flowchart TD
 
 Automatic rotation can be configured via a cron schedule in the plugin settings. The scheduler checks once per hour and triggers rotation if the next scheduled time has passed.
 
+## Rotation warmup
+
+When `rotateKey()` fires (manually via the admin UI or via the rotation cron), the
+newly-generated key is **published in JWKS immediately** but **does not sign new
+tokens** until a warmup window has elapsed. During the window, the previously-current
+key continues to sign; the new key sits in a "pending" state, visible to consumers
+verifying signatures but not yet producing any.
+
+The warmup window equals the `JWKS cache lifetime` setting (default: 10 minutes,
+see the [Configuration Reference](configuration.md#server-wide-settings)). Setting this
+high makes the warmup more forgiving of consumers with longer JWKS cache lifetimes;
+setting it low makes rotation take effect sooner.
+
+The warmup defends against consumers that respect the JWKS `Cache-Control` header and
+are served from cache between the rotation and the new key starting to sign. Without the
+warmup, such a consumer would reject the first tokens signed with the new key because
+its cached JWKS doesn't yet contain the new `kid`. With the warmup, every well-behaved
+consumer has at least one full cache lifetime to refresh JWKS before any token uses
+the new key.
+
+```mermaid
+sequenceDiagram
+    participant Admin
+    participant Plugin as TC OIDC Plugin
+    participant JWKS as /.well-known/jwks.json
+    participant Build
+
+    Admin->>Plugin: Rotate
+    Plugin->>JWKS: Now publishes {retired, current, pending}
+    Note over Plugin: Warmup window starts (jwksCacheLifetimeMinutes)
+    Build->>Plugin: Sign during warmup
+    Plugin-->>Build: Token signed with current (unchanged)
+    Note over Plugin: Warmup elapses, next sign() promotes
+    Build->>Plugin: Sign after warmup
+    Plugin-->>Build: Token signed with the formerly-pending key
+    Plugin->>JWKS: Now publishes {old-retired-dropped, ex-current as retired, ex-pending as current}
+```
+
+A second rotation while a warmup is in progress is rejected with HTTP 409. The
+scheduler's next cron tick (max one hour later) retries automatically.
+
+### HA divergence window
+
+The in-memory promotion (a compare-and-swap on `AtomicReference<KeyMaterial>`) happens
+on whichever node wins the race; the corresponding on-disk update — rewriting
+`*-key.json` from the promoted slot, rewriting `retired-*-key.json` from the demoted
+current, and deleting `pending-*-key.json` — happens after the compare-and-swap. If
+the JVM dies, or the disk writer is slow, secondary nodes refreshing via mtime polling
+may briefly observe an intermediate on-disk state where some of the new current
+files exist and some of the pending files have not yet been deleted.
+
+This is operationally safe: all the keys involved (the previously-current key, the
+newly-promoted key, and any leftover pending file with the same content as the now-
+current) are valid verifying keys in JWKS, and any token signed during this window
+verifies against at least one of them. If the writer crashes outright, the next
+startup's `promotePendingIfDue()` idempotently completes the activation from
+whichever state it finds on disk.
+
 ## Key storage and encryption
 
 Private signing keys are stored in `<TeamCity data directory>/plugins-data/JwtBuildFeature/`. Files are restricted to owner read/write (0600 on Linux/macOS). On non-POSIX filesystems (e.g. Windows), permission restriction is skipped and the file is created with default OS permissions. If permission setting fails on a POSIX filesystem, the write is aborted and the existing keys are unchanged.

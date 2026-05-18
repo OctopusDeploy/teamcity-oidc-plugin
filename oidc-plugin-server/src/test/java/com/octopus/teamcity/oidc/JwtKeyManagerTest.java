@@ -15,7 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
+import java.time.Duration;
 import java.time.Instant;
+
+import static com.octopus.teamcity.oidc.OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -162,11 +165,16 @@ public class JwtKeyManagerTest {
         // appears as "current" in the JWKS endpoint, and verifiers fetching JWKS from a
         // secondary won't see the previous-current key in the published list.
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var nodeA = TestJwtKeyManagerFactory.create(serverPaths);
-        final var nodeB = TestJwtKeyManagerFactory.create(serverPaths);
+        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var nodeA = TestJwtKeyManagerFactory.create(serverPaths, clock);
+        final var nodeB = TestJwtKeyManagerFactory.create(serverPaths, clock);
         final var initialKid = nodeA.getRsaKey().getKeyID();
 
+        // nodeB rotates: creates pending files; advance past warmup so nodeB promotes
+        // pending to current on the next sign() (writes the promoted state to disk).
         nodeB.rotateKey();
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        nodeB.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
 
         // Bump mtimes to a known later instant so the test is robust against filesystem
         // timestamp granularity (rotation finishing within the same millisecond as load).
@@ -176,6 +184,7 @@ public class JwtKeyManagerTest {
             Files.setLastModifiedTime(f.toPath(), future);
         }
 
+        // nodeA sees the promoted key (current changed) and the retired key in JWKS.
         assertThat(nodeA.getRsaKey().getKeyID())
                 .isNotEqualTo(initialKid)
                 .isEqualTo(nodeB.getRsaKey().getKeyID());

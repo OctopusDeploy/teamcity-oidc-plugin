@@ -64,6 +64,10 @@ public class OidcSettingsControllerTest {
         return postWith(mgr, java.util.Map.of("maxTokenLifetimeMinutes", value));
     }
 
+    private JSONObject postCacheLifetime(final OidcSettingsManager mgr, final String value) throws Exception {
+        return postWith(mgr, java.util.Map.of("jwksCacheLifetimeMinutes", value));
+    }
+
     private JSONObject postWith(final OidcSettingsManager mgr, final java.util.Map<String, String> params) throws Exception {
         final var writer = new StringWriter();
         when(request.getMethod()).thenReturn("POST");
@@ -238,5 +242,34 @@ public class OidcSettingsControllerTest {
         final var settings = mgr.load();
         assertThat(settings.findOverrideIssuerUrl()).contains("https://ci.example.com");
         assertThat(settings.maxTokenLifetimeMinutes()).isEqualTo(30);
+    }
+
+    @Test
+    void savesJwksCacheLifetime() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        final var json = postCacheLifetime(mgr, "15");
+        assertThat((String) json.get("state")).isEqualTo("ok");
+        assertThat(mgr.load().jwksCacheLifetimeMinutes()).isEqualTo(15);
+    }
+
+    @Test
+    void rejectsNonNumericJwksCacheLifetime() throws Exception {
+        final var mgr = new OidcSettingsManager(tempDir);
+        final var json = postCacheLifetime(mgr, "abc");
+        assertThat((String) json.get("state")).isEqualTo("error");
+        assertThat(mgr.load().jwksCacheLifetimeMinutes())
+                .isEqualTo(OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES);
+    }
+
+    @Test
+    void rejectsJwksCacheLifetimeBelowMin() throws Exception {
+        final var json = postCacheLifetime(new OidcSettingsManager(tempDir), "0");
+        assertThat((String) json.get("state")).isEqualTo("error");
+    }
+
+    @Test
+    void rejectsJwksCacheLifetimeAboveMax() throws Exception {
+        final var json = postCacheLifetime(new OidcSettingsManager(tempDir), "1441");
+        assertThat((String) json.get("state")).isEqualTo("error");
     }
 }

@@ -107,6 +107,12 @@ public class KeyRotationScheduler extends BuildServerAdapter {
             keyManager.rotateKey();
             settingsManager.updateLastRotatedAt(Instant.now());
             LOG.info("JWT plugin: auto key rotation completed successfully");
+        } catch (final PendingRotationInProgressException e) {
+            // Why log at INFO and not WARN: an in-flight warmup at scheduler-tick time is
+            // expected during the immediate aftermath of any rotation. The cron's next tick
+            // will retry; no admin attention required.
+            LOG.info("JWT plugin: scheduled key rotation skipped — warmup still in progress, "
+                    + "pending activates at " + e.getPendingActivateAt());
         } catch (final Exception e) {
             LOG.log(Level.SEVERE, "JWT plugin: auto key rotation failed", e);
         }

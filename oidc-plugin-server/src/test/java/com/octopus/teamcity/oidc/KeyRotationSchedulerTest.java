@@ -4,6 +4,7 @@ import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.TeamCityNode;
 import jetbrains.buildServer.serverSide.TeamCityNodes;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,7 +13,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+
+import static com.octopus.teamcity.oidc.OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -34,8 +39,12 @@ public class KeyRotationSchedulerTest {
     }
 
     private JwtKeyManager keyManager() {
+        return keyManager(Clock.systemUTC());
+    }
+
+    private JwtKeyManager keyManager(@NotNull final Clock clock) {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        return TestJwtKeyManagerFactory.create(serverPaths);
+        return TestJwtKeyManagerFactory.create(serverPaths, clock);
     }
 
     private RotationSettingsManager settingsManager() {
@@ -62,7 +71,8 @@ public class KeyRotationSchedulerTest {
 
     @Test
     void rotatesWhenEnabledAndOverdue() throws Exception {
-        final var km = keyManager();
+        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var km = keyManager(clock);
         final var mgr = settingsManager();
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
                 Instant.parse("2000-01-01T00:00:00Z")));
@@ -70,6 +80,9 @@ public class KeyRotationSchedulerTest {
 
         new KeyRotationScheduler(buildServer, km, mgr, nodes).checkAndRotateIfDue();
 
+        // Advance past the warmup window so the next sign() promotes pending to current.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        km.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 
@@ -122,7 +135,8 @@ public class KeyRotationSchedulerTest {
         // called by TC (that event already fired). The scheduler must start itself in the
         // constructor when isStarted() is true, so auto-rotation still works.
         when(buildServer.isStarted()).thenReturn(true);
-        final var km = keyManager();
+        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var km = keyManager(clock);
         final var mgr = settingsManager();
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
                 Instant.parse("2000-01-01T00:00:00Z")));
@@ -131,6 +145,9 @@ public class KeyRotationSchedulerTest {
         new KeyRotationScheduler(buildServer, km, mgr, nodes); // no serverStartup() call
 
         Thread.sleep(3000);
+        // Advance past the warmup window so the next sign() promotes pending to current.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        km.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         assertThat(km.getRsaKey().getKeyID()).isNotEqualTo(originalKid);
     }
 
@@ -149,6 +166,24 @@ public class KeyRotationSchedulerTest {
 
         assertThat(km.getRsaKey().getKeyID()).isEqualTo(originalKid);
         assertThat(mgr.load().lastRotatedAt()).isEqualTo(Instant.parse("2000-01-01T00:00:00Z"));
+    }
+
+    @Test
+    void cronTickDuringWarmupLogsInfoAndContinues() throws Exception {
+        // Arrange: cron is due, rotation throws PendingRotationInProgressException.
+        final var mockKeyManager = mock(JwtKeyManager.class);
+        final var mockSettingsManager = mock(RotationSettingsManager.class);
+        when(mockSettingsManager.load()).thenReturn(new RotationSettings(true,
+                RotationSettings.DEFAULT_SCHEDULE, Instant.parse("2000-01-01T00:00:00Z")));
+        doThrow(new PendingRotationInProgressException(Instant.now().plus(Duration.ofMinutes(5))))
+                .when(mockKeyManager).rotateKey();
+
+        // Act
+        new KeyRotationScheduler(buildServer, mockKeyManager, mockSettingsManager, nodes)
+                .checkAndRotateIfDue();
+
+        // Assert: lastRotatedAt was NOT updated (rotation didn't happen).
+        verify(mockSettingsManager, never()).updateLastRotatedAt(any());
     }
 
     @Test

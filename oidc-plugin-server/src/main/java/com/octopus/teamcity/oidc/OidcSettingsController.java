@@ -86,11 +86,12 @@ public class OidcSettingsController extends BaseController {
             return null;
         }
 
-        // Two independent sections of the admin page POST here (Issuer URL and Token
-        // defaults — Key Rotation has its own controller). Dispatch on which parameter
-        // the request carries; reject requests that include neither.
+        // Multiple independent sections of the admin page POST here (Issuer URL, Token
+        // defaults, and JWKS — Key Rotation has its own controller). Dispatch on which
+        // parameter the request carries; reject requests that include none.
         final var hasMax = request.getParameterMap().containsKey("maxTokenLifetimeMinutes");
         final var hasOverride = request.getParameterMap().containsKey("overrideIssuerUrl");
+        final var hasCache = request.getParameterMap().containsKey("jwksCacheLifetimeMinutes");
 
         if (hasMax) {
             handleMaxTokenLifetime(response, request.getParameter("maxTokenLifetimeMinutes"));
@@ -100,10 +101,14 @@ public class OidcSettingsController extends BaseController {
             handleOverrideIssuerUrl(response, request.getParameter("overrideIssuerUrl"));
             return null;
         }
+        if (hasCache) {
+            handleJwksCacheLifetime(response, request.getParameter("jwksCacheLifetimeMinutes"));
+            return null;
+        }
 
         response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         writeJson(response, "error",
-                "Missing parameter: expected overrideIssuerUrl or maxTokenLifetimeMinutes");
+                "Missing parameter: expected overrideIssuerUrl, maxTokenLifetimeMinutes, or jwksCacheLifetimeMinutes");
         return null;
     }
 
@@ -164,6 +169,28 @@ public class OidcSettingsController extends BaseController {
         }
         settingsManager.saveMaxTokenLifetimeMinutes(value);
         writeJson(response, "ok", "Max token lifetime saved");
+    }
+
+    private void handleJwksCacheLifetime(final HttpServletResponse response, final String raw) throws IOException {
+        final int value;
+        try {
+            value = Integer.parseInt(raw.strip());
+        } catch (final NumberFormatException e) {
+            writeJson(response, "error", "JWKS cache lifetime must be a whole number of minutes");
+            return;
+        }
+        if (value < OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES) {
+            writeJson(response, "error", "JWKS cache lifetime must be at least "
+                    + OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES + " minute");
+            return;
+        }
+        if (value > OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES) {
+            writeJson(response, "error", "JWKS cache lifetime must not exceed "
+                    + OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES + " minutes (24 hours)");
+            return;
+        }
+        settingsManager.saveJwksCacheLifetimeMinutes(value);
+        writeJson(response, "ok", "JWKS cache lifetime saved");
     }
 
     private ReachabilityResult checkReachability(final String baseUrl) {

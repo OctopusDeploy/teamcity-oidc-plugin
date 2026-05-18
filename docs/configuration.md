@@ -62,6 +62,7 @@ Configure these under **Administration → OIDC / JWT**.
 |---|---|
 | Override issuer URL | Override the `iss` claim and the discovery endpoint's `issuer`. Set this only if TeamCity is behind a reverse proxy and the public-facing URL differs from the server's root URL. |
 | Max lifetime (minutes) | Upper bound on the per-build-feature **Token lifetime** setting. Defaults to 720 (12 hours). The hard ceiling is 1440 (24 hours): no mainstream cloud OIDC consumer (AWS IAM, Azure workload identity federation, GCP, GitHub Actions) accepts tokens with a longer lifetime, so allowing more would only let users configure builds that produce tokens guaranteed to be rejected. |
+| JWKS cache lifetime (minutes) | Default 10. Range 1–1440. Controls two things: (1) the `Cache-Control: max-age=` and `stale-while-revalidate=` values on the `/.well-known/jwks.json` and `/.well-known/openid-configuration` endpoints (in seconds = minutes × 60); (2) the post-rotation warmup window — a newly-rotated key is published in JWKS immediately but does not sign tokens for this many minutes. See [Rotation warmup](key-management.md#rotation-warmup). |
 
 ## Cloud provider setup guides
 

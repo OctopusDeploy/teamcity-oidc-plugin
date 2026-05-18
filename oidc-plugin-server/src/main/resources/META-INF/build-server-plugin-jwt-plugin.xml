@@ -10,7 +10,7 @@
           factory-method="createRotationSettingsManager"/>
     <bean id="oidcSettingsManager"
           factory-bean="jwtKeyManager"
-          factory-method="createOidcSettingsManager"/>
+          factory-method="getOidcSettingsManager"/>
     <bean id="oidcIssuerUrlProvider" class="com.octopus.teamcity.oidc.OidcIssuerUrlProvider"/>
     <bean id="oidcSettingsController" class="com.octopus.teamcity.oidc.OidcSettingsController"/>
     <bean id="keyRotationScheduler" class="com.octopus.teamcity.oidc.KeyRotationScheduler"/>

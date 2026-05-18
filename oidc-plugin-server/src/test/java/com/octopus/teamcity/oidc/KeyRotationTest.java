@@ -18,24 +18,33 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
+import static com.octopus.teamcity.oidc.OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class KeyRotationTest {
 
     @Mock private ServerPaths serverPaths;
+    @Mock private OidcSettingsManager oidcSettingsManager;
 
     @TempDir private File tempDir;
 
     private JwtKeyManager keyManager;
+    private TestJwtKeyManagerFactory.MutableClock clock;
 
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths, clock);
+        lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
     }
 
     @Test
@@ -44,18 +53,25 @@ public class KeyRotationTest {
         final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
+        // Advance past the warmup window so the next sign() promotes pending to current.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
 
         assertThat(keyManager.getRsaKey().getKeyID()).isNotEqualTo(originalRsa.getKeyID());
         assertThat(keyManager.getEcKey().getKeyID()).isNotEqualTo(originalEc.getKeyID());
     }
 
     @Test
-    public void jwksContainsCurrentAndRetiredKeysAfterRotation() throws Exception {
+    public void jwksContainsCurrentRetiredAndPendingAfterRotateThenActivate() throws Exception {
         final var originalRsa = keyManager.getRsaKey();
         final var originalRsa3072 = keyManager.getRsa3072Key();
         final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
+        // Advance past the warmup window so pending → current, original → retired.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
+
         final var newRsa = keyManager.getRsaKey();
         final var newRsa3072 = keyManager.getRsa3072Key();
         final var newEc = keyManager.getEcKey();
@@ -74,12 +90,18 @@ public class KeyRotationTest {
         final var rsa3072_1 = keyManager.getRsa3072Key();
         final var ec1 = keyManager.getEcKey();
 
+        // First rotation: create pending, advance past warmup, promote.
         keyManager.rotateKey();
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         final var rsa2 = keyManager.getRsaKey();
         final var rsa3072_2 = keyManager.getRsa3072Key();
         final var ec2 = keyManager.getEcKey();
 
+        // Second rotation: create pending, advance past warmup, promote.
         keyManager.rotateKey();
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         final var rsa3 = keyManager.getRsaKey();
         final var rsa3072_3 = keyManager.getRsa3072Key();
         final var ec3 = keyManager.getEcKey();
@@ -91,6 +113,125 @@ public class KeyRotationTest {
                 rsa2.getKeyID(), rsa3.getKeyID(),
                 rsa3072_2.getKeyID(), rsa3072_3.getKeyID(),
                 ec2.getKeyID(), ec3.getKeyID());
+    }
+
+    @Test
+    void rotatedKeysHaveActivateAtCloseToNowPlusWarmup() throws Exception {
+        // Rotation creates a pending key whose activateAt is "now + jwksCacheLifetimeMinutes".
+        // The bound matters in both directions: the lower bound proves the warmup was
+        // applied at all (rejecting a regression that sets activateAt = now); the upper
+        // bound proves we didn't grossly overshoot the configured cache lifetime.
+        // Use a real-time manager (not the MutableClock one) so the comparison against
+        // Instant.now() below refers to the same time source as activateAt.
+        final var realTimeManager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var warmupMinutes = OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
+        final var beforeRotate = Instant.now();
+        realTimeManager.rotateKey();
+        final var afterRotate = Instant.now();
+
+        // Reload from disk to confirm the timestamp survived serialisation through the envelope.
+        final var fresh = TestJwtKeyManagerFactory.create(serverPaths);
+        final var pendingRsaSlot = fresh.getRsaPendingSlot();
+        assertThat(pendingRsaSlot).isNotNull();
+        assertThat(pendingRsaSlot.activateAt())
+                .as("pending activateAt must be in the future by ~%d minutes (warmup applied)", warmupMinutes)
+                .isAfter(beforeRotate)
+                .isAfterOrEqualTo(beforeRotate.plus(Duration.ofMinutes(warmupMinutes)).minusSeconds(1))
+                .isBeforeOrEqualTo(afterRotate.plus(Duration.ofMinutes(warmupMinutes)).plusSeconds(1));
+    }
+
+    @Test
+    void rotationCreatesPendingWithoutChangingCurrent() throws Exception {
+        final var originalRsa = keyManager.getRsaKey();
+        final var originalEc = keyManager.getEcKey();
+        final var originalRsa3072 = keyManager.getRsa3072Key();
+
+        keyManager.rotateKey();
+
+        // Current still the originals (pending hasn't activated).
+        assertThat(keyManager.getRsaKey().getKeyID()).isEqualTo(originalRsa.getKeyID());
+        assertThat(keyManager.getEcKey().getKeyID()).isEqualTo(originalEc.getKeyID());
+        assertThat(keyManager.getRsa3072Key().getKeyID()).isEqualTo(originalRsa3072.getKeyID());
+
+        // JWKS now has the original publics plus three pending publics.
+        final var kids = kidsIn(jwksKeys());
+        assertThat(kids).hasSize(6).contains(originalRsa.getKeyID(),
+                originalEc.getKeyID(), originalRsa3072.getKeyID());
+    }
+
+    @Test
+    void signDuringWarmupUsesCurrentKey() throws Exception {
+        final var originalRsa = keyManager.getRsaKey();
+        keyManager.rotateKey();
+        final var token = keyManager.sign(
+                new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
+        assertThat(token.getHeader().getKeyID()).isEqualTo(originalRsa.getKeyID());
+    }
+
+    @Test
+    void signAfterActivateAtPromotesPendingAndUsesIt() throws Exception {
+        keyManager.rotateKey();
+        final var pendingRsaKid = keyManager.getRsaPendingSlot().jwk().getKeyID();
+
+        // Advance past the warmup window so the next sign promotes pending to current.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+
+        final var token = keyManager.sign(
+                new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
+
+        assertThat(token.getHeader().getKeyID()).isEqualTo(pendingRsaKid);
+        assertThat(keyManager.getRsaKey().getKeyID()).isEqualTo(pendingRsaKid);
+    }
+
+    @Test
+    void rotateRejectsWhenPendingExists() throws Exception {
+        keyManager.rotateKey();
+        assertThatThrownBy(() -> keyManager.rotateKey())
+                .isInstanceOf(PendingRotationInProgressException.class);
+    }
+
+    @Test
+    void stalePendingOnDiskPromotesOnStartup() throws Exception {
+        // Simulate a JVM crash after rotation but before the warmup elapsed enough
+        // for sign() to drive promotion. On disk: pending-*-key.json files exist
+        // with activateAt = T0 + warmup; current key files are the pre-rotation set.
+        final var preRotationRsaKid = keyManager.getRsaKey().getKeyID();
+        final var preRotationEcKid = keyManager.getEcKey().getKeyID();
+        final var preRotationRsa3072Kid = keyManager.getRsa3072Key().getKeyID();
+        keyManager.rotateKey();
+        final var pendingRsaKid = keyManager.getRsaPendingSlot().jwk().getKeyID();
+        final var pendingEcKid = keyManager.getEcPendingSlot().jwk().getKeyID();
+        final var pendingRsa3072Kid = keyManager.getRsa3072PendingSlot().jwk().getKeyID();
+
+        // The "crashed" process drops its in-memory state. The replacement process
+        // starts up after the warmup window has elapsed.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        final var reloaded = TestJwtKeyManagerFactory.create(serverPaths, clock);
+
+        // Startup-time promotePendingIfDue() must have run during loadKeys() — the
+        // previously-pending key is now current, the previously-current key is now
+        // retired, and no pending slot remains.
+        assertThat(reloaded.getRsaKey().getKeyID()).isEqualTo(pendingRsaKid);
+        assertThat(reloaded.getEcKey().getKeyID()).isEqualTo(pendingEcKid);
+        assertThat(reloaded.getRsa3072Key().getKeyID()).isEqualTo(pendingRsa3072Kid);
+        assertThat(reloaded.getRsaPendingSlot()).isNull();
+        assertThat(reloaded.getEcPendingSlot()).isNull();
+        assertThat(reloaded.getRsa3072PendingSlot()).isNull();
+
+        // The previously-current keys must still be in JWKS as retired so tokens
+        // signed before the (crashed) rotation continue to verify.
+        final var manager = reloaded;
+        final var filter = new WellKnownPublicFilter(manager, providerFor("https://tc.example.com"), oidcSettingsManager);
+        final var request = mock(HttpServletRequest.class);
+        final var response = mock(HttpServletResponse.class);
+        final var writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn("/.well-known/jwks.json");
+        when(request.getContextPath()).thenReturn("");
+        filter.doFilter(request, response, mock(FilterChain.class));
+        final var jwks = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(writer.toString());
+        final var kids = kidsIn((JSONArray) jwks.get("keys"));
+        assertThat(kids).contains(preRotationRsaKid, preRotationEcKid, preRotationRsa3072Kid);
     }
 
     // --- helpers ---
@@ -106,7 +247,7 @@ public class KeyRotationTest {
     }
 
     private JSONArray jwksKeys() throws Exception {
-        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"));
+        final var filter = new WellKnownPublicFilter(keyManager, providerFor("https://tc.example.com"), oidcSettingsManager);
         final var request = mock(HttpServletRequest.class);
         final var response = mock(HttpServletResponse.class);
         final var writer = new StringWriter();
