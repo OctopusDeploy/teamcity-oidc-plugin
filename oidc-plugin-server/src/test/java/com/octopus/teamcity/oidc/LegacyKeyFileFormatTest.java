@@ -14,7 +14,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
+
+import static com.octopus.teamcity.oidc.OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -51,12 +54,14 @@ class LegacyKeyFileFormatTest {
 
     @Test
     void writesAndReadsEnvelopeFormatRoundTrip() throws Exception {
-        final var manager = TestJwtKeyManagerFactory.create(serverPaths);
+        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var manager = TestJwtKeyManagerFactory.create(serverPaths, clock);
         final var firstKid = manager.getRsaKey().getKeyID();
         manager.rotateKey();
-        // Rotation creates pending; force activation by setting activateAt to a recent past time
-        // (not EPOCH) so the reloaded activateAt still satisfies isAfter(Instant.EPOCH).
-        manager.__testOverridePendingActivateAt(Instant.now().minusSeconds(10));
+        // Advance past the warmup window so the next sign() promotes pending to current.
+        // The pending activateAt (2026-01-01T00:10:00Z) is after EPOCH, so the reloaded
+        // key's activateAt will satisfy isAfter(Instant.EPOCH).
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
         manager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         final var rotatedKid = manager.getRsaKey().getKeyID();
         assertThat(rotatedKid).isNotEqualTo(firstKid);

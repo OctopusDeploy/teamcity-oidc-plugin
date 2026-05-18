@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.text.ParseException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -72,6 +73,7 @@ public class JwtKeyManager {
 
     private final File keyDirectory;
     private final Encryption encryption;
+    private final Clock clock;
     private final OidcSettingsManager oidcSettingsManager;
 
     /**
@@ -99,7 +101,15 @@ public class JwtKeyManager {
      */
     public JwtKeyManager(@NotNull final ServerPaths serverPaths,
                          @NotNull final Encryption encryption) {
+        this(serverPaths, encryption, Clock.systemUTC());
+    }
+
+    /** Package-private — for tests that need a controllable clock. */
+    JwtKeyManager(@NotNull final ServerPaths serverPaths,
+                  @NotNull final Encryption encryption,
+                  @NotNull final Clock clock) {
         this.encryption = encryption;
+        this.clock = clock;
         this.keyDirectory = new File(serverPaths.getPluginDataDirectory(), "JwtBuildFeature");
         if (!this.keyDirectory.exists() && !this.keyDirectory.mkdirs())
             throw new RuntimeException("Failed to create key directory");
@@ -188,22 +198,6 @@ public class JwtKeyManager {
         return requireReady().hasAnyPending();
     }
 
-    /**
-     * Test-only hook to force pending activateAt timestamps into the past so that the
-     * next sign() promotes them. Avoids needing a mockable Clock just for two test cases.
-     */
-    synchronized void __testOverridePendingActivateAt(@NotNull final Instant instant) {
-        final var k = requireReady();
-        if (k.pendingRsa() == null) throw new IllegalStateException("no pending state to override");
-        keys.set(new KeyMaterial(
-                k.rsa(), k.retiredRsa(),
-                k.ec(), k.retiredEc(),
-                k.rsa3072(), k.retiredRsa3072(),
-                new KeySlot(k.pendingRsa().jwk(), instant),
-                new KeySlot(k.pendingEc().jwk(), instant),
-                new KeySlot(k.pendingRsa3072().jwk(), instant)));
-    }
-
     public @NotNull List<JWK> getPublicKeys() {
         final var snapshot = requireReady();
         final List<JWK> result = new ArrayList<>();
@@ -235,7 +229,7 @@ public class JwtKeyManager {
         }
 
         final var settings = oidcSettingsManager.load();
-        final var activateAt = Instant.now().plus(
+        final var activateAt = clock.instant().plus(
                 Duration.ofMinutes(settings.jwksCacheLifetimeMinutes()));
 
         // Generate all new keys before touching the filesystem so a key-generation
@@ -333,7 +327,7 @@ public class JwtKeyManager {
                         + ", rsa3072=" + (k.pendingRsa3072() != null) + "). "
                         + "Rotation always writes all three together; this state should be unreachable.");
             }
-            final var now = Instant.now();
+            final var now = clock.instant();
             if (!k.pendingRsa().isActiveAt(now)) return;
 
             final var promoted = new KeyMaterial(
@@ -484,7 +478,7 @@ public class JwtKeyManager {
         }
         LOG.info("JWT plugin: generating new RSA key to " + keyFile);
         final var newKey = generateFreshRsaKey();
-        final var now = Instant.now();
+        final var now = clock.instant();
         saveKeyToFile(newKey, "rsa-key.json", now);
         return new ParsedKey(newKey, now);
     }
@@ -513,7 +507,7 @@ public class JwtKeyManager {
         }
         LOG.info("JWT plugin: generating new EC key to " + keyFile);
         final var newKey = generateFreshEcKey();
-        final var now = Instant.now();
+        final var now = clock.instant();
         saveKeyToFile(newKey, "ec-key.json", now);
         return new ParsedKey(newKey, now);
     }
@@ -542,7 +536,7 @@ public class JwtKeyManager {
         }
         LOG.info("JWT plugin: generating new RSA-3072 key to " + keyFile);
         final var newKey = generateFreshRsa3072Key();
-        final var now = Instant.now();
+        final var now = clock.instant();
         saveKeyToFile(newKey, "rsa3072-key.json", now);
         return new ParsedKey(newKey, now);
     }

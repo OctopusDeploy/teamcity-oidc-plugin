@@ -22,6 +22,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
+import static com.octopus.teamcity.oidc.OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
@@ -35,11 +37,13 @@ public class KeyRotationTest {
     @TempDir private File tempDir;
 
     private JwtKeyManager keyManager;
+    private TestJwtKeyManagerFactory.MutableClock clock;
 
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        keyManager = TestJwtKeyManagerFactory.create(serverPaths);
+        clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        keyManager = TestJwtKeyManagerFactory.create(serverPaths, clock);
         lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
     }
 
@@ -49,8 +53,8 @@ public class KeyRotationTest {
         final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
-        // Rotation creates pending; force activation so we can observe the new keys.
-        keyManager.__testOverridePendingActivateAt(Instant.EPOCH);
+        // Advance past the warmup window so the next sign() promotes pending to current.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
         keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
 
         assertThat(keyManager.getRsaKey().getKeyID()).isNotEqualTo(originalRsa.getKeyID());
@@ -64,8 +68,8 @@ public class KeyRotationTest {
         final var originalEc = keyManager.getEcKey();
 
         keyManager.rotateKey();
-        // Force activation so pending → current, original → retired.
-        keyManager.__testOverridePendingActivateAt(Instant.EPOCH);
+        // Advance past the warmup window so pending → current, original → retired.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
         keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
 
         final var newRsa = keyManager.getRsaKey();
@@ -86,17 +90,17 @@ public class KeyRotationTest {
         final var rsa3072_1 = keyManager.getRsa3072Key();
         final var ec1 = keyManager.getEcKey();
 
-        // First rotation: create pending, force activation.
+        // First rotation: create pending, advance past warmup, promote.
         keyManager.rotateKey();
-        keyManager.__testOverridePendingActivateAt(Instant.EPOCH);
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
         keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         final var rsa2 = keyManager.getRsaKey();
         final var rsa3072_2 = keyManager.getRsa3072Key();
         final var ec2 = keyManager.getEcKey();
 
-        // Second rotation: create pending, force activation.
+        // Second rotation: create pending, advance past warmup, promote.
         keyManager.rotateKey();
-        keyManager.__testOverridePendingActivateAt(Instant.EPOCH);
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
         keyManager.sign(new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
         final var rsa3 = keyManager.getRsaKey();
         final var rsa3072_3 = keyManager.getRsa3072Key();
@@ -117,9 +121,12 @@ public class KeyRotationTest {
         // The bound matters in both directions: the lower bound proves the warmup was
         // applied at all (rejecting a regression that sets activateAt = now); the upper
         // bound proves we didn't grossly overshoot the configured cache lifetime.
+        // Use a real-time manager (not the MutableClock one) so the comparison against
+        // Instant.now() below refers to the same time source as activateAt.
+        final var realTimeManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var warmupMinutes = OidcSettings.DEFAULT_JWKS_CACHE_LIFETIME_MINUTES;
         final var beforeRotate = Instant.now();
-        keyManager.rotateKey();
+        realTimeManager.rotateKey();
         final var afterRotate = Instant.now();
 
         // Reload from disk to confirm the timestamp survived serialisation through the envelope.
@@ -166,8 +173,8 @@ public class KeyRotationTest {
         keyManager.rotateKey();
         final var pendingRsaKid = keyManager.getRsaPendingSlot().jwk().getKeyID();
 
-        // Force the pending's activateAt into the past so the next sign promotes it.
-        keyManager.__testOverridePendingActivateAt(Instant.EPOCH);
+        // Advance past the warmup window so the next sign promotes pending to current.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
 
         final var token = keyManager.sign(
                 new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("x").build(), "RS256");
