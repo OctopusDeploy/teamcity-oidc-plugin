@@ -33,6 +33,14 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+// TODO: this class is doing too many things at once (key lifecycle state machine,
+// JWK envelope serialisation + atomic disk I/O, signing, public-key rendering,
+// rotation orchestration, the KeyMaterial record itself). The natural split is:
+// (1) `KeyMaterial` extracted as a top-level record, (2) a `JwtKeyStorage` class
+// owning all File / Encryption / envelope I/O, (3) this class focused on the
+// lifecycle/signing/rotation contract. Deferred to a follow-up PR — the current
+// scope is the warmup feature and reshaping the class would make that diff harder
+// to review. Tracking: items 4 + 5 from the PR review on this branch.
 public class JwtKeyManager {
     private static final Logger LOG = Logger.getLogger(JwtKeyManager.class.getName());
 
@@ -45,12 +53,12 @@ public class JwtKeyManager {
     record KeyMaterial(
             @NotNull KeySlot rsa,
             @Nullable KeySlot retiredRsa,
+            @Nullable KeySlot pendingRsa,
             @NotNull KeySlot ec,
             @Nullable KeySlot retiredEc,
+            @Nullable KeySlot pendingEc,
             @NotNull KeySlot rsa3072,
             @Nullable KeySlot retiredRsa3072,
-            @Nullable KeySlot pendingRsa,
-            @Nullable KeySlot pendingEc,
             @Nullable KeySlot pendingRsa3072
     ) {
         // Convenience accessors that unwrap the slot to the typed JWK. Provided
@@ -245,12 +253,9 @@ public class JwtKeyManager {
         saveKeyToFile(newEc, "pending-ec-key.json", activateAt);
 
         keys.set(new KeyMaterial(
-                current.rsa(), current.retiredRsa(),
-                current.ec(), current.retiredEc(),
-                current.rsa3072(), current.retiredRsa3072(),
-                new KeySlot(newRsa, activateAt),
-                new KeySlot(newEc, activateAt),
-                new KeySlot(newRsa3072, activateAt)));
+                current.rsa(),     current.retiredRsa(),     new KeySlot(newRsa, activateAt),
+                current.ec(),      current.retiredEc(),      new KeySlot(newEc, activateAt),
+                current.rsa3072(), current.retiredRsa3072(), new KeySlot(newRsa3072, activateAt)));
         // Record that this node's in-memory state matches what we just wrote, so the next
         // refreshIfStale() doesn't misread our own writes as an external change.
         lastLoadedMaxMtime = maxKeyFileMtime();
@@ -331,10 +336,9 @@ public class JwtKeyManager {
             if (!k.pendingRsa().isActiveAt(now)) return;
 
             final var promoted = new KeyMaterial(
-                    k.pendingRsa(),     new KeySlot(k.rsaKey(), k.rsa().activateAt()),
-                    k.pendingEc(),      new KeySlot(k.ecKey(), k.ec().activateAt()),
-                    k.pendingRsa3072(), new KeySlot(k.rsa3072Key(), k.rsa3072().activateAt()),
-                    null, null, null);
+                    k.pendingRsa(),     new KeySlot(k.rsaKey(),     k.rsa().activateAt()),     null,
+                    k.pendingEc(),      new KeySlot(k.ecKey(),      k.ec().activateAt()),      null,
+                    k.pendingRsa3072(), new KeySlot(k.rsa3072Key(), k.rsa3072().activateAt()), null);
 
             if (keys.compareAndSet(k, promoted)) {
                 promoteOnDisk(promoted);
@@ -437,25 +441,25 @@ public class JwtKeyManager {
     }
 
     private void loadKeys() throws IOException, ParseException, JOSEException {
-        final var rsa = loadOrGenerateRsaKey();
-        final var retiredRsa = loadRetiredRsaKey();
-        final var ec = loadOrGenerateEcKey();
-        final var retiredEc = loadRetiredEcKey();
-        final var rsa3072 = loadOrGenerateRsa3072Key();
-        final var retiredRsa3072 = loadRetiredRsa3072Key();
-        final var pendingRsa = loadPendingRsaKey();
-        final var pendingEc = loadPendingEcKey();
-        final var pendingRsa3072 = loadPendingRsa3072Key();
+        final var rsa            = loadOrGenerate("rsa-key.json",             RSAKey.class, JwtKeyManager::generateFreshRsaKey);
+        final var retiredRsa     = loadIfExists  ("retired-rsa-key.json",     RSAKey.class);
+        final var pendingRsa     = loadIfExists  ("pending-rsa-key.json",     RSAKey.class);
+        final var ec             = loadOrGenerate("ec-key.json",              ECKey.class,  JwtKeyManager::generateFreshEcKey);
+        final var retiredEc      = loadIfExists  ("retired-ec-key.json",      ECKey.class);
+        final var pendingEc      = loadIfExists  ("pending-ec-key.json",      ECKey.class);
+        final var rsa3072        = loadOrGenerate("rsa3072-key.json",         RSAKey.class, JwtKeyManager::generateFreshRsa3072Key);
+        final var retiredRsa3072 = loadIfExists  ("retired-rsa3072-key.json", RSAKey.class);
+        final var pendingRsa3072 = loadIfExists  ("pending-rsa3072-key.json", RSAKey.class);
 
         keys.set(new KeyMaterial(
                 new KeySlot(rsa.jwk(), rsa.activateAt()),
                 retiredRsa == null ? null : new KeySlot(retiredRsa.jwk(), retiredRsa.activateAt()),
+                pendingRsa == null ? null : new KeySlot(pendingRsa.jwk(), pendingRsa.activateAt()),
                 new KeySlot(ec.jwk(), ec.activateAt()),
                 retiredEc == null ? null : new KeySlot(retiredEc.jwk(), retiredEc.activateAt()),
+                pendingEc == null ? null : new KeySlot(pendingEc.jwk(), pendingEc.activateAt()),
                 new KeySlot(rsa3072.jwk(), rsa3072.activateAt()),
                 retiredRsa3072 == null ? null : new KeySlot(retiredRsa3072.jwk(), retiredRsa3072.activateAt()),
-                pendingRsa == null ? null : new KeySlot(pendingRsa.jwk(), pendingRsa.activateAt()),
-                pendingEc == null ? null : new KeySlot(pendingEc.jwk(), pendingEc.activateAt()),
                 pendingRsa3072 == null ? null : new KeySlot(pendingRsa3072.jwk(), pendingRsa3072.activateAt())));
         lastLoadedMaxMtime = maxKeyFileMtime();
         LOG.info("JWT plugin: JwtKeyManager initialized, keys loaded from " + keyDirectory);
@@ -466,125 +470,45 @@ public class JwtKeyManager {
         promotePendingIfDue();
     }
 
-    private ParsedKey loadOrGenerateRsaKey() throws IOException, ParseException, JOSEException {
-        final var keyFile = new File(keyDirectory, "rsa-key.json");
-        if (keyFile.exists()) {
-            LOG.info("JWT plugin: reading existing RSA key from " + keyFile);
-            final var parsed = parseKeyEnvelope(keyFile);
-            if (!(parsed.jwk() instanceof RSAKey)) {
-                throw new IOException("Expected RSA key in rsa-key.json");
-            }
-            return parsed;
-        }
-        LOG.info("JWT plugin: generating new RSA key to " + keyFile);
-        final var newKey = generateFreshRsaKey();
+    /** Generates a freshly-keyed JWK. Lambda-friendly because RSAKey/ECKey generators throw JOSEException. */
+    @FunctionalInterface
+    private interface FreshKeyGenerator { JWK generate() throws JOSEException; }
+
+    /**
+     * If {@code fileName} exists in the key directory, load and return it (asserting the
+     * parsed JWK matches {@code expectedType}). Otherwise generate a fresh key with
+     * {@code generator}, save it to disk with {@code activateAt = clock.instant()}, and
+     * return the new key. Used during initial install of the plugin.
+     */
+    private ParsedKey loadOrGenerate(@NotNull final String fileName,
+                                     @NotNull final Class<? extends JWK> expectedType,
+                                     @NotNull final FreshKeyGenerator generator)
+            throws IOException, ParseException, JOSEException {
+        final var existing = loadIfExists(fileName, expectedType);
+        if (existing != null) return existing;
+        final var keyFile = new File(keyDirectory, fileName);
+        LOG.info("JWT plugin: generating new key to " + keyFile);
+        final var newKey = generator.generate();
         final var now = clock.instant();
-        saveKeyToFile(newKey, "rsa-key.json", now);
+        saveKeyToFile(newKey, fileName, now);
         return new ParsedKey(newKey, now);
     }
 
+    /**
+     * Returns the parsed key from {@code fileName} if the file exists, or {@code null}
+     * otherwise. Asserts the parsed JWK matches {@code expectedType}; mismatch throws.
+     * Used for retired and pending key files, which are optional.
+     */
     @Nullable
-    private ParsedKey loadRetiredRsaKey() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "retired-rsa-key.json");
+    private ParsedKey loadIfExists(@NotNull final String fileName,
+                                   @NotNull final Class<? extends JWK> expectedType)
+            throws IOException, ParseException {
+        final var f = new File(keyDirectory, fileName);
         if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading retired RSA key from " + f);
+        LOG.info("JWT plugin: reading " + fileName + " from " + f);
         final var parsed = parseKeyEnvelope(f);
-        if (!(parsed.jwk() instanceof RSAKey)) {
-            throw new IOException("Expected RSA key in retired-rsa-key.json");
-        }
-        return parsed;
-    }
-
-    private ParsedKey loadOrGenerateEcKey() throws IOException, ParseException, JOSEException {
-        final var keyFile = new File(keyDirectory, "ec-key.json");
-        if (keyFile.exists()) {
-            LOG.info("JWT plugin: reading existing EC key from " + keyFile);
-            final var parsed = parseKeyEnvelope(keyFile);
-            if (!(parsed.jwk() instanceof ECKey)) {
-                throw new IOException("Expected EC key in ec-key.json");
-            }
-            return parsed;
-        }
-        LOG.info("JWT plugin: generating new EC key to " + keyFile);
-        final var newKey = generateFreshEcKey();
-        final var now = clock.instant();
-        saveKeyToFile(newKey, "ec-key.json", now);
-        return new ParsedKey(newKey, now);
-    }
-
-    @Nullable
-    private ParsedKey loadRetiredEcKey() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "retired-ec-key.json");
-        if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading retired EC key from " + f);
-        final var parsed = parseKeyEnvelope(f);
-        if (!(parsed.jwk() instanceof ECKey)) {
-            throw new IOException("Expected EC key in retired-ec-key.json");
-        }
-        return parsed;
-    }
-
-    private ParsedKey loadOrGenerateRsa3072Key() throws IOException, ParseException, JOSEException {
-        final var keyFile = new File(keyDirectory, "rsa3072-key.json");
-        if (keyFile.exists()) {
-            LOG.info("JWT plugin: reading existing RSA-3072 key from " + keyFile);
-            final var parsed = parseKeyEnvelope(keyFile);
-            if (!(parsed.jwk() instanceof RSAKey)) {
-                throw new IOException("Expected RSA key in rsa3072-key.json");
-            }
-            return parsed;
-        }
-        LOG.info("JWT plugin: generating new RSA-3072 key to " + keyFile);
-        final var newKey = generateFreshRsa3072Key();
-        final var now = clock.instant();
-        saveKeyToFile(newKey, "rsa3072-key.json", now);
-        return new ParsedKey(newKey, now);
-    }
-
-    @Nullable
-    private ParsedKey loadRetiredRsa3072Key() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "retired-rsa3072-key.json");
-        if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading retired RSA-3072 key from " + f);
-        final var parsed = parseKeyEnvelope(f);
-        if (!(parsed.jwk() instanceof RSAKey)) {
-            throw new IOException("Expected RSA key in retired-rsa3072-key.json");
-        }
-        return parsed;
-    }
-
-    @Nullable
-    private ParsedKey loadPendingRsaKey() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "pending-rsa-key.json");
-        if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading pending RSA key from " + f);
-        final var parsed = parseKeyEnvelope(f);
-        if (!(parsed.jwk() instanceof RSAKey)) {
-            throw new IOException("Expected RSA key in pending-rsa-key.json");
-        }
-        return parsed;
-    }
-
-    @Nullable
-    private ParsedKey loadPendingEcKey() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "pending-ec-key.json");
-        if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading pending EC key from " + f);
-        final var parsed = parseKeyEnvelope(f);
-        if (!(parsed.jwk() instanceof ECKey)) {
-            throw new IOException("Expected EC key in pending-ec-key.json");
-        }
-        return parsed;
-    }
-
-    @Nullable
-    private ParsedKey loadPendingRsa3072Key() throws IOException, ParseException {
-        final var f = new File(keyDirectory, "pending-rsa3072-key.json");
-        if (!f.exists()) return null;
-        LOG.info("JWT plugin: reading pending RSA-3072 key from " + f);
-        final var parsed = parseKeyEnvelope(f);
-        if (!(parsed.jwk() instanceof RSAKey)) {
-            throw new IOException("Expected RSA key in pending-rsa3072-key.json");
+        if (!expectedType.isInstance(parsed.jwk())) {
+            throw new IOException("Expected " + expectedType.getSimpleName() + " in " + fileName);
         }
         return parsed;
     }

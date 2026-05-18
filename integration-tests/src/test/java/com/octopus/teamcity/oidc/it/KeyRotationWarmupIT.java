@@ -57,6 +57,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (point {@code JAVA_HOME} at a JDK 21 install first).
  * Build the plugin zip first: {@code mvn package -DskipTests}
  */
+// TODO: the stack-provisioning helpers below (acceptLicenseAgreementIfRequired,
+// waitForTcReady, extractSuperUserTokenWithRetry, fetchCsrfToken,
+// createProjectAndBuildType, plus the cookie-aware http / stateless httpRest
+// client setup) are duplicated almost verbatim across this IT, JwtPluginIT, and
+// OidcFlowIT. The right shape is a base class (something like AbstractTeamCityIT
+// or a shared @ExtendWith helper) that owns container startup + auth + REST API
+// scaffolding, leaving each subclass to declare its own @Test. Deferred to a
+// follow-up PR so this branch stays scoped to the warmup feature. Splitting
+// would also let multiple ITs reuse a single TC container instance, which would
+// recover the ~40 s startup cost per test class. Item 6 from the PR review.
 @Testcontainers
 @Timeout(value = 7, unit = TimeUnit.MINUTES)
 public class KeyRotationWarmupIT {
@@ -161,24 +171,56 @@ public class KeyRotationWarmupIT {
 
     @Test
     void warmupDelaysNewKeyTakingOverSigning() throws Exception {
-        // Step 1: set jwksCacheLifetimeMinutes=1 (1-minute warmup instead of the
-        // 10-minute default) so the test can complete in ~75 s.
-        postAdminForm("/admin/jwtOidcSettings.html", "jwksCacheLifetimeMinutes=1");
+        configureForFastWarmup();
+        final var currentRsaKid = captureCurrentSigningKid();
 
-        // Step 2: set a fake HTTPS issuer URL override so JwtTestController.stepJwt()
-        // passes its HTTPS scheme check when we call it later to trigger sign().
-        // The save happens even when the reachability check warns (URL not reachable).
+        final var pending = triggerRotationAndCapturePending(currentRsaKid);
+
+        assertSigningDuringWarmupStillUsesCurrent(currentRsaKid);
+        assertSecondRotationDuringWarmupReturns409();
+
+        waitForWarmupToElapseAndRefreshCsrf(pending.activeAt());
+
+        assertSigningAfterWarmupUsesFormerlyPending(pending.kid());
+        assertRotationAfterWarmupSucceeds();
+    }
+
+    /** Pending key state captured at the moment rotation is triggered. */
+    private record PendingState(String kid, Instant activeAt) {}
+
+    /**
+     * Sets jwksCacheLifetimeMinutes=1 (1-minute warmup instead of the 10-minute default so
+     * the test completes in ~75 s) plus a fake HTTPS issuer URL override so
+     * JwtTestController.stepJwt() passes its HTTPS scheme check when we later trigger
+     * sign(). The save happens even when the reachability check warns (URL not reachable).
+     */
+    private void configureForFastWarmup() throws Exception {
+        postAdminForm("/admin/jwtOidcSettings.html", "jwksCacheLifetimeMinutes=1");
         postAdminForm("/admin/jwtOidcSettings.html",
                 "overrideIssuerUrl=" + encode(FAKE_HTTPS_ISSUER));
+    }
 
-        // Step 3: capture the current signing kid from the JWKS.
-        // Before the first rotation there are exactly 3 keys (RSA-2048, RSA-3072, EC).
-        // getPublicKeys() always puts the RSA-2048 current key first.
-        final var jwksBefore = fetchJwks();
-        final var currentRsaKid = rsaKidAt(jwksBefore, 0);
-        assertThat(jwksBefore.getKeys()).as("JWKS before rotation").hasSize(3);
+    /**
+     * Returns the RSA-2048 kid currently in JWKS[0]. On a fresh instance there are exactly
+     * 3 keys (RSA-2048, RSA-3072, EC) and getPublicKeys() always puts the current
+     * RSA-2048 key first.
+     */
+    private String captureCurrentSigningKid() throws Exception {
+        final var jwks = fetchJwks();
+        assertThat(jwks.getKeys()).as("JWKS before rotation").hasSize(3);
+        return rsaKidAt(jwks, 0);
+    }
 
-        // Step 4: trigger rotation.
+    /**
+     * Triggers rotation, asserts the response shape, and captures the pending RSA-2048
+     * kid. During warmup the JWKS layout is:
+     * <pre>
+     *   [0] current RSA-2048   [1] pending RSA-2048
+     *   [2] current RSA-3072   [3] pending RSA-3072
+     *   [4] current EC         [5] pending EC
+     * </pre>
+     */
+    private PendingState triggerRotationAndCapturePending(final String currentKid) throws Exception {
         final var rotateBody = postAdminForm("/admin/jwtKeyRotate.html", "");
         assertThat(rotateBody.get("status")).as("rotation status").isEqualTo("rotated");
         assertThat(rotateBody).as("rotation response must contain activeAt").containsKey("activeAt");
@@ -187,80 +229,86 @@ public class KeyRotationWarmupIT {
                 .as("activeAt must be in the future (warmup window not yet elapsed)")
                 .isAfter(Instant.now());
 
-        // Step 5: JWKS now contains current + pending publics — 6 keys total.
-        // getPublicKeys() order (no retired on a fresh instance):
-        //   [0] current RSA-2048  [1] pending RSA-2048
-        //   [2] current RSA-3072  [3] pending RSA-3072
-        //   [4] current EC        [5] pending EC
-        final var jwksDuringWarmup = fetchJwks();
-        assertThat(jwksDuringWarmup.getKeys())
+        final var jwks = fetchJwks();
+        assertThat(jwks.getKeys())
                 .as("JWKS during warmup must contain both current and pending keys")
                 .hasSize(6);
-        final var pendingRsaKid = rsaKidAt(jwksDuringWarmup, 1);
-        assertThat(pendingRsaKid)
-                .as("pending kid must differ from current kid")
-                .isNotEqualTo(currentRsaKid);
-        // Confirm the current kid is still at position 0 (signing has not yet promoted pending).
-        assertThat(rsaKidAt(jwksDuringWarmup, 0))
+        assertThat(rsaKidAt(jwks, 0))
                 .as("current kid must still be at JWKS[0] during warmup")
-                .isEqualTo(currentRsaKid);
+                .isEqualTo(currentKid);
+        final var pendingKid = rsaKidAt(jwks, 1);
+        assertThat(pendingKid)
+                .as("pending kid must differ from current kid")
+                .isNotEqualTo(currentKid);
+        return new PendingState(pendingKid, activeAt);
+    }
 
-        // Step 6: signing during warmup still uses currentRsaKid. We drive sign() via the
-        // test-connection endpoint: POST step=jwt issues a JWT (which calls keyManager.sign()).
-        // The JWT is stored server-side; the response confirms it was issued successfully.
-        final var jwtDuringWarmup = postStepJwt();
-        assertThat(jwtDuringWarmup.get("ok")).as("step=jwt during warmup").isEqualTo(true);
-
-        // The JWKS first key must still be currentRsaKid — promotion has not happened
-        // because the warmup window has not elapsed.
+    /**
+     * Drives sign() via the test-connection endpoint (POST step=jwt calls keyManager.sign()
+     * server-side) and asserts JWKS[0] is unchanged — promotion hasn't run because the
+     * warmup window hasn't elapsed.
+     */
+    private void assertSigningDuringWarmupStillUsesCurrent(final String currentKid) throws Exception {
+        final var jwt = postStepJwt();
+        assertThat(jwt.get("ok")).as("step=jwt during warmup").isEqualTo(true);
         assertThat(rsaKidAt(fetchJwks(), 0))
-                .as("JWKS[0] must still be currentRsaKid during warmup")
-                .isEqualTo(currentRsaKid);
+                .as("JWKS[0] must still be currentKid during warmup")
+                .isEqualTo(currentKid);
+    }
 
-        // Step 7: a second rotation during warmup must be rejected with 409.
-        final var duringWarmupRotate = postAdminFormRaw("/admin/jwtKeyRotate.html", "");
-        assertThat(duringWarmupRotate.statusCode())
+    /** A second rotation while pending is warming up must return HTTP 409 with status=warmupInProgress. */
+    private void assertSecondRotationDuringWarmupReturns409() throws Exception {
+        final var resp = postAdminFormRaw("/admin/jwtKeyRotate.html", "");
+        assertThat(resp.statusCode())
                 .as("rotation during warmup must return HTTP 409")
                 .isEqualTo(409);
-        final var warmupBody = parseJson(duringWarmupRotate.body());
-        assertThat(warmupBody.get("status"))
+        final var body = parseJson(resp.body());
+        assertThat(body.get("status"))
                 .as("409 body must report warmupInProgress")
                 .isEqualTo("warmupInProgress");
+    }
 
-        // Step 8: wait out the warmup window (activeAt + 5 s safety buffer).
+    /**
+     * Sleeps until just past {@code activeAt} (+5 s buffer for clock skew) and re-fetches
+     * the CSRF token. TC may rotate the session CSRF value during the ~65 s idle window
+     * if the session is otherwise quiet; refresh it before the next request.
+     */
+    private void waitForWarmupToElapseAndRefreshCsrf(final Instant activeAt) throws Exception {
         final var waitMs = Duration.between(Instant.now(), activeAt).toMillis() + 5_000L;
         if (waitMs > 0) {
             log("Waiting " + waitMs + " ms for warmup to elapse...");
             Thread.sleep(waitMs);
         }
         log("Warmup elapsed — triggering promotion via sign().");
-
-        // Re-fetch the CSRF token after the 65-second sleep. TC may rotate the session
-        // CSRF value between requests if the session is idle for an extended period.
         fetchCsrfToken();
+    }
 
-        // Step 9: call step=jwt again to trigger sign() → promotePendingIfDue().
-        // Now that activeAt is in the past, the pending key will be promoted to current.
-        final var jwtAfterWarmup = postStepJwt();
-        assertThat(jwtAfterWarmup.get("ok")).as("step=jwt after warmup").isEqualTo(true);
-
-        // Step 10: the formerly-pending kid is now current — JWKS[0] must equal pendingRsaKid.
-        // After promotion the layout is (retired is present now):
-        //   [0] promoted RSA-2048 (formerly pending)  [1] retired RSA-2048 (formerly current)
-        //   [2] promoted RSA-3072                      [3] retired RSA-3072
-        //   [4] promoted EC                            [5] retired EC
+    /**
+     * Calls step=jwt to trigger sign() → promotePendingIfDue(). With activeAt now in the
+     * past the pending key is promoted to current; the JWKS layout shifts to:
+     * <pre>
+     *   [0] promoted RSA-2048 (formerly pending)   [1] retired RSA-2048 (formerly current)
+     *   [2] promoted RSA-3072                      [3] retired RSA-3072
+     *   [4] promoted EC                            [5] retired EC
+     * </pre>
+     * Asserts JWKS[0] is the kid that was pending before the wait.
+     */
+    private void assertSigningAfterWarmupUsesFormerlyPending(final String pendingKid) throws Exception {
+        final var jwt = postStepJwt();
+        assertThat(jwt.get("ok")).as("step=jwt after warmup").isEqualTo(true);
         assertThat(rsaKidAt(fetchJwks(), 0))
                 .as("After warmup, JWKS[0] must be the formerly-pending kid (promotion complete)")
-                .isEqualTo(pendingRsaKid);
+                .isEqualTo(pendingKid);
+    }
 
-        // Step 11: a subsequent rotation must now succeed (pending was promoted; no warmup in
-        // progress any more).
-        final var afterPromotionRotate = postAdminFormRaw("/admin/jwtKeyRotate.html", "");
-        assertThat(afterPromotionRotate.statusCode())
+    /** Pending was promoted; another rotation is allowed again. */
+    private void assertRotationAfterWarmupSucceeds() throws Exception {
+        final var resp = postAdminFormRaw("/admin/jwtKeyRotate.html", "");
+        assertThat(resp.statusCode())
                 .as("rotation after promotion must return HTTP 200")
                 .isEqualTo(200);
-        final var afterBody = parseJson(afterPromotionRotate.body());
-        assertThat(afterBody.get("status"))
+        final var body = parseJson(resp.body());
+        assertThat(body.get("status"))
                 .as("post-promotion rotation status must be rotated")
                 .isEqualTo("rotated");
     }
