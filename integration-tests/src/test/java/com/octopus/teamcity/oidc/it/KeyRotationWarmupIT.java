@@ -53,9 +53,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * sufficient for our purposes (we only need {@code sign()} to run, not the JWT to be
  * exchangeable with a real IdP).
  * <p>
- * Run with: {@code JAVA_HOME=/Users/matt/.jenv/versions/21 mvn verify -pl integration-tests
- * -Dit.test=KeyRotationWarmupIT}
- * Build the plugin zip first: {@code JAVA_HOME=/Users/matt/.jenv/versions/21 mvn package -DskipTests}
+ * Run with: {@code mvn verify -pl integration-tests -Dit.test=KeyRotationWarmupIT}
+ * (point {@code JAVA_HOME} at a JDK 21 install first).
+ * Build the plugin zip first: {@code mvn package -DskipTests}
  */
 @Testcontainers
 @Timeout(value = 7, unit = TimeUnit.MINUTES)

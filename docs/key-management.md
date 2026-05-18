@@ -35,7 +35,7 @@ high makes the warmup more forgiving of consumers with longer JWKS cache lifetim
 setting it low makes rotation take effect sooner.
 
 The warmup defends against consumers that respect the JWKS `Cache-Control` header and
-served from cache between the rotation and the new key starting to sign. Without the
+are served from cache between the rotation and the new key starting to sign. Without the
 warmup, such a consumer would reject the first tokens signed with the new key because
 its cached JWKS doesn't yet contain the new `kid`. With the warmup, every well-behaved
 consumer has at least one full cache lifetime to refresh JWKS before any token uses
@@ -61,6 +61,23 @@ sequenceDiagram
 
 A second rotation while a warmup is in progress is rejected with HTTP 409. The
 scheduler's next cron tick (max one hour later) retries automatically.
+
+### HA divergence window
+
+The in-memory promotion (a compare-and-swap on `AtomicReference<KeyMaterial>`) happens
+on whichever node wins the race; the corresponding on-disk update — rewriting
+`*-key.json` from the promoted slot, rewriting `retired-*-key.json` from the demoted
+current, and deleting `pending-*-key.json` — happens after the compare-and-swap. If
+the JVM dies, or the disk writer is slow, secondary nodes refreshing via mtime polling
+may briefly observe an intermediate on-disk state where some of the new current
+files exist and some of the pending files have not yet been deleted.
+
+This is operationally safe: all the keys involved (the previously-current key, the
+newly-promoted key, and any leftover pending file with the same content as the now-
+current) are valid verifying keys in JWKS, and any token signed during this window
+verifies against at least one of them. If the writer crashes outright, the next
+startup's `promotePendingIfDue()` idempotently completes the activation from
+whichever state it finds on disk.
 
 ## Key storage and encryption
 
