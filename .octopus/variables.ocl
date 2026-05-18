@@ -8,10 +8,6 @@ variable "IsPreRelease" {
     }
 }
 
-variable "jbPackageId" {
-    value {}
-}
-
 variable "Slack.Channel.DeploymentFailure" {
     value "C03D0EVEMLM" {}
 }
