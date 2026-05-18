@@ -31,3 +31,9 @@ Copy the plugin zip to `<TeamCity data directory>/plugins/` and restart TeamCity
 - [Configuration Reference](docs/configuration.md) — build feature fields, token claims, cloud provider setup guides
 - [Key Management](docs/key-management.md) — key rotation, storage, and encryption at rest
 - [Development](docs/development.md) — building the plugin, plugin architecture
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
+
+This plugin is provided "AS IS", without warranty of any kind. The plugin issues JWTs that grant access to cloud resources — you are solely responsible for reviewing its suitability for your environment, securing your TeamCity instance, and configuring trust relationships in your cloud providers appropriately. See the LICENSE file for the full disclaimer of warranty and limitation of liability.
