@@ -190,6 +190,50 @@ public class KeyRotationTest {
                 .isInstanceOf(PendingRotationInProgressException.class);
     }
 
+    @Test
+    void stalePendingOnDiskPromotesOnStartup() throws Exception {
+        // Simulate a JVM crash after rotation but before the warmup elapsed enough
+        // for sign() to drive promotion. On disk: pending-*-key.json files exist
+        // with activateAt = T0 + warmup; current key files are the pre-rotation set.
+        final var preRotationRsaKid = keyManager.getRsaKey().getKeyID();
+        final var preRotationEcKid = keyManager.getEcKey().getKeyID();
+        final var preRotationRsa3072Kid = keyManager.getRsa3072Key().getKeyID();
+        keyManager.rotateKey();
+        final var pendingRsaKid = keyManager.getRsaPendingSlot().jwk().getKeyID();
+        final var pendingEcKid = keyManager.getEcPendingSlot().jwk().getKeyID();
+        final var pendingRsa3072Kid = keyManager.getRsa3072PendingSlot().jwk().getKeyID();
+
+        // The "crashed" process drops its in-memory state. The replacement process
+        // starts up after the warmup window has elapsed.
+        clock.advanceBy(Duration.ofMinutes(DEFAULT_JWKS_CACHE_LIFETIME_MINUTES + 1));
+        final var reloaded = TestJwtKeyManagerFactory.create(serverPaths, clock);
+
+        // Startup-time promotePendingIfDue() must have run during loadKeys() — the
+        // previously-pending key is now current, the previously-current key is now
+        // retired, and no pending slot remains.
+        assertThat(reloaded.getRsaKey().getKeyID()).isEqualTo(pendingRsaKid);
+        assertThat(reloaded.getEcKey().getKeyID()).isEqualTo(pendingEcKid);
+        assertThat(reloaded.getRsa3072Key().getKeyID()).isEqualTo(pendingRsa3072Kid);
+        assertThat(reloaded.getRsaPendingSlot()).isNull();
+        assertThat(reloaded.getEcPendingSlot()).isNull();
+        assertThat(reloaded.getRsa3072PendingSlot()).isNull();
+
+        // The previously-current keys must still be in JWKS as retired so tokens
+        // signed before the (crashed) rotation continue to verify.
+        final var manager = reloaded;
+        final var filter = new WellKnownPublicFilter(manager, providerFor("https://tc.example.com"), oidcSettingsManager);
+        final var request = mock(HttpServletRequest.class);
+        final var response = mock(HttpServletResponse.class);
+        final var writer = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(writer));
+        when(request.getRequestURI()).thenReturn("/.well-known/jwks.json");
+        when(request.getContextPath()).thenReturn("");
+        filter.doFilter(request, response, mock(FilterChain.class));
+        final var jwks = (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(writer.toString());
+        final var kids = kidsIn((JSONArray) jwks.get("keys"));
+        assertThat(kids).contains(preRotationRsaKid, preRotationEcKid, preRotationRsa3072Kid);
+    }
+
     // --- helpers ---
 
     private SBuildServer buildServerWithRootUrl(final String url) {
