@@ -311,10 +311,11 @@ public class JwtKeyManager {
      * lazily because the warmup window has by definition elapsed). No timer means no
      * persistence-on-restart concerns and no HA timer-ownership problems.
      *
-     * <p>Why CAS rather than a synchronized method: synchronized would serialise every
-     * sign() — and most sign() calls do nothing here, since promotion only happens once
-     * per warmup. CAS is the cheapest concurrency primitive that gets us the invariant
-     * "the promotion happens exactly once, regardless of how many nodes race."
+     * <p>Why compare-and-swap rather than a synchronized method: synchronized would
+     * serialise every sign() — and most sign() calls do nothing here, since promotion
+     * only happens once per warmup. The compare-and-swap on AtomicReference is the
+     * cheapest concurrency primitive that gets us the invariant "the promotion
+     * happens exactly once, regardless of how many nodes race."
      */
     private void promotePendingIfDue() {
         while (true) {
@@ -340,21 +341,23 @@ public class JwtKeyManager {
                 promoteOnDisk(promoted);
                 return;
             }
-            // Lost the CAS race; loop and re-read.
+            // Lost the compare-and-swap race; loop and re-read.
         }
     }
 
     /**
      * Mirror of the in-memory promotion on disk: rewrite the current key files with the
      * pending content, rewrite the retired files with the previously-current content,
-     * delete the pending files. The on-disk update happens after the in-memory CAS
-     * succeeded, so concurrent JWKS reads on the same node see the promoted state
-     * regardless of where the disk write is in flight.
+     * delete the pending files. The on-disk update happens after the in-memory
+     * compare-and-swap has succeeded, so concurrent JWKS reads on the same node see
+     * the promoted state regardless of where the disk write is in flight.
      *
-     * <p>The CAS in promotePendingIfDue() guarantees exactly one caller wins and calls
-     * this method per rotation cycle, so no additional synchronization is needed here.
+     * <p>The compare-and-swap in promotePendingIfDue() guarantees exactly one caller
+     * wins and calls this method per rotation cycle, so no additional synchronization
+     * is needed here.
      *
-     * <p>Crash recovery: if the JVM dies between the in-memory CAS and the last delete,
+     * <p>Crash recovery: if the JVM dies between the in-memory compare-and-swap and
+     * the last delete,
      * the next loadKeys() will see overlapping pending+current+retired files. Since the
      * pending's activateAt is in the past (we just promoted), the startup-time
      * promotePendingIfDue() will idempotently complete what we couldn't.
