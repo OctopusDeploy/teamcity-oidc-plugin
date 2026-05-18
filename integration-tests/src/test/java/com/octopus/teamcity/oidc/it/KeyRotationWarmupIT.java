@@ -460,7 +460,7 @@ public class KeyRotationWarmupIT {
 
     private static JSONObject parseJson(final String body) {
         try {
-            return (JSONObject) new JSONParser(JSONParser.DEFAULT_PERMISSIVE_MODE).parse(body);
+            return (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(body);
         } catch (final net.minidev.json.parser.ParseException e) {
             throw new IllegalStateException("Failed to parse JSON: " + body, e);
         }

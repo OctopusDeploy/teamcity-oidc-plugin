@@ -40,7 +40,7 @@ public class JwtBuildFeatureAdminPageTest {
         lenient().when(buildServer.getRootUrl()).thenReturn("https://teamcity.example.com");
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         settingsManager = keyManager.createRotationSettingsManager();
-        oidcSettingsManager = keyManager.createOidcSettingsManager();
+        oidcSettingsManager = keyManager.getOidcSettingsManager();
         issuerUrlProvider = new OidcIssuerUrlProvider(buildServer, oidcSettingsManager);
     }
 

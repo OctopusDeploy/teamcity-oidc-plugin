@@ -52,13 +52,18 @@ public class JwtKeyManager {
             @Nullable KeySlot pendingEc,
             @Nullable KeySlot pendingRsa3072
     ) {
-        // Convenience accessors so existing call sites keep their shape.
+        // Convenience accessors that unwrap the slot to the typed JWK. Provided
+        // symmetrically for current, retired, and pending so callers never have to
+        // mix `slot.jwk()` casts with `slotKey()` getters in the same expression.
         @NotNull RSAKey rsaKey() { return (RSAKey) rsa.jwk(); }
         @Nullable RSAKey retiredRsaKey() { return retiredRsa == null ? null : (RSAKey) retiredRsa.jwk(); }
+        @Nullable RSAKey pendingRsaKey() { return pendingRsa == null ? null : (RSAKey) pendingRsa.jwk(); }
         @NotNull ECKey ecKey() { return (ECKey) ec.jwk(); }
         @Nullable ECKey retiredEcKey() { return retiredEc == null ? null : (ECKey) retiredEc.jwk(); }
+        @Nullable ECKey pendingEcKey() { return pendingEc == null ? null : (ECKey) pendingEc.jwk(); }
         @NotNull RSAKey rsa3072Key() { return (RSAKey) rsa3072.jwk(); }
         @Nullable RSAKey retiredRsa3072Key() { return retiredRsa3072 == null ? null : (RSAKey) retiredRsa3072.jwk(); }
+        @Nullable RSAKey pendingRsa3072Key() { return pendingRsa3072 == null ? null : (RSAKey) pendingRsa3072.jwk(); }
 
         boolean hasAnyPending() {
             return pendingRsa != null || pendingEc != null || pendingRsa3072 != null;
@@ -139,7 +144,7 @@ public class JwtKeyManager {
     }
 
     /** Spring factory-method: returns the internal {@link OidcSettingsManager} for this key directory. */
-    public OidcSettingsManager createOidcSettingsManager() {
+    public OidcSettingsManager getOidcSettingsManager() {
         return oidcSettingsManager;
     }
 
@@ -204,13 +209,13 @@ public class JwtKeyManager {
         final List<JWK> result = new ArrayList<>();
         result.add(snapshot.rsaKey().toPublicJWK());
         if (snapshot.retiredRsaKey() != null) result.add(snapshot.retiredRsaKey().toPublicJWK());
-        if (snapshot.pendingRsa() != null) result.add(snapshot.pendingRsa().jwk().toPublicJWK());
+        if (snapshot.pendingRsaKey() != null) result.add(snapshot.pendingRsaKey().toPublicJWK());
         result.add(snapshot.rsa3072Key().toPublicJWK());
         if (snapshot.retiredRsa3072Key() != null) result.add(snapshot.retiredRsa3072Key().toPublicJWK());
-        if (snapshot.pendingRsa3072() != null) result.add(snapshot.pendingRsa3072().jwk().toPublicJWK());
+        if (snapshot.pendingRsa3072Key() != null) result.add(snapshot.pendingRsa3072Key().toPublicJWK());
         result.add(snapshot.ecKey().toPublicJWK());
         if (snapshot.retiredEcKey() != null) result.add(snapshot.retiredEcKey().toPublicJWK());
-        if (snapshot.pendingEc() != null) result.add(snapshot.pendingEc().jwk().toPublicJWK());
+        if (snapshot.pendingEcKey() != null) result.add(snapshot.pendingEcKey().toPublicJWK());
         return Collections.unmodifiableList(result);
     }
 
@@ -391,8 +396,10 @@ public class JwtKeyManager {
 
     private void deleteIfExists(final String fileName) {
         final var f = new File(keyDirectory, fileName);
-        if (f.exists() && !f.delete()) {
-            LOG.warning("JWT plugin: failed to delete " + f);
+        try {
+            Files.deleteIfExists(f.toPath());
+        } catch (final IOException e) {
+            LOG.log(Level.WARNING, "JWT plugin: failed to delete " + f, e);
         }
     }
 
