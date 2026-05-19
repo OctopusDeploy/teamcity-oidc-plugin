@@ -108,7 +108,7 @@
       <div class="jwt-field-label"></div>
       <div class="jwt-field-body">
         <span class="jwt-status-line">
-          Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span><c:if test="${hasPending}"> (warming up - new key active at <c:out value="${pendingActivateAt}"/>)</c:if><c:if test="${not empty nextDue}"> &nbsp;&middot;&nbsp; Next due: <c:out value="${nextDue}"/></c:if>
+          Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span><span id="jwtWarmupAnnotation"><c:if test="${hasPending}"> (warming up - new key active at <c:out value="${pendingActivateAt}"/>)</c:if></span><c:if test="${not empty nextDue}"> &nbsp;&middot;&nbsp; Next due: <c:out value="${nextDue}"/></c:if>
         </span>
       </div>
     </div>
@@ -240,12 +240,25 @@
     );
   };
 
+  // Format an instant (Date or ISO-8601 string) as 'YYYY-MM-DD HH:MM UTC' to match
+  // the server-side rendering (see JwtBuildFeatureAdminPage.FMT). Used wherever JS
+  // updates a DOM element whose value the JSP would otherwise have rendered.
+  const jwtFormatUtcMinute = instantOrIso => {
+    const d = instantOrIso instanceof Date ? instantOrIso : new Date(instantOrIso);
+    return d.getUTCFullYear() + '-' +
+      String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getUTCDate()).padStart(2, '0') + ' ' +
+      String(d.getUTCHours()).padStart(2, '0') + ':' +
+      String(d.getUTCMinutes()).padStart(2, '0') + ' UTC';
+  };
+
   const jwtRotateNow = () => {
     jwtAdminPost(jwtContextPath + '/admin/jwtKeyRotate.html', '',
       data => {
         if (data.status === 'rotated') {
-          const msg = data.activeAt
-            ? 'Rotation started — new key will become active at ' + data.activeAt
+          const activeAtFmt = data.activeAt ? jwtFormatUtcMinute(data.activeAt) : null;
+          const msg = activeAtFmt
+            ? 'Rotation started - new key will become active at ' + activeAtFmt
             : 'Keys rotated successfully';
           jwtShowResult('jwtRotateResult', 'ok', msg);
           if (data.warning) {
@@ -253,13 +266,10 @@
           } else {
             document.getElementById('jwtRotateWarning').style.display = 'none';
           }
-          const now = new Date();
-          const formatted = now.getUTCFullYear() + '-' +
-            String(now.getUTCMonth() + 1).padStart(2, '0') + '-' +
-            String(now.getUTCDate()).padStart(2, '0') + ' ' +
-            String(now.getUTCHours()).padStart(2, '0') + ':' +
-            String(now.getUTCMinutes()).padStart(2, '0') + ' UTC';
-          document.getElementById('jwtLastRotatedDate').textContent = formatted;
+          document.getElementById('jwtLastRotatedDate').textContent = jwtFormatUtcMinute(new Date());
+          document.getElementById('jwtWarmupAnnotation').textContent = activeAtFmt
+            ? ' (warming up - new key active at ' + activeAtFmt + ')'
+            : '';
           jwtRefreshKeyTable();
         } else if (data.status === 'warmupInProgress') {
           // 409 path: a previous rotation's warmup is still in progress. Show the
