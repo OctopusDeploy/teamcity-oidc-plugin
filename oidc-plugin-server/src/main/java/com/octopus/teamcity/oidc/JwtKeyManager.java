@@ -556,12 +556,9 @@ public class JwtKeyManager {
     }
 
     /**
-     * Reads either the new envelope format ({@code {"jwk": ..., "activateAt": ...}}) or
-     * the legacy bare-JWK format. Detection is by top-level keys: presence of {@code jwk}
-     * means envelope, presence of {@code kty} means legacy. Missing activateAt — whether
-     * because the file is legacy or because the envelope omits it — loads as
-     * {@code Instant.EPOCH}, which the rest of the manager treats as "eligible to sign
-     * right now."
+     * Reads the on-disk envelope format: {@code {"jwk": ..., "activateAt": ISO-8601}}.
+     * A missing {@code activateAt} loads as {@code Instant.EPOCH}, which the rest of the
+     * manager treats as "eligible to sign right now."
      */
     private @NotNull ParsedKey parseKeyEnvelope(@NotNull final File file)
             throws IOException, ParseException {
@@ -577,18 +574,13 @@ public class JwtKeyManager {
             throw new IOException("Key file " + file.getName() + " did not contain a JSON object");
         }
         final var inner = obj.get("jwk");
-        if (inner != null) {
-            // Envelope format.
-            final var activateAtRaw = obj.get("activateAt");
-            final var activateAt = activateAtRaw instanceof final String s
-                    ? Instant.parse(s) : Instant.EPOCH;
-            return new ParsedKey(JWK.parse(inner.toString()), activateAt);
+        if (inner == null) {
+            throw new IOException("Key file " + file.getName() + " is missing the 'jwk' envelope field");
         }
-        if (obj.get("kty") != null) {
-            // Legacy bare-JWK format.
-            return new ParsedKey(JWK.parse(decrypted), Instant.EPOCH);
-        }
-        throw new IOException("Key file " + file.getName() + " is neither envelope nor legacy JWK shape");
+        final var activateAtRaw = obj.get("activateAt");
+        final var activateAt = activateAtRaw instanceof final String s
+                ? Instant.parse(s) : Instant.EPOCH;
+        return new ParsedKey(JWK.parse(inner.toString()), activateAt);
     }
 
     private record ParsedKey(@NotNull JWK jwk, @NotNull Instant activateAt) {}
