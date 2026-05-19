@@ -45,7 +45,7 @@ public class OidcSettingsTest {
 
     @Test
     void withMaxTokenLifetimeRejectsOutOfRange() {
-        // The wither produces a new record, which goes through the same compact constructor.
+        // The with...() copy goes through the same compact constructor as direct construction.
         final var settings = OidcSettings.defaults();
         assertThatThrownBy(() -> settings.withMaxTokenLifetimeMinutes(0))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -101,7 +101,7 @@ public class OidcSettingsTest {
     }
 
     @Test
-    void witherPreservesOtherFields() {
+    void withJwksCacheLifetimePreservesOtherFields() {
         final var s = new OidcSettings("https://example", 100, 5);
         final var updated = s.withJwksCacheLifetimeMinutes(20);
         assertThat(updated.overrideIssuerUrl()).isEqualTo("https://example");
