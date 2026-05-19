@@ -71,7 +71,7 @@ public class KeyRotationSchedulerTest {
 
     @Test
     void rotatesWhenEnabledAndOverdue() throws Exception {
-        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
         final var km = keyManager(clock);
         final var mgr = settingsManager();
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,
@@ -135,7 +135,7 @@ public class KeyRotationSchedulerTest {
         // called by TC (that event already fired). The scheduler must start itself in the
         // constructor when isStarted() is true, so auto-rotation still works.
         when(buildServer.isStarted()).thenReturn(true);
-        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
         final var km = keyManager(clock);
         final var mgr = settingsManager();
         mgr.save(new RotationSettings(true, RotationSettings.DEFAULT_SCHEDULE,

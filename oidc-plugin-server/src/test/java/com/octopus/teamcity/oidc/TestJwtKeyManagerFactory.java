@@ -7,10 +7,6 @@ import jetbrains.buildServer.serverSide.crypt.impl.CustomKeyEncryption;
 import org.jetbrains.annotations.NotNull;
 
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Map;
 
 class TestJwtKeyManagerFactory {
@@ -38,25 +34,4 @@ class TestJwtKeyManagerFactory {
         });
     }
 
-    /**
-     * Test-only Clock that lets the test advance time deterministically.
-     * <p>
-     * Cleaner than the previous {@code __testOverridePendingActivateAt} back-door because
-     * the production class has no test-specific code and the test fully controls
-     * which {@code now} each query observes.
-     */
-    static class MutableClock extends Clock {
-        private volatile Instant instant;
-
-        MutableClock(@NotNull final Instant initial) {
-            this.instant = initial;
-        }
-
-        @Override public Instant instant() { return instant; }
-        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
-        @Override public Clock withZone(final ZoneId zone) { return this; }
-
-        void setTo(@NotNull final Instant newInstant) { this.instant = newInstant; }
-        void advanceBy(@NotNull final Duration delta) { this.instant = this.instant.plus(delta); }
-    }
 }

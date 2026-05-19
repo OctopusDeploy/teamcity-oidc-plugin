@@ -165,7 +165,7 @@ public class JwtKeyManagerTest {
         // appears as "current" in the JWKS endpoint, and verifiers fetching JWKS from a
         // secondary won't see the previous-current key in the published list.
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        final var clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        final var clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
         final var nodeA = TestJwtKeyManagerFactory.create(serverPaths, clock);
         final var nodeB = TestJwtKeyManagerFactory.create(serverPaths, clock);
         final var initialKid = nodeA.getRsaKey().getKeyID();

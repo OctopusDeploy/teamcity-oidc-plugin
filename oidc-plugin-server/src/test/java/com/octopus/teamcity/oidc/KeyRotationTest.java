@@ -37,12 +37,12 @@ public class KeyRotationTest {
     @TempDir private File tempDir;
 
     private JwtKeyManager keyManager;
-    private TestJwtKeyManagerFactory.MutableClock clock;
+    private MutableClock clock;
 
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
-        clock = new TestJwtKeyManagerFactory.MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
         keyManager = TestJwtKeyManagerFactory.create(serverPaths, clock);
         lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
     }
