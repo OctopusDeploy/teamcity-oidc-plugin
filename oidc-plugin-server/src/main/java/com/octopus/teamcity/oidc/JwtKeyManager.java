@@ -367,6 +367,11 @@ public class JwtKeyManager {
      */
     private void promoteOnDisk(@NotNull final KeyMaterial promoted) {
         try {
+            // activateAt carries the warmup-end timestamp that was set on the pending slot at
+            // rotation time (T_rotate + jwksCacheLifetimeMinutes), not the wall-clock moment
+            // promotion actually fired. Promotion runs on the first sign() after that instant,
+            // so the recorded value matches "earliest time this key could have signed" — close
+            // to, but not exactly, the actual first-signing time.
             saveKeyToFile(promoted.rsaKey(),     "rsa-key.json",     promoted.rsa().activateAt());
             saveKeyToFile(promoted.rsa3072Key(), "rsa3072-key.json", promoted.rsa3072().activateAt());
             saveKeyToFile(promoted.ecKey(),      "ec-key.json",      promoted.ec().activateAt());
