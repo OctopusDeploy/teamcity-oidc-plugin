@@ -29,7 +29,6 @@ public class KeyRotationControllerTest {
     @Mock private WebControllerManager controllerManager;
     @Mock private ServerPaths serverPaths;
     @Mock private CSRFFilter csrfFilter;
-    @Mock private OidcSettingsManager oidcSettingsManager;
     @Mock private HttpServletRequest request;
     @Mock private HttpServletResponse response;
 
@@ -45,17 +44,17 @@ public class KeyRotationControllerTest {
         settingsManager = new RotationSettingsManager(new File(tempDir, "JwtBuildFeature"));
         // Default: CSRF check passes. lenient() because some tests never reach doHandle.
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
-        // Default: use default OIDC settings. lenient() because some tests never reach doHandle.
-        lenient().when(oidcSettingsManager.load()).thenReturn(OidcSettings.defaults());
     }
 
     private KeyRotationController controller() {
-        return new KeyRotationController(controllerManager, keyManager, settingsManager, oidcSettingsManager, csrfFilter);
+        return new KeyRotationController(controllerManager, keyManager, settingsManager,
+                keyManager.getOidcSettingsManager(), csrfFilter);
     }
 
     @Test
     public void registersAtAdminPath() {
-        new KeyRotationController(controllerManager, keyManager, settingsManager, oidcSettingsManager, csrfFilter);
+        new KeyRotationController(controllerManager, keyManager, settingsManager,
+                keyManager.getOidcSettingsManager(), csrfFilter);
         verify(controllerManager).registerController(eq(KeyRotationController.PATH), any(KeyRotationController.class));
     }
 
