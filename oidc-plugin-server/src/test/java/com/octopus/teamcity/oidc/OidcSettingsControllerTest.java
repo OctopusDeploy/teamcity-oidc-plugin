@@ -263,13 +263,15 @@ public class OidcSettingsControllerTest {
 
     @Test
     void rejectsJwksCacheLifetimeBelowMin() throws Exception {
-        final var json = postCacheLifetime(new OidcSettingsManager(tempDir), "0");
+        final var json = postCacheLifetime(new OidcSettingsManager(tempDir),
+                String.valueOf(OidcSettings.MIN_JWKS_CACHE_LIFETIME_MINUTES - 1));
         assertThat((String) json.get("state")).isEqualTo("error");
     }
 
     @Test
     void rejectsJwksCacheLifetimeAboveMax() throws Exception {
-        final var json = postCacheLifetime(new OidcSettingsManager(tempDir), "1441");
+        final var json = postCacheLifetime(new OidcSettingsManager(tempDir),
+                String.valueOf(OidcSettings.MAX_JWKS_CACHE_LIFETIME_MINUTES + 1));
         assertThat((String) json.get("state")).isEqualTo("error");
     }
 }
