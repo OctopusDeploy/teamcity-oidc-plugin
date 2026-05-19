@@ -108,7 +108,7 @@
       <div class="jwt-field-label"></div>
       <div class="jwt-field-body">
         <span class="jwt-status-line">
-          Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span><c:if test="${hasPending}"> (warming up &mdash; new key active at <c:out value="${pendingActivateAt}"/>)</c:if><c:if test="${not empty nextDue}"> &nbsp;&middot;&nbsp; Next due: <c:out value="${nextDue}"/></c:if>
+          Last rotated: <span id="jwtLastRotatedDate"><c:out value="${lastRotatedAt}"/></span><c:if test="${hasPending}"> (warming up — new key active at <c:out value="${pendingActivateAt}"/>)</c:if><c:if test="${not empty nextDue}"> &nbsp;&middot;&nbsp; Next due: <c:out value="${nextDue}"/></c:if>
         </span>
       </div>
     </div>
