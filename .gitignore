@@ -1,6 +1,11 @@
 # Build output
 target/
 
+# Local-checkout-relative Maven repository used by integration-tests/docker-compose.yml
+# (and, when configured, by TeamCity's Build Cache feature) so dependencies survive
+# across throwaway build agents.
+.m2-cache/
+
 # IntelliJ IDEA
 .idea/
 *.iml
