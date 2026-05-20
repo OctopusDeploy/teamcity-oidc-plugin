@@ -95,11 +95,13 @@
                 </configuration>
             </plugin>
             <!--
-                Downloads Chromium browser binaries and the system shared libraries
-                it links against (libnss3, libatk, libgbm, etc) before integration
-                tests run. The `with-deps` flag asks Playwright to apt-get install
-                the deps itself, which requires a Debian/Ubuntu base image (we use
-                maven:3.9-eclipse-temurin-21 in docker-compose.yml).
+                Invokes Playwright's own CLI (the `install` command with the
+                `with-deps chromium` flag) before the integration tests run, so
+                Playwright fetches the Chromium browser binaries and apt-get-installs
+                the system shared libraries Chromium links against (libnss3, libatk,
+                libgbm, etc). The deps-installing step is what requires a
+                Debian/Ubuntu base image; we use maven:3.9-eclipse-temurin-21 in
+                docker-compose.yml.
 
                 Must run in a forked JVM because CLI.main() calls System.exit() when
                 finished, which would kill Surefire/Failsafe if it shared the JVM.
