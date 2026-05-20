@@ -3,6 +3,7 @@ package com.octopus.teamcity.oidc.it;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import net.minidev.json.JSONArray;
@@ -26,6 +27,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -118,10 +120,7 @@ public class BuildFeatureUIIT {
 
     @Test
     void allDimensionsUncheckedByDefaultInUi() {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
-
+        inFeatureEditor(page -> {
             final var checkboxes = page.locator(".jwt-subject-dimension-cb").all();
             assertThat(checkboxes).as("at least one optional-dimension checkbox should be rendered").isNotEmpty();
             for (final var cb : checkboxes) {
@@ -130,19 +129,13 @@ public class BuildFeatureUIIT {
                                 cb.getAttribute("value"))
                         .isFalse();
             }
-        }
+        });
     }
 
     @Test
     void checkingDimensionPersistsAfterSave() throws Exception {
-        // Uses trigger_type because the branch checkbox is only rendered when the build
-        // type has a VCS root; this test's build type doesn't.
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
-            page.locator(".jwt-subject-dimension-cb[value='trigger_type']").check();
-            saveBuildFeature(page);
-        }
+        editFeature(page ->
+                page.locator(".jwt-subject-dimension-cb[value='trigger_type']").check());
 
         assertThat((String) readFeatureProperties().get("subject_dimensions"))
                 .as("saved subject_dimensions should list trigger_type")
@@ -151,25 +144,10 @@ public class BuildFeatureUIIT {
 
     @Test
     void uncheckingAllDimensionsSavesEmptyPropertyValue() throws Exception {
-        // Phase 1: check both dimensions so subject_dimensions becomes non-empty
-        try (final var ctx = newLoggedInContext()) {
-            final var page = ctx.newPage();
-            navigateToFeatureEditor(page);
-            for (final var cb : page.locator(".jwt-subject-dimension-cb").all()) {
-                cb.check();
-            }
-            saveBuildFeature(page);
-        }
-
+        // Phase 1: check all dimensions so subject_dimensions becomes non-empty
+        editFeature(page -> forEachDimensionCheckbox(page, Locator::check));
         // Phase 2: uncheck every checkbox, verify empty subject_dimensions is stored
-        try (final var ctx = newLoggedInContext()) {
-            final var page = ctx.newPage();
-            navigateToFeatureEditor(page);
-            for (final var cb : page.locator(".jwt-subject-dimension-cb").all()) {
-                cb.uncheck();
-            }
-            saveBuildFeature(page);
-        }
+        editFeature(page -> forEachDimensionCheckbox(page, Locator::uncheck));
 
         assertThat((String) readFeatureProperties().get("subject_dimensions"))
                 .as("all dimensions unchecked should store empty string (the default-minimal sub)")
@@ -178,12 +156,7 @@ public class BuildFeatureUIIT {
 
     @Test
     void algorithmSelectionPersistsAfterSave() throws Exception {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
-            page.selectOption("#algorithm", "ES256");
-            saveBuildFeature(page);
-        }
+        editFeature(page -> page.selectOption("#algorithm", "ES256"));
 
         assertThat(readFeatureProperties().get("algorithm"))
                 .as("algorithm should be ES256 after selecting and saving")
@@ -192,12 +165,7 @@ public class BuildFeatureUIIT {
 
     @Test
     void ttlMinutesPersistsAfterSave() throws Exception {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
-            page.locator("#ttl_minutes").fill("15");
-            saveBuildFeature(page);
-        }
+        editFeature(page -> page.locator("#ttl_minutes").fill("15"));
 
         assertThat(readFeatureProperties().get("ttl_minutes"))
                 .as("ttl_minutes should be 15 after saving")
@@ -206,12 +174,7 @@ public class BuildFeatureUIIT {
 
     @Test
     void audiencePersistsAfterSave() throws Exception {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
-            page.locator("#audience").fill("api://MyTestAudience");
-            saveBuildFeature(page);
-        }
+        editFeature(page -> page.locator("#audience").fill("api://MyTestAudience"));
 
         assertThat(readFeatureProperties().get("audience"))
                 .as("audience should match saved value")
@@ -220,21 +183,16 @@ public class BuildFeatureUIIT {
 
     @Test
     void liveSubjectPreviewIsMinimalByDefault() {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
-            // With no optional dimensions configured (the default), the preview should be just
-            // project + build_type using the build type's actual internal IDs.
-            assertThat(page.locator("#jwtSubjectPreview").inputValue())
-                    .matches("project:[a-zA-Z0-9_]+:build_type:[a-zA-Z0-9_]+");
-        }
+        inFeatureEditor(page ->
+                // With no optional dimensions configured (the default), the preview should be just
+                // project + build_type using the build type's actual internal IDs.
+                assertThat(page.locator("#jwtSubjectPreview").inputValue())
+                        .matches("project:[a-zA-Z0-9_]+:build_type:[a-zA-Z0-9_]+"));
     }
 
     @Test
     void liveSubjectPreviewReflectsCheckboxToggle() {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
+        inFeatureEditor(page -> {
             final var beforeToggle = page.locator("#jwtSubjectPreview").inputValue();
             assertThat(beforeToggle).doesNotContain(":trigger_type:");
 
@@ -248,7 +206,7 @@ public class BuildFeatureUIIT {
             assertThat(page.locator("#jwtSubjectPreview").inputValue())
                     .as("preview should revert to the minimal form when the checkbox is disabled")
                     .isEqualTo(beforeToggle);
-        }
+        });
     }
 
     @Test
@@ -258,34 +216,30 @@ public class BuildFeatureUIIT {
         // checkbox checked, preview includes the segment — without further user interaction.
         setFeatureProperty("subject_dimensions", "trigger_type");
 
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
+        inFeatureEditor(page -> {
             assertThat(page.locator(".jwt-subject-dimension-cb[value='trigger_type']").isChecked())
                     .as("trigger_type checkbox should be pre-checked from the saved value")
                     .isTrue();
             assertThat(page.locator("#jwtSubjectPreview").inputValue())
                     .as("preview should include the trigger_type segment from the saved state")
                     .contains(":trigger_type:");
-        }
+        });
     }
 
     @Test
     void invalidTtlShowsValidationErrorAndDoesNotSave() throws Exception {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
+        inFeatureEditor(page -> {
             // 999999 is well above the 1440 hard cap; TC's properties processor rejects it.
             page.locator("#ttl_minutes").fill("999999");
             page.locator("#submitBuildFeatureId").click();
             // Wait for the server-side validation response — the error span starts empty
             // and TC populates it via the failed-save AJAX response.
-            page.locator("#error_ttl_minutes").filter(new com.microsoft.playwright.Locator.FilterOptions()
+            page.locator("#error_ttl_minutes").filter(new Locator.FilterOptions()
                     .setHasText("Token lifetime")).waitFor();
             assertThat(page.locator("#submitBuildFeatureId").isVisible())
                     .as("modal should still be open after validation failure")
                     .isTrue();
-        }
+        });
 
         // Confirm via REST that the persisted value is unchanged.
         assertThat(readFeatureProperties().get("ttl_minutes"))
@@ -295,9 +249,7 @@ public class BuildFeatureUIIT {
 
     @Test
     void unknownSubjectDimensionShowsValidationErrorAndDoesNotSave() throws Exception {
-        try (final var context = newLoggedInContext()) {
-            final var page = context.newPage();
-            navigateToFeatureEditor(page);
+        inFeatureEditor(page -> {
             // The UI checkboxes never produce invalid values, but a direct edit (REST /
             // Kotlin DSL) could. Simulate that by writing a garbage value into the hidden
             // form field via JS and clicking Save. Dispatch input + change so any TC dirty-
@@ -309,12 +261,12 @@ public class BuildFeatureUIIT {
                     + " el.dispatchEvent(new Event('change', {bubbles: true}));"
                     + "})()");
             page.locator("#submitBuildFeatureId").click();
-            page.locator("#error_subject_dimensions").filter(new com.microsoft.playwright.Locator.FilterOptions()
+            page.locator("#error_subject_dimensions").filter(new Locator.FilterOptions()
                     .setHasText("brnach")).waitFor();
             assertThat(page.locator("#submitBuildFeatureId").isVisible())
                     .as("modal should still be open after validation failure")
                     .isTrue();
-        }
+        });
 
         // Confirm via REST that the persisted value is unchanged (still empty / default).
         assertThat((String) readFeatureProperties().get("subject_dimensions"))
@@ -325,6 +277,38 @@ public class BuildFeatureUIIT {
     // -------------------------------------------------------------------------
     // Playwright helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Opens a fresh logged-in browser context, navigates to the feature editor, and runs
+     * {@code action}. Does not click Save — use for read-only inspection or for tests that
+     * explicitly handle their own save / validation-error flow.
+     */
+    private void inFeatureEditor(final Consumer<Page> action) {
+        try (final var context = newLoggedInContext()) {
+            final var page = context.newPage();
+            navigateToFeatureEditor(page);
+            action.accept(page);
+        }
+    }
+
+    /**
+     * Opens a fresh feature editor, runs {@code action}, then clicks Save and waits for the
+     * modal to close. Built on top of {@link #inFeatureEditor} — use for the common
+     * "edit one field and save" pattern.
+     */
+    private void editFeature(final Consumer<Page> action) {
+        inFeatureEditor(page -> {
+            action.accept(page);
+            saveBuildFeature(page);
+        });
+    }
+
+    /** Applies {@code action} to every {@code .jwt-subject-dimension-cb} on the page. */
+    private void forEachDimensionCheckbox(final Page page, final Consumer<Locator> action) {
+        for (final var cb : page.locator(".jwt-subject-dimension-cb").all()) {
+            action.accept(cb);
+        }
+    }
 
     /**
      * Creates a browser context that authenticates every request via HTTP Basic auth using
