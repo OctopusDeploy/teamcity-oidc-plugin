@@ -18,7 +18,7 @@ Click **Get thumbprint**, then **Add provider**.
 
 Create a role with a **Web identity** trusted entity. Select the OIDC provider you just created.
 
-In the trust policy, add conditions to restrict which builds can assume the role. Match on `build_type_internal_id` (or `project_internal_id`) rather than the external ID — internal IDs are immutable across project/build-type renames, so an admin rename can't silently change which builds can assume the role.
+In the trust policy, add conditions to restrict which builds can assume the role. For self-hosted OIDC providers AWS only exposes the standard OIDC claims (`sub`, `aud`, `amr`, `oaud`, `email`) as IAM condition keys — the plugin's custom claims (`build_type_internal_id`, `project_internal_id`, `branch`, `trigger_type`, etc.) are emitted into the token but are **not** available in trust policies. See [Available keys for AWS OIDC federation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#condition-keys-wif) for the authoritative list. Restrict access by matching on `sub`, which the plugin composes as a colon-separated identifier built from the build's rename-stable internal IDs: `project:<project_internal_id>:build_type:<build_type_internal_id>[:branch:<branch>][:trigger_type:<trigger>]`.
 
 ```json
 {
@@ -33,7 +33,7 @@ In the trust policy, add conditions to restrict which builds can assume the role
       "Condition": {
         "StringEquals": {
           "teamcity.example.com:aud": "sts.amazonaws.com",
-          "teamcity.example.com:build_type_internal_id": "bt42"
+          "teamcity.example.com:sub": "project:MyApp_Backend:build_type:bt42"
         }
       }
     }
@@ -41,9 +41,7 @@ In the trust policy, add conditions to restrict which builds can assume the role
 }
 ```
 
-Replace `teamcity.example.com` with your TeamCity hostname (without `https://`), and `bt42` with the build type's internal ID — visible in the build type URL (`.../buildType/bt42`) or the editor's "Build type ID" field. To trust any build type within a project, match on `project_internal_id` instead.
-
-The token's `sub` claim is a composite identifier (`project:<project_internal_id>:build_type:<build_type_internal_id>[:branch:<branch>][:trigger_type:<trigger>]`) and can also be matched with `StringLike` and a wildcard, but matching the explicit `*_internal_id` claims is usually clearer.
+Replace `teamcity.example.com` with your TeamCity hostname (without `https://`), and replace `MyApp_Backend` and `bt42` with your project and build-type internal IDs. The build type's internal ID is visible in its URL (`.../buildType/bt42`) or in the editor's "Build type ID" field; the project's internal ID is visible similarly under `.../project/<id>`. Internal IDs are immutable across renames, so an admin rename can't silently change which builds can assume the role. To trust any build type within a project, use `StringLike` with a wildcard value of `"project:MyApp_Backend:build_type:*"`.
 
 Attach the required permissions policies to the role.
 
@@ -92,17 +90,15 @@ With this approach the token must still be valid at the point `assume-role-with-
 
 ## Restricting access further
 
-The trust policy condition can use any claim included in the token (claims are always emitted regardless of the build feature's Subject scoping configuration). For example, to restrict to builds triggered from the `main` branch by a real user:
+To restrict by branch or trigger type, opt in to those dimensions in the build feature's **Subject scoping** configuration. The plugin will then append them to the `sub` claim, which lets you match them exactly in the trust policy. For example, to restrict to builds triggered from the `main` branch by a real user (with both `branch` and `trigger_type` enabled in Subject scoping):
 
 ```json
 "Condition": {
   "StringEquals": {
     "teamcity.example.com:aud": "sts.amazonaws.com",
-    "teamcity.example.com:build_type_internal_id": "bt42",
-    "teamcity.example.com:branch": "refs/heads/main",
-    "teamcity.example.com:trigger_type": "user"
+    "teamcity.example.com:sub": "project:MyApp_Backend:build_type:bt42:branch:refs/heads/main:trigger_type:user"
   }
 }
 ```
 
-Available claims include `build_type_internal_id`, `project_internal_id`, `build_type_external_id`, `project_external_id`, `branch`, and `trigger_type`. See the [Configuration Reference](configuration.md#standard-claims) for the full list.
+The dimensions are appended to `sub` in a fixed order — `project`, `build_type`, `branch`, `trigger_type` — so only the trailing dimensions are optional. See the [Subject claim](configuration.md#subject-claim) section of the Configuration Reference for the full grammar and the values each dimension can take (e.g. `trigger_type` is one of `user`, `snapshotDependency`, `vcsTrigger`, `schedulingTrigger`, etc.). To match a subset of values (e.g. any branch under `refs/heads/`), use `StringLike` with `*` wildcards instead of `StringEquals`.
