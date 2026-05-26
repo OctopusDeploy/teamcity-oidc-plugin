@@ -2,7 +2,7 @@
 
 A TeamCity plugin that turns your TeamCity server into an OIDC identity provider, enabling workload identity federation with cloud services — no static credentials required.
 
-When a build starts, the plugin issues a signed JWT and injects it as the masked build parameter `jwt.token`. Cloud providers (AWS, Azure, GCP, Octopus Deploy) verify the token against the plugin's public JWKS endpoint and grant access based on the claims it contains. No secrets need to be stored in TeamCity or on the build agent.
+When a build starts, the plugin issues a signed JWT and injects it as the masked build parameter `jwt.token`. Cloud providers (AWS, Azure, GCP, Octopus Deploy, JFrog Artifactory) verify the token against the plugin's public JWKS endpoint and grant access based on the claims it contains. No secrets need to be stored in TeamCity or on the build agent.
 
 ## Requirements
 
