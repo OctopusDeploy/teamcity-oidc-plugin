@@ -5,11 +5,11 @@ TeamCity can authenticate to JFrog Artifactory using its [OIDC integration](http
 The flow is:
 
 1. The OIDC Identity Token build feature mints a JWT in the build.
-2. The build calls JFrog's token exchange endpoint, passing the JWT.
-3. JFrog verifies the JWT against TeamCity's JWKS, matches it to an identity mapping, and returns a scoped access token.
+2. The build calls Artifactory's token exchange endpoint, passing the JWT.
+3. Artifactory verifies the JWT against TeamCity's JWKS, matches it to an identity mapping, and returns a scoped access token.
 4. The build uses the access token to `docker login` and push.
 
-Your TeamCity server must be reachable from Artifactory at `<issuer>/.well-known/openid-configuration` and `<issuer>/.well-known/jwks.json` — JFrog fetches the JWKS to verify token signatures.
+Your TeamCity server must be reachable from Artifactory at `<issuer>/.well-known/openid-configuration` and `<issuer>/.well-known/jwks.json` — Artifactory fetches the JWKS to verify token signatures.
 
 ## Setup
 
@@ -22,7 +22,7 @@ In the JFrog Platform UI, go to **Administration → General Management → Mana
 - **Provider URL:** your TeamCity root URL (e.g. `https://teamcity.example.com`), or the value of **Override issuer URL** if one is configured under Administration → OIDC / JWT. No trailing slash.
 - **Audience:** a stable string of your choice (e.g. `jfrog-artifactory`). You will enter the same value in the build feature.
 
-You will need to add an identity mapping which will be done in step 3. The identity mapping references the subject scope provided in the next step.
+You will add an identity mapping in step 3; the identity mapping references the subject scope provided in the next step.
 
 ### 2. Add the OIDC Identity Token build feature configuration in TeamCity
 
@@ -49,11 +49,11 @@ Identity mappings restrict which tokens this integration will accept and define 
   {
     "iss": "https://teamcity.example.com",
     "aud": "jfrog-artifactory",
-    "sub": "project:MyApp_Backend:build_type:bt42"
+    "sub": "project:project7:build_type:bt42"
   }
   ```
 
-  Replace `iss` with your actual issuer URL and `sub` with `project:<project_internal_id>:build_type:<build_type_internal_id>` for the build you want to trust. The internal IDs are visible in the build type URL (`.../buildType/bt42`) and are immutable across renames. JFrog supports `*` wildcards in claim values, so `"sub": "project:MyApp_Backend:build_type:*"` trusts any build type in that project.
+  Replace `iss` with your actual issuer URL and `sub` with `project:<project_internal_id>:build_type:<build_type_internal_id>` for the build you want to trust. The internal IDs are visible in the build type URL (`.../buildType/bt42`) and are immutable across renames. JFrog supports `*` wildcards in claim values, so `"sub": "project:project7:build_type:*"` trusts any build type in that project.
 
 - **Token scope:** `applied-permissions/groups` is the recommended scope — select a group that has push rights to the target Docker repository. Avoid `applied-permissions/admin`.
 - **Token expiry:** match your typical build duration (e.g. `1800` seconds).
@@ -126,7 +126,7 @@ To restrict by branch or trigger type, opt in to those dimensions in the build f
 {
   "iss": "https://teamcity.example.com",
   "aud": "jfrog-artifactory",
-  "sub": "project:MyApp_Backend:build_type:bt42:branch:refs/heads/main:trigger_type:user"
+  "sub": "project:project7:build_type:bt42:branch:refs/heads/main:trigger_type:user"
 }
 ```
 
@@ -134,7 +134,7 @@ To match any branch under `refs/heads/` but still require a user trigger, use a 
 
 ```json
 {
-  "sub": "project:MyApp_Backend:build_type:bt42:branch:refs/heads/*:trigger_type:user"
+  "sub": "project:project7:build_type:bt42:branch:refs/heads/*:trigger_type:user"
 }
 ```
 
