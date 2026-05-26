@@ -102,6 +102,7 @@
             <span class="smallNote">
                 <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/aws.md" target="_blank" rel="noopener">AWS</a> &middot;
                 <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/azure.md" target="_blank" rel="noopener">Azure</a> &middot;
+                <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/artifactory.md" target="_blank" rel="noopener">JFrog Artifactory</a> &middot;
                 <a href="https://github.com/OctopusDeploy/teamcity-oidc-plugin/blob/main/docs/octopus-deploy.md" target="_blank" rel="noopener">Octopus Deploy</a>
             </span>
         </td>
