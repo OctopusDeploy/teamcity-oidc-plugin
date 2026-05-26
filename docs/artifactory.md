@@ -100,7 +100,7 @@ docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/${IMAGE}"
 
 Notes:
 
-- `provider_name` in the POST body must match the OIDC integration name in JFrog exactly.
+- `provider_name` in the POST body must match the OIDC integration name in Artifactory exactly.
 - The TeamCity JWT only needs to be valid at the point of the exchange call, so a 5–10 minute TTL is plenty even for long builds. The returned Artifactory access token has its own expiry (set on the identity mapping).
 - `%jwt.token%` is a masked parameter, so its value is redacted in build logs.
 - `DOCKER_REGISTRY` can be either path-style (`mycompany.jfrog.io`) or repo-subdomain style (`mycompany-docker-local.jfrog.io`), depending on how your JFrog Platform is set up.
@@ -140,24 +140,24 @@ To match any branch under `refs/heads/` but still require a user trigger, use a 
 
 See the [Subject claim](configuration.md#subject-claim) section of the Configuration Reference for the full grammar and the values each dimension can take.
 
-## "Try Exchange" does not work with Artifactory
-
-The build feature editor's **Try Exchange** button targets [RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693)-conforming OIDC token endpoints. It will fail against Artifactory for two separate reasons:
-
-1. **The button discovers before it exchanges.** It only asks for a base "Service URL" and then probes `<serviceUrl>/.well-known/openid-configuration` to locate the token endpoint. Artifactory is an OIDC consumer, not an issuer, so it doesn't publish a discovery document — the probe 404s and the exchange step is never reached.
-2. **The request shape differs from RFC 8693.** Even if discovery were skipped, the exchange call itself would still fail:
-
-   | | RFC 8693 (what the button sends) | JFrog `/access/api/v1/oidc/token` |
-   |---|---|---|
-   | Content-Type | `application/x-www-form-urlencoded` ([RFC 6749 §3.2](https://datatracker.ietf.org/doc/html/rfc6749#section-3.2)) | `application/json` |
-   | `subject_token_type` | `urn:ietf:params:oauth:token-type:jwt` | `urn:ietf:params:oauth:token-type:id_token` |
-   | Provider selection | Single token endpoint per issuer | Requires a `provider_name` field naming the configured integration |
-
-Verify the integration with a real build step using the `curl` example above instead.
-
 ## Troubleshooting
 
 - `curl -fsS https://teamcity.example.com/.well-known/openid-configuration` should return JSON from a host that can reach Artifactory. If JFrog cannot fetch this or the JWKS, the token exchange fails with a signature-verification error.
 - `invalid subject token issuer` from the exchange endpoint means the `iss` claim in the JWT does not match the **Provider URL** on the integration. Check for trailing slashes and `http` vs `https` mismatches.
 - `no identity mapping found` means the JWT verified but no mapping matched. Decode the token at jwt.io and compare every claim against the mapping JSON; the comparison is exact apart from `*` wildcards.
 - If `docker push` returns `unauthorized` despite a successful login, check the group selected on the identity mapping — it must have **Deploy/Cache** permission on the target Docker repository.
+
+### "Try Exchange" does not work with Artifactory
+
+The build feature editor's **Try Exchange** button targets [RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693)-conforming OIDC token endpoints. It will fail against Artifactory for two separate reasons:
+
+1. **The button discovers before it exchanges.** It only asks for a base "Service URL" and then probes `<serviceUrl>/.well-known/openid-configuration` to locate the token endpoint. Artifactory is an OIDC consumer, not an issuer, so it doesn't publish a discovery document — the probe 404s and the exchange step is never reached.
+2. **The request shape differs from RFC 8693.** Even if discovery were skipped, the exchange call itself would still fail:
+
+   |                      | RFC 8693 (what the button sends)                                                                                 | JFrog `/access/api/v1/oidc/token`                                  |
+   |----------------------|------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
+   | Content-Type         | `application/x-www-form-urlencoded` ([RFC 6749 §3.2](https://datatracker.ietf.org/doc/html/rfc6749#section-3.2)) | `application/json`                                                 |
+   | `subject_token_type` | `urn:ietf:params:oauth:token-type:jwt`                                                                           | `urn:ietf:params:oauth:token-type:id_token`                        |
+   | Provider selection   | Single token endpoint per issuer                                                                                 | Requires a `provider_name` field naming the configured integration |
+
+Verify the integration with a real build step using the `curl` example above instead.
