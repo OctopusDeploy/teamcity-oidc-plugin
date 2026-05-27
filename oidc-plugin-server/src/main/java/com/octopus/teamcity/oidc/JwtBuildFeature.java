@@ -28,21 +28,26 @@ public class JwtBuildFeature extends BuildFeature {
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
     private static volatile SBuildServer staticBuildServer;
     private static volatile OidcSettingsManager staticOidcSettingsManager;
+    private static volatile OidcConnectionsManager staticOidcConnectionsManager;
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final OidcSettingsManager oidcSettingsManager;
+    private final OidcConnectionsManager oidcConnectionsManager;
 
     public JwtBuildFeature(@NotNull final PluginDescriptor pluginDescriptor,
                            @NotNull final SBuildServer buildServer,
                            @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
-                           @NotNull final OidcSettingsManager oidcSettingsManager) {
+                           @NotNull final OidcSettingsManager oidcSettingsManager,
+                           @NotNull final OidcConnectionsManager oidcConnectionsManager) {
         this.pluginDescriptor = pluginDescriptor;
         this.issuerUrlProvider = issuerUrlProvider;
         this.oidcSettingsManager = oidcSettingsManager;
+        this.oidcConnectionsManager = oidcConnectionsManager;
         staticIssuerUrlProvider = issuerUrlProvider;
         staticBuildServer = buildServer;
         staticOidcSettingsManager = oidcSettingsManager;
+        staticOidcConnectionsManager = oidcConnectionsManager;
     }
 
     /** Used by the edit JSP to check the issuer URL without Spring context access. */
@@ -99,6 +104,23 @@ public class JwtBuildFeature extends BuildFeature {
         return new SampleClaims(branchName, triggerType, hasVcsRoot, projectInternalId, buildTypeInternalId);
     }
 
+    /** Used by the edit JSP to populate the connection dropdown. */
+    public static @NotNull java.util.List<OidcConnection> availableConnectionsFor(@Nullable final String buildTypeIdParam) {
+        final var server = staticBuildServer;
+        final var manager = staticOidcConnectionsManager;
+        if (server == null || manager == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
+            return java.util.List.of();
+        }
+        // The build feature edit dialog passes id as "buildType:<externalId>".
+        // Strip the prefix when present so findBuildTypeByExternalId resolves it.
+        final var externalId = buildTypeIdParam.startsWith("buildType:")
+                ? buildTypeIdParam.substring("buildType:".length())
+                : buildTypeIdParam;
+        final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
+        if (buildType == null) return java.util.List.of();
+        return manager.listAvailable(buildType.getProject());
+    }
+
     @NotNull
     @Override
     public String getType() {
@@ -114,6 +136,21 @@ public class JwtBuildFeature extends BuildFeature {
     @NotNull
     @Override
     public String describeParameters(@NotNull final java.util.Map<String, String> params) {
+        final var connectionId = params.getOrDefault("connection_id", "").trim();
+        if (!connectionId.isEmpty() && staticOidcConnectionsManager != null && staticBuildServer != null) {
+            final var rootProject = staticBuildServer.getProjectManager().getRootProject();
+            final var resolved = staticOidcConnectionsManager.resolve(rootProject, connectionId);
+            if (resolved.isPresent()) {
+                final var conn = resolved.get();
+                final var sb = new StringBuilder("connection: ").append(conn.displayName());
+                // Show the sub claim's template form — concrete IDs and runtime values aren't
+                // available here, but the template matches what the consumer will see.
+                sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
+                sb.append("\naud:").append(conn.settings().audience());
+                return sb.toString();
+            }
+            return "connection: <unknown id " + connectionId + ">";
+        }
         final var audience = params.get("audience");
         final var sb = new StringBuilder();
         // Show the sub claim's template form — concrete project/build_type IDs and the
@@ -169,6 +206,21 @@ public class JwtBuildFeature extends BuildFeature {
                         "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
                                 "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
             }
+            final var connectionId = params.getOrDefault("connection_id", "").trim();
+            if (!connectionId.isEmpty()) {
+                // When a connection is selected, skip inline TTL/subject validation and instead
+                // verify the connection still exists in the project hierarchy.
+                if (buildTypeOrTemplate instanceof final jetbrains.buildServer.serverSide.SBuildType bt) {
+                    final var resolved = oidcConnectionsManager.resolve(bt.getProject(), connectionId);
+                    if (resolved.isEmpty()) {
+                        errors.add(new InvalidProperty("connection_id",
+                                "Selected connection no longer exists in this project. "
+                                        + "Pick another connection or clear the field to configure inline settings."));
+                    }
+                }
+                return errors;
+            }
+            // Inline validation: TTL and subject_dimensions.
             final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
             final var ttl = params.getOrDefault("ttl_minutes", "10");
             try {
