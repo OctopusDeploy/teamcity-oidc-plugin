@@ -97,3 +97,43 @@
         updatePreview();
     });
 </script>
+
+<%-- Test preview button --%>
+<tr>
+    <th><label>Preview:</label></th>
+    <td>
+        <input type="button" value="Preview sample token" class="btn"
+               onclick="event.stopPropagation(); window.oidcConnPreview();"/>
+        <div id="oidcConnPreviewResult" style="margin-top:8px;font-family:monospace;font-size:12px;color:#888;"></div>
+    </td>
+</tr>
+
+<script type="text/javascript">
+    const _oidcConnTestUrl = '${pageContext.request.contextPath}/admin/oidcConnectionTest.html';
+    window.oidcConnPreview = async () => {
+        const result = document.getElementById('oidcConnPreviewResult');
+        result.textContent = '⏳ Generating preview...';
+        result.style.color = '#888';
+        const params = {
+            audience: document.getElementById('audience').value,
+            ttl_minutes: document.getElementById('ttl_minutes').value,
+            algorithm: document.getElementById('algorithm').value,
+            subject_dimensions: document.getElementById('subject_dimensions').value
+        };
+        const body = Object.entries(params).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v || '')).join('&');
+        const csrfMeta = document.querySelector('meta[name="tc-csrf-token"]');
+        const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+        const r = await fetch(_oidcConnTestUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-TC-CSRF-Token': csrf },
+            body
+        }).then(r => r.json());
+        if (r.ok) {
+            result.style.color = '#7ec87e';
+            result.textContent = '✓ sub: ' + r.sub + '  |  aud: ' + r.aud + '  |  alg: ' + r.alg + '  |  ttl: ' + r.ttl_minutes + 'm';
+        } else {
+            result.style.color = '#e06c75';
+            result.textContent = '✗ ' + (r.message || 'preview failed');
+        }
+    };
+</script>

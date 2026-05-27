@@ -27,5 +27,6 @@
     <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter" destroy-method="destroy"/>
     <bean id="oidcConnectionProvider" class="com.octopus.teamcity.oidc.OidcConnectionProvider"/>
     <bean id="oidcConnectionsManager" class="com.octopus.teamcity.oidc.OidcConnectionsManager"/>
+    <bean id="oidcConnectionTestController" class="com.octopus.teamcity.oidc.OidcConnectionTestController"/>
 </beans>
 
