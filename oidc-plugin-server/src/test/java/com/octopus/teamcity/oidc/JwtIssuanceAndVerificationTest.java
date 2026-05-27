@@ -215,7 +215,8 @@ public class JwtIssuanceAndVerificationTest {
         final var service = new JwtIssuanceService(
                 providerFor("https://teamcity.example.com"),
                 keyManager,
-                new OidcSettingsManager(tempDir));
+                new OidcSettingsManager(tempDir),
+                mock(OidcConnectionsManager.class));
         return service.issueOrGet(runningBuild)
                 .orElseThrow(() -> new AssertionError("issueOrGet returned empty"));
     }

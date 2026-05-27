@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,6 +27,7 @@ public class JwtIssuanceServiceTest {
     @Mock ServerPaths serverPaths;
     @Mock SRunningBuild runningBuild;
     @Mock SBuildFeatureDescriptor featureDescriptor;
+    @Mock OidcConnectionsManager connectionsManager;
 
     @TempDir File tempDir;
 
@@ -40,7 +42,8 @@ public class JwtIssuanceServiceTest {
         service = new JwtIssuanceService(
                 new OidcIssuerUrlProvider(server, new OidcSettingsManager(tempDir)),
                 keyManager,
-                new OidcSettingsManager(tempDir));
+                new OidcSettingsManager(tempDir),
+                connectionsManager);
     }
 
     /** Wires the JWT build feature into the build with default params. */
@@ -109,8 +112,57 @@ public class JwtIssuanceServiceTest {
         final var insecureService = new JwtIssuanceService(
                 new OidcIssuerUrlProvider(server, new OidcSettingsManager(tempDir)),
                 keyManager,
-                new OidcSettingsManager(tempDir));
+                new OidcSettingsManager(tempDir),
+                mock(OidcConnectionsManager.class));
 
         assertThat(insecureService.issueOrGet(runningBuild)).isEmpty();
+    }
+
+    @Test
+    public void usesConnectionSettingsWhenConnectionIdSet() throws Exception {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", "c1"));
+        when(runningBuild.getBuildId()).thenReturn(42L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, "c1")).thenReturn(java.util.Optional.of(
+                new OidcConnection("c1", "p1", "Test",
+                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()))));
+
+        final var token = service.issueOrGet(runningBuild).orElseThrow();
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet();
+
+        assertThat(parsed.getAudience()).containsExactly("api://from-connection");
+    }
+
+    @Test
+    public void throwsWhenConnectionIdReferencesMissingConnection() {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", "missing"));
+        when(runningBuild.getBuildId()).thenReturn(43L);
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, "missing")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> service.issueOrGet(runningBuild))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("connection 'missing' could not be found");
+    }
+
+    @Test
+    public void usesInlineSettingsWhenNoConnectionIdSet() throws Exception {
+        enableFeature();
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("audience", "api://inline"));
+        when(runningBuild.getBuildId()).thenReturn(44L);
+
+        final var token = service.issueOrGet(runningBuild).orElseThrow();
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet();
+
+        assertThat(parsed.getAudience()).containsExactly("api://inline");
     }
 }

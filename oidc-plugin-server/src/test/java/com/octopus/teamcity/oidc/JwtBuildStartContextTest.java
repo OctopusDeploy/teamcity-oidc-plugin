@@ -48,7 +48,7 @@ public class JwtBuildStartContextTest {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var service = new JwtIssuanceService(providerFor(issuerUrl), keyManager,
-                new OidcSettingsManager(tempDir));
+                new OidcSettingsManager(tempDir), mock(OidcConnectionsManager.class));
         return new JwtBuildStartContext(extensionHolder, service);
     }
 

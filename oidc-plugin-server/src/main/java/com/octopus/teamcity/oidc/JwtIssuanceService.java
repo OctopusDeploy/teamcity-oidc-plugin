@@ -32,15 +32,18 @@ public class JwtIssuanceService {
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final JwtKeyManager keyManager;
     private final OidcSettingsManager oidcSettingsManager;
+    private final OidcConnectionsManager connectionsManager;
 
     private final ConcurrentHashMap<Long, String> tokenByBuildId = new ConcurrentHashMap<>();
 
     public JwtIssuanceService(@NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                               @NotNull final JwtKeyManager keyManager,
-                              @NotNull final OidcSettingsManager oidcSettingsManager) {
+                              @NotNull final OidcSettingsManager oidcSettingsManager,
+                              @NotNull final OidcConnectionsManager connectionsManager) {
         this.issuerUrlProvider = issuerUrlProvider;
         this.keyManager = keyManager;
         this.oidcSettingsManager = oidcSettingsManager;
+        this.connectionsManager = connectionsManager;
     }
 
     /**
@@ -48,8 +51,9 @@ public class JwtIssuanceService {
      * value on subsequent calls. Returns {@link Optional#empty()} if the build has no
      * JWT feature configured, or if the configured issuer URL is not HTTPS.
      *
-     * @throws RuntimeException if signing fails — propagated to fail the build, mirroring
-     *         the previous behaviour.
+     * @throws RuntimeException if signing fails, or if the build feature references an
+     *         {@code connection_id} that cannot be resolved in the build's project
+     *         hierarchy — both fail the build with a clear message in the build log.
      */
     public Optional<String> issueOrGet(@NotNull final SBuild build) {
         if (build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
@@ -63,50 +67,63 @@ public class JwtIssuanceService {
     }
 
     private String issue(final SBuild build) {
+        final var descriptor = build
+                .getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)
+                .stream()
+                .findFirst()
+                .orElseThrow();
+        final var params = descriptor.getParameters();
+
+        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
+        LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
+                + ", issuerUrl=" + sanitize(issuerUrl));
+
+        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
+            LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
+            return null;
+        }
+
+        final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
+        final var connectionId = params.get("connection_id");
+        final IssuanceSettings settings;
+        if (connectionId != null && !connectionId.isBlank()) {
+            final var project = build.getBuildType().getProject();
+            final var resolved = connectionsManager.resolve(project, connectionId);
+            if (resolved.isEmpty()) {
+                throw new RuntimeException("JWT plugin: OIDC Identity Token connection '"
+                        + sanitize(connectionId) + "' could not be found in this project or any parent. "
+                        + "Edit the build feature and select a valid connection, or remove the connection reference.");
+            }
+            settings = resolved.get().settings();
+        } else {
+            settings = IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
+        }
+
+        final var branchName = ClaimsResolver.resolveBranchName(build);
+        final var triggerType = ClaimsResolver.resolveTriggerType(build.getTriggeredBy());
+
+        final var subject = composeSubject(build, settings.subjectDimensions(), branchName, triggerType);
+
+        final var now = Instant.now();
+        final var claimsBuilder = new JWTClaimsSet.Builder()
+                .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
+                .subject(subject)
+                .audience(List.of(settings.audience()))
+                .issuer(issuerUrl)
+                .issueTime(Date.from(now))
+                .notBeforeTime(Date.from(now))
+                .expirationTime(Date.from(now.plus(settings.ttlMinutes(), ChronoUnit.MINUTES)))
+                .claim("build_type_external_id", build.getBuildTypeExternalId())
+                .claim("project_external_id", build.getProjectExternalId())
+                .claim("build_type_internal_id", build.getBuildTypeId())
+                .claim("project_internal_id", build.getProjectId())
+                .claim("trigger_type", triggerType);
+
+        if (!branchName.isEmpty()) {
+            claimsBuilder.claim("branch", branchName);
+        }
+
         try {
-            final var descriptor = build
-                    .getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)
-                    .stream()
-                    .findFirst()
-                    .orElseThrow();
-            final var params = descriptor.getParameters();
-
-            final var issuerUrl = issuerUrlProvider.getIssuerUrl();
-            LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
-                    + ", issuerUrl=" + sanitize(issuerUrl));
-
-            if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
-                LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
-                return null;
-            }
-
-            final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
-            final var settings = IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
-
-            final var branchName = ClaimsResolver.resolveBranchName(build);
-            final var triggerType = ClaimsResolver.resolveTriggerType(build.getTriggeredBy());
-
-            final var subject = composeSubject(build, settings.subjectDimensions(), branchName, triggerType);
-
-            final var now = Instant.now();
-            final var claimsBuilder = new JWTClaimsSet.Builder()
-                    .jwtID(build.getBuildId() + "-" + UUID.randomUUID())
-                    .subject(subject)
-                    .audience(List.of(settings.audience()))
-                    .issuer(issuerUrl)
-                    .issueTime(Date.from(now))
-                    .notBeforeTime(Date.from(now))
-                    .expirationTime(Date.from(now.plus(settings.ttlMinutes(), ChronoUnit.MINUTES)))
-                    .claim("build_type_external_id", build.getBuildTypeExternalId())
-                    .claim("project_external_id", build.getProjectExternalId())
-                    .claim("build_type_internal_id", build.getBuildTypeId())
-                    .claim("project_internal_id", build.getProjectId())
-                    .claim("trigger_type", triggerType);
-
-            if (!branchName.isEmpty()) {
-                claimsBuilder.claim("branch", branchName);
-            }
-
             final var signedJWT = keyManager.sign(claimsBuilder.build(), settings.signingAlgorithm());
             LOG.info("JWT plugin: JWT issued successfully for build " + build.getBuildId()
                     + " (iss=" + sanitize(issuerUrl) + ", aud=" + sanitize(settings.audience())
@@ -116,9 +133,6 @@ public class JwtIssuanceService {
         } catch (final JOSEException e) {
             LOG.log(Level.SEVERE, "JWT plugin: JOSEException while signing JWT for build " + build.getBuildId(), e);
             throw new RuntimeException("JWT plugin: failed to sign token — check the TeamCity server log for details");
-        } catch (final RuntimeException e) {
-            LOG.log(Level.SEVERE, "JWT plugin: unexpected exception issuing JWT for build " + build.getBuildId(), e);
-            throw new RuntimeException("JWT plugin: unexpected error issuing token — check the TeamCity server log for details");
         }
     }
 
