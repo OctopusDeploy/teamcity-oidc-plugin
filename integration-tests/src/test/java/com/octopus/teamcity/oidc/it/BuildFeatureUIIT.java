@@ -248,6 +248,43 @@ public class BuildFeatureUIIT {
     }
 
     @Test
+    void connectionDropdownHidesInlineFieldsAndShowsSummary() throws Exception {
+        // Create a connection at _Root so it is visible to the UITest project.
+        final var connectionId = createOidcConnection("_Root", "UI Test Conn",
+                "api://ui-test-audience", 30, "ES256", "");
+
+        editFeature(page -> {
+            // Connection dropdown must exist and list the new connection.
+            // allInnerTexts() may include surrounding whitespace from the JSP template, so strip
+            // before comparing rather than relying on exact text equality.
+            assertThat(page.locator("#connection_id").isVisible()).isTrue();
+            assertThat(page.locator("#connection_id option").allInnerTexts()
+                    .stream().map(String::trim).toList()).contains("UI Test Conn");
+
+            // Initial state: no connection selected — inline fields visible, summary hidden.
+            assertThat(page.locator("#audience").isVisible()).isTrue();
+            assertThat(page.locator("#jwt_conn_summary").isVisible()).isFalse();
+
+            // Select the connection by its generated id.
+            page.selectOption("#connection_id",
+                    new com.microsoft.playwright.options.SelectOption().setValue(connectionId));
+
+            // Inline fields must disappear and the summary must show with the right audience.
+            assertThat(page.locator("#audience").isVisible()).isFalse();
+            assertThat(page.locator("#jwt_conn_summary").isVisible()).isTrue();
+            assertThat(page.locator("#jwt_conn_summary").textContent()).contains("api://ui-test-audience");
+
+            // Switch back to "(no connection)".
+            page.selectOption("#connection_id",
+                    new com.microsoft.playwright.options.SelectOption().setValue(""));
+
+            // Inline fields must reappear and summary must hide.
+            assertThat(page.locator("#audience").isVisible()).isTrue();
+            assertThat(page.locator("#jwt_conn_summary").isVisible()).isFalse();
+        });
+    }
+
+    @Test
     void unknownSubjectDimensionShowsValidationErrorAndDoesNotSave() throws Exception {
         inFeatureEditor(page -> {
             // The UI checkboxes never produce invalid values, but a direct edit (REST /
@@ -405,6 +442,47 @@ public class BuildFeatureUIIT {
             throw new IllegalStateException("Setting feature property " + name + " failed: "
                     + response.statusCode() + ": " + response.body());
         }
+    }
+
+    /**
+     * Creates an OIDC Identity Token connection as a projectFeature on the given parent project
+     * and returns the generated connection id (PROJECT_EXT_* form).
+     */
+    private static String createOidcConnection(
+            final String parentProjectId,
+            final String displayName,
+            final String audience,
+            final int ttlMinutes,
+            final String algorithm,
+            final String subjectDimensions) throws Exception {
+        final var json = """
+                {"type":"OAuthProvider","properties":{"property":[
+                  {"name":"providerType","value":"oidc-identity-token"},
+                  {"name":"displayName","value":"%s"},
+                  {"name":"audience","value":"%s"},
+                  {"name":"ttl_minutes","value":"%d"},
+                  {"name":"algorithm","value":"%s"},
+                  {"name":"subject_dimensions","value":"%s"}
+                ]}}
+                """.formatted(displayName, audience, ttlMinutes, algorithm, subjectDimensions);
+        final var response = http.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/httpAuth/app/rest/projects/" + parentProjectId + "/projectFeatures"))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException(
+                    "Failed to create OIDC connection: " + response.statusCode() + ": " + response.body());
+        }
+        final var id = (String) parseJson(response.body()).get("id");
+        if (id == null) throw new IllegalStateException(
+                "Could not extract connection id from TC response: " + response.body());
+        return id;
     }
 
     private static String addBuildFeature() throws Exception {
