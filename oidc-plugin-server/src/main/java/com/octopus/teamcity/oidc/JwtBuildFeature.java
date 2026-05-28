@@ -56,6 +56,12 @@ public class JwtBuildFeature extends BuildFeature {
         return staticIssuerUrlProvider != null && OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
     }
 
+    /** Used by the edit JSP to display the resolved issuer URL as a readonly field. */
+    public static @NotNull String issuerUrl() {
+        final var provider = staticIssuerUrlProvider;
+        return provider == null ? "" : provider.getIssuerUrl();
+    }
+
     /**
      * Used by the edit JSP to read the configured max token lifetime without going through
      * Spring's {@code WebApplicationContextUtils}, which only sees TC's root web context and
@@ -78,12 +84,13 @@ public class JwtBuildFeature extends BuildFeature {
                                @NotNull String triggerType,
                                boolean hasVcsRoot,
                                @NotNull String projectInternalId,
+                               @NotNull String projectExternalId,
                                @NotNull String buildTypeInternalId) {}
 
     public static SampleClaims sampleClaimsFor(@Nullable final String buildTypeIdParam) {
         final var server = staticBuildServer;
         if (server == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
-            return new SampleClaims("", "", false, "", "");
+            return new SampleClaims("", "", false, "", "", "");
         }
         // The build feature edit dialog passes id as "buildType:<externalId>".
         // Strip the prefix when present so findBuildTypeByExternalId resolves it.
@@ -91,18 +98,19 @@ public class JwtBuildFeature extends BuildFeature {
                 ? buildTypeIdParam.substring("buildType:".length())
                 : buildTypeIdParam;
         final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
-        if (buildType == null) return new SampleClaims("", "", false, "", "");
+        if (buildType == null) return new SampleClaims("", "", false, "", "", "");
         final var hasVcsRoot = !buildType.getVcsRoots().isEmpty();
         final var projectInternalId = buildType.getProjectId();
+        final var projectExternalId = buildType.getProjectExternalId();
         final var buildTypeInternalId = buildType.getInternalId();
         final var history = buildType.getHistory();
         if (history.isEmpty()) {
-            return new SampleClaims("", "", hasVcsRoot, projectInternalId, buildTypeInternalId);
+            return new SampleClaims("", "", hasVcsRoot, projectInternalId, projectExternalId, buildTypeInternalId);
         }
         final var lastBuild = history.get(0);
         final var branchName = ClaimsResolver.resolveBranchName(lastBuild);
         final var triggerType = ClaimsResolver.resolveTriggerType(lastBuild.getTriggeredBy());
-        return new SampleClaims(branchName, triggerType, hasVcsRoot, projectInternalId, buildTypeInternalId);
+        return new SampleClaims(branchName, triggerType, hasVcsRoot, projectInternalId, projectExternalId, buildTypeInternalId);
     }
 
     /** Used by the edit JSP to populate the connection dropdown. */

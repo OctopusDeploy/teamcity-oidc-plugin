@@ -13,7 +13,7 @@
 <tr>
     <th><nobr><label for="displayName">Display name: <l:star/></label></nobr></th>
     <td>
-        <props:textProperty name="displayName" style="width:30em;"/>
+        <props:textProperty name="displayName" value="${propertiesBean.properties['displayName']}" style="width:30em;"/>
         <span class="smallNote">Label shown in the build feature dropdown and the connections list.</span>
         <span class="error" id="error_displayName"></span>
     </td>
@@ -93,6 +93,7 @@
         if (title.length) {
             title.text('OIDC Identity Token').show();
         }
+        $j('#displayName').attr('placeholder', 'e.g. Octopus production');
     });
 </script>
 

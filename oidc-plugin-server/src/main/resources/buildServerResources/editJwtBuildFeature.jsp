@@ -17,11 +17,13 @@
     pageContext.setAttribute("sampleTriggerType", jwtSamples.triggerType());
     pageContext.setAttribute("sampleHasVcsRoot", jwtSamples.hasVcsRoot());
     pageContext.setAttribute("projectInternalId", jwtSamples.projectInternalId());
+    pageContext.setAttribute("projectExternalId", jwtSamples.projectExternalId());
     pageContext.setAttribute("buildTypeInternalId", jwtSamples.buildTypeInternalId());
 
     // OidcSettingsManager lives in the plugin's child Spring context, not TC's root web
     // context, so WebApplicationContextUtils can't see it. Use the static accessor instead.
     pageContext.setAttribute("maxTokenLifetimeMinutes", JwtBuildFeature.maxTokenLifetimeMinutes());
+    pageContext.setAttribute("jwtIssuerUrl", JwtBuildFeature.issuerUrl());
 
     final SUser editJwtCurrentUser = SessionUser.getUser(request);
     pageContext.setAttribute("currentUserCanConfigureMax",
@@ -58,25 +60,32 @@
     <tr id="row_connection_id">
         <th><label for="connection_id">Connection:</label></th>
         <td>
-            <props:selectProperty name="connection_id">
-                <props:option value="">(no connection — configure inline below)</props:option>
-                <c:forEach var="c" items="${jwtConnections}">
-                    <props:option value="${fn:escapeXml(c.id)}"
-                                  selected="${propertiesBean.properties['connection_id'] == c.id}">
-                        <c:out value="${c.displayName}"/>
-                    </props:option>
-                </c:forEach>
-            </props:selectProperty>
-            <span class="smallNote">Optionally reference a Project Connection of type "OIDC Identity Token" (defined under Project Admin → Connections).</span>
+            <c:choose>
+                <c:when test="${empty jwtConnections}">
+                    <span class="smallNote">No connections configured for this project. Create one via the project's <a href="${pageContext.request.contextPath}/admin/editProject.html?projectId=${fn:escapeXml(projectExternalId)}&amp;tab=oauthConnections">Connections</a> page.</span>
+                </c:when>
+                <c:otherwise>
+                    <props:selectProperty name="connection_id">
+                        <props:option value="">(none)</props:option>
+                        <c:forEach var="c" items="${jwtConnections}">
+                            <props:option value="${fn:escapeXml(c.id)}"
+                                          selected="${propertiesBean.properties['connection_id'] == c.id}">
+                                <c:out value="${c.displayName}"/>
+                            </props:option>
+                        </c:forEach>
+                    </props:selectProperty>
+                    <span class="smallNote">Create credentials via the project's <a href="${pageContext.request.contextPath}/admin/editProject.html?projectId=${fn:escapeXml(projectExternalId)}&amp;tab=oauthConnections">Connections</a> page.</span>
+                </c:otherwise>
+            </c:choose>
             <span class="error" id="error_connection_id"></span>
         </td>
     </tr>
 
-    <%-- Read-only summary of the selected connection's settings (hidden when no connection picked) --%>
-    <tr id="row_connection_summary" style="display:none;">
-        <th>Connection settings:</th>
+    <tr>
+        <th><label>Issuer (<code>iss</code>):</label></th>
         <td>
-            <ul class="jwt-conn-summary smallNote" id="jwt_conn_summary"></ul>
+            <input type="text" id="jwtIssuerUrl" readonly value="${fn:escapeXml(jwtIssuerUrl)}" style="width:30em;"/>
+            <span class="smallNote">The OIDC issuer URL (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
         </td>
     </tr>
 
@@ -300,14 +309,7 @@
 
         updatePreview();
 
-        // Connection dropdown handler: hide inline rows and show summary when a connection is picked.
-        const connectionToggleRows = [
-            'tr:has(input[name="prop:ttl_minutes"])',
-            'tr:has(input[name="prop:audience"])',
-            'tr:has(select[name="prop:algorithm"])',
-            'tr:has(input[name="prop:subject_dimensions"])'
-        ];
-
+        // Read connection metadata once from the data-* attributes emitted by the JSP.
         const connectionData = {};
         $j('#jwtConnectionsData .jwt-connection-entry').each((_, el) => {
             const $e = $j(el);
@@ -377,21 +379,61 @@
             document.getElementById('jwtExchangeBtn').disabled = false;
         };
 
+        // When a connection is selected, overlay the inline form fields with the
+        // connection's values and lock them. When the user deselects the connection,
+        // restore the previously-saved inline values from the per-input cache.
+        const cacheInline = ($el, value) => {
+            if ($el.data('inlineCached') === undefined) {
+                $el.data('inlineCached', value);
+            }
+        };
+        const restoreInline = ($el) => {
+            if ($el.data('inlineCached') !== undefined) {
+                $el.val($el.data('inlineCached'));
+                $el.removeData('inlineCached');
+            }
+        };
+
         const refreshConnectionUI = () => {
             const selected = $j('#connection_id').val();
-            if (selected && connectionData[selected]) {
-                connectionToggleRows.forEach(sel => $j(sel).hide());
-                const c = connectionData[selected];
-                $j('#jwt_conn_summary').empty()
-                    .append('<li><strong>aud:</strong> ' + $j('<div/>').text(c.audience || '(issuer URL)').html() + '</li>')
-                    .append('<li><strong>ttl:</strong> ' + $j('<div/>').text(c.ttl + ' minutes').html() + '</li>')
-                    .append('<li><strong>alg:</strong> ' + $j('<div/>').text(c.algorithm).html() + '</li>')
-                    .append('<li><strong>subject dims:</strong> ' + $j('<div/>').text(c.subjectDimensions || '(none)').html() + '</li>');
-                $j('#row_connection_summary').show();
+            const c = selected && connectionData[selected];
+
+            const $ttl = $j('#ttl_minutes');
+            const $aud = $j('#audience');
+            const $alg = $j('#algorithm');
+            const $subj = $j('#subject_dimensions');
+            const $subjCbs = $j('.jwt-subject-dimension-cb');
+
+            if (c) {
+                cacheInline($ttl, $ttl.val());
+                cacheInline($aud, $aud.val());
+                cacheInline($alg, $alg.val());
+                cacheInline($subj, $subj.val());
+
+                $ttl.val(c.ttl).prop('readonly', true).addClass('jwt-locked');
+                $aud.val(c.audience).prop('readonly', true).addClass('jwt-locked');
+                $alg.val(c.algorithm).prop('disabled', true).addClass('jwt-locked');
+                $subj.val(c.subjectDimensions || '');
+                const dims = (c.subjectDimensions || '').split(',').filter(s => s.length > 0);
+                $subjCbs.each((_, el) => {
+                    el.checked = dims.indexOf(el.value) !== -1;
+                    el.disabled = true;
+                });
             } else {
-                connectionToggleRows.forEach(sel => $j(sel).show());
-                $j('#row_connection_summary').hide();
+                restoreInline($ttl);
+                restoreInline($aud);
+                restoreInline($alg);
+                restoreInline($subj);
+                $ttl.prop('readonly', false).removeClass('jwt-locked');
+                $aud.prop('readonly', false).removeClass('jwt-locked');
+                $alg.prop('disabled', false).removeClass('jwt-locked');
+                const dims = $subj.val().split(',').filter(s => s.length > 0);
+                $subjCbs.each((_, el) => {
+                    el.checked = dims.indexOf(el.value) !== -1;
+                    el.disabled = false;
+                });
             }
+            updatePreview();
         };
 
         $j('#connection_id').on('change', refreshConnectionUI);
