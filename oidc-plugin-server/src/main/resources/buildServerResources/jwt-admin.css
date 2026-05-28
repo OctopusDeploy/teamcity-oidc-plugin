@@ -310,7 +310,8 @@
     margin-bottom: 2px;
 }
 
-#jwtSubjectPreview {
+#jwtSubjectPreview,
+#oidcConnSubjectPreview {
     width: 100%;
     max-width: 720px;
     font-family: monospace;

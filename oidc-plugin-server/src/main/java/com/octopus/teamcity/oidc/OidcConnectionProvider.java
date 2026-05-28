@@ -26,7 +26,7 @@ public class OidcConnectionProvider extends OAuthProvider {
     public static final String TYPE = "oidc-identity-token";
     public static final String DISPLAY_NAME = "OIDC Identity Token";
 
-    public static final Set<String> ALLOWED_ALGORITHMS = Set.of("RS256", "RS384", "ES256");
+    private static final Set<String> ALLOWED_ALGORITHMS = Set.of("RS256", "RS384", "ES256");
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcSettingsManager oidcSettingsManager;
