@@ -248,39 +248,110 @@ public class BuildFeatureUIIT {
     }
 
     @Test
-    void connectionDropdownHidesInlineFieldsAndShowsSummary() throws Exception {
+    void connectionSelectionLocksInlineFieldsToConnectionValues() throws Exception {
         // Create a connection at _Root so it is visible to the UITest project.
         final var connectionId = createOidcConnection("_Root", "UI Test Conn",
                 "api://ui-test-audience", 30, "ES256", "");
 
-        editFeature(page -> {
+        // No-save inspection so we don't pollute the build feature's persistent state.
+        inFeatureEditor(page -> {
+            // The readonly Issuer (iss) row is always visible at the top with a real URL.
+            assertThat(page.locator("#jwtIssuerUrl").isVisible()).isTrue();
+            assertThat(page.locator("#jwtIssuerUrl").inputValue()).startsWith("https://");
+            assertThat(page.locator("#jwtIssuerUrl").getAttribute("readonly")).isNotNull();
+
             // Connection dropdown must exist and list the new connection.
-            // allInnerTexts() may include surrounding whitespace from the JSP template, so strip
-            // before comparing rather than relying on exact text equality.
             assertThat(page.locator("#connection_id").isVisible()).isTrue();
             assertThat(page.locator("#connection_id option").allInnerTexts()
                     .stream().map(String::trim).toList()).contains("UI Test Conn");
 
-            // Initial state: no connection selected — inline fields visible, summary hidden.
+            // Initial state: no connection selected — inline fields editable, no jwt-locked class.
             assertThat(page.locator("#audience").isVisible()).isTrue();
-            assertThat(page.locator("#jwt_conn_summary").isVisible()).isFalse();
+            assertThat(page.locator("#audience").isEditable()).isTrue();
+            assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
+                    .isEqualTo(false);
 
             // Select the connection by its generated id.
             page.selectOption("#connection_id",
                     new com.microsoft.playwright.options.SelectOption().setValue(connectionId));
 
-            // Inline fields must disappear and the summary must show with the right audience.
-            assertThat(page.locator("#audience").isVisible()).isFalse();
-            assertThat(page.locator("#jwt_conn_summary").isVisible()).isTrue();
-            assertThat(page.locator("#jwt_conn_summary").textContent()).contains("api://ui-test-audience");
+            // Inline fields remain visible but switch to readonly mode populated with the
+            // connection's values and styled with the jwt-locked gray treatment.
+            assertThat(page.locator("#audience").isVisible()).isTrue();
+            assertThat(page.locator("#audience").inputValue()).isEqualTo("api://ui-test-audience");
+            assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
+            assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
+                    .isEqualTo(true);
+            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("30");
+            assertThat(page.locator("#algorithm").inputValue()).isEqualTo("ES256");
+            assertThat(page.locator("#algorithm").isDisabled()).isTrue();
 
-            // Switch back to "(no connection)".
+            // Switch back to "(none)".
             page.selectOption("#connection_id",
                     new com.microsoft.playwright.options.SelectOption().setValue(""));
 
-            // Inline fields must reappear and summary must hide.
-            assertThat(page.locator("#audience").isVisible()).isTrue();
-            assertThat(page.locator("#jwt_conn_summary").isVisible()).isFalse();
+            // Inline fields are editable again and the jwt-locked class is removed.
+            assertThat(page.locator("#audience").isEditable()).isTrue();
+            assertThat(page.locator("#audience").getAttribute("readonly")).isNull();
+            assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
+                    .isEqualTo(false);
+            assertThat(page.locator("#algorithm").isDisabled()).isFalse();
+        });
+    }
+
+    @Test
+    void connectionSelectionPersistsAfterSave() throws Exception {
+        final var connectionId = createOidcConnection("_Root", "UI Test Conn Persist",
+                "api://ui-test-persist", 20, "RS256", "");
+
+        editFeature(page -> page.selectOption("#connection_id",
+                new com.microsoft.playwright.options.SelectOption().setValue(connectionId)));
+
+        assertThat(readFeatureProperties().get("connection_id"))
+                .as("connection_id should persist to the saved build feature properties")
+                .isEqualTo(connectionId);
+
+        // Reopen the editor and verify the dropdown still reflects the saved selection,
+        // and that the inline fields are in connection-locked mode populated from the
+        // connection's values.
+        inFeatureEditor(page -> {
+            assertThat(page.locator("#connection_id").inputValue()).isEqualTo(connectionId);
+            assertThat(page.locator("#audience").inputValue()).isEqualTo("api://ui-test-persist");
+            assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
+            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("20");
+            assertThat(page.locator("#algorithm").inputValue()).isEqualTo("RS256");
+            assertThat(page.locator("#algorithm").isDisabled()).isTrue();
+        });
+    }
+
+    @Test
+    void connectionWithSubjectScopingChecksAndDisablesCheckboxes() throws Exception {
+        // Use trigger_type — the branch checkbox is only rendered when the build type
+        // has a VCS root attached, while trigger_type is always present.
+        final var connectionId = createOidcConnection("_Root", "UI Test Conn Subjects",
+                "api://ui-test-subj", 20, "RS256", "trigger_type");
+
+        inFeatureEditor(page -> {
+            final var triggerType = page.locator(".jwt-subject-dimension-cb[value='trigger_type']");
+
+            // Pre-selection: unchecked and editable.
+            assertThat(triggerType.isChecked()).isFalse();
+            assertThat(triggerType.isDisabled()).isFalse();
+
+            page.selectOption("#connection_id",
+                    new com.microsoft.playwright.options.SelectOption().setValue(connectionId));
+
+            // Connection-selected: matching dimensions are checked AND disabled.
+            assertThat(triggerType.isChecked()).isTrue();
+            assertThat(triggerType.isDisabled()).isTrue();
+            // Live preview reflects the connection's dimensions.
+            assertThat(page.locator("#jwtSubjectPreview").inputValue()).contains(":trigger_type:");
+
+            // Switch back: checkbox returns to unchecked + enabled.
+            page.selectOption("#connection_id",
+                    new com.microsoft.playwright.options.SelectOption().setValue(""));
+            assertThat(triggerType.isChecked()).isFalse();
+            assertThat(triggerType.isDisabled()).isFalse();
         });
     }
 
