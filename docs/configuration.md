@@ -107,5 +107,6 @@ Configure these under **Administration → OIDC / JWT**.
 
 - [AWS](aws.md) — IAM OIDC federation, trust policy, using the token with the AWS CLI/SDK
 - [Azure](azure.md) — workload identity federation, federated credentials, Azure PowerShell login
+- [JFrog Artifactory](artifactory.md) — OIDC integration, identity mappings, pushing Docker images
 - [Octopus Deploy](octopus-deploy.md) — OIDC identity setup for Octopus Deploy
 
