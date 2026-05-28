@@ -85,12 +85,18 @@ public class JwtBuildFeature extends BuildFeature {
                                boolean hasVcsRoot,
                                @NotNull String projectInternalId,
                                @NotNull String projectExternalId,
-                               @NotNull String buildTypeInternalId) {}
+                               @NotNull String buildTypeInternalId) {
+
+        /** Blank claims, used when there's no build context to resolve sample values from. */
+        public static SampleClaims empty() {
+            return new SampleClaims("", "", false, "", "", "");
+        }
+    }
 
     public static SampleClaims sampleClaimsFor(@Nullable final String buildTypeIdParam) {
         final var server = staticBuildServer;
         if (server == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
-            return new SampleClaims("", "", false, "", "", "");
+            return SampleClaims.empty();
         }
         // The build feature edit dialog passes id as "buildType:<externalId>".
         // Strip the prefix when present so findBuildTypeByExternalId resolves it.
@@ -98,7 +104,7 @@ public class JwtBuildFeature extends BuildFeature {
                 ? buildTypeIdParam.substring("buildType:".length())
                 : buildTypeIdParam;
         final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
-        if (buildType == null) return new SampleClaims("", "", false, "", "", "");
+        if (buildType == null) return SampleClaims.empty();
         final var hasVcsRoot = !buildType.getVcsRoots().isEmpty();
         final var projectInternalId = buildType.getProjectId();
         final var projectExternalId = buildType.getProjectExternalId();
