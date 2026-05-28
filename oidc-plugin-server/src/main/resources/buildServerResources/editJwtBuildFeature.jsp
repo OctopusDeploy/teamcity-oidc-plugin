@@ -5,6 +5,7 @@
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 <%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
+<%@ page import="com.octopus.teamcity.oidc.OidcConnection" %>
 <%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
 <%@ page import="jetbrains.buildServer.users.SUser" %>
 <%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
@@ -25,6 +26,25 @@
     final SUser editJwtCurrentUser = SessionUser.getUser(request);
     pageContext.setAttribute("currentUserCanConfigureMax",
             editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
+
+    // Build a map-based view of each connection so EL can access them via ${c.id} etc.
+    // Standard EL property access on Map<String,String> works in all Jasper versions;
+    // record accessor EL calls (${c.id()}) require EL 2.2 method invocation which TC's
+    // bundled Jasper may not support at Java 8 source level.
+    final java.util.List<OidcConnection> jwtConnectionsRaw =
+            JwtBuildFeature.availableConnectionsFor(request.getParameter("id"));
+    final java.util.List<java.util.Map<String, String>> jwtConnections = new java.util.ArrayList<>();
+    for (final OidcConnection conn : jwtConnectionsRaw) {
+        final java.util.Map<String, String> view = new java.util.HashMap<>();
+        view.put("id", conn.id());
+        view.put("displayName", conn.displayName());
+        view.put("audience", conn.settings().audience());
+        view.put("ttl", String.valueOf(conn.settings().ttlMinutes()));
+        view.put("algorithm", conn.settings().signingAlgorithm());
+        view.put("subjectDimensions", String.join(",", conn.settings().subjectDimensions()));
+        jwtConnections.add(view);
+    }
+    pageContext.setAttribute("jwtConnections", jwtConnections);
 %>
 <link rel="stylesheet" href="${pageContext.request.contextPath}/plugins/teamcity-oidc-plugin/jwt-admin.css"/>
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
@@ -35,20 +55,15 @@
             <td colspan="2"><span class="error" id="error_root_url">The TeamCity server root URL must use HTTPS for OIDC token issuance. Update it in Administration &#x2192; Global Settings.</span></td>
         </tr>
     </c:if>
-    <%
-        final java.util.List<com.octopus.teamcity.oidc.OidcConnection> jwtConnections =
-                com.octopus.teamcity.oidc.JwtBuildFeature.availableConnectionsFor(request.getParameter("id"));
-        pageContext.setAttribute("jwtConnections", jwtConnections);
-    %>
     <tr id="row_connection_id">
         <th><label for="connection_id">Connection:</label></th>
         <td>
-            <props:selectProperty name="connection_id" id="connection_id">
+            <props:selectProperty name="connection_id">
                 <props:option value="">(no connection — configure inline below)</props:option>
                 <c:forEach var="c" items="${jwtConnections}">
-                    <props:option value="${fn:escapeXml(c.id())}"
-                                  selected="${propertiesBean.properties['connection_id'] == c.id()}">
-                        <c:out value="${c.displayName()}"/>
+                    <props:option value="${fn:escapeXml(c.id)}"
+                                  selected="${propertiesBean.properties['connection_id'] == c.id}">
+                        <c:out value="${c.displayName}"/>
                     </props:option>
                 </c:forEach>
             </props:selectProperty>
@@ -64,19 +79,6 @@
             <ul class="jwt-conn-summary smallNote" id="jwt_conn_summary"></ul>
         </td>
     </tr>
-
-    <%-- Connection metadata for JS — emitted as data-* attributes to avoid inline script injection --%>
-    <div id="jwtConnectionsData" style="display:none;">
-        <c:forEach var="c" items="${jwtConnections}">
-            <span class="jwt-connection-entry"
-                  data-id="${fn:escapeXml(c.id())}"
-                  data-display-name="${fn:escapeXml(c.displayName())}"
-                  data-audience="${fn:escapeXml(c.settings().audience())}"
-                  data-ttl="${c.settings().ttlMinutes()}"
-                  data-algorithm="${fn:escapeXml(c.settings().signingAlgorithm())}"
-                  data-subject-dimensions="${fn:escapeXml(c.settings().subjectDimensions().toString())}"></span>
-        </c:forEach>
-    </div>
 
     <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
@@ -150,6 +152,20 @@
         </td>
     </tr>
 </l:settingsGroup>
+
+<%-- Connection metadata for JS — emitted as data-* attributes to avoid inline script injection.
+     Must live outside <l:settingsGroup> (which renders a <table>) — a <div> inside <table> is invalid HTML. --%>
+<div id="jwtConnectionsData" style="display:none;">
+    <c:forEach var="c" items="${jwtConnections}">
+        <span class="jwt-connection-entry"
+              data-id="${fn:escapeXml(c.id)}"
+              data-display-name="${fn:escapeXml(c.displayName)}"
+              data-audience="${fn:escapeXml(c.audience)}"
+              data-ttl="${fn:escapeXml(c.ttl)}"
+              data-algorithm="${fn:escapeXml(c.algorithm)}"
+              data-subject-dimensions="${fn:escapeXml(c.subjectDimensions)}"></span>
+    </c:forEach>
+</div>
 
 <%-- Hidden holder; JS moves its contents into TC's editBuildFeatureAdditionalButtons on DOM ready --%>
 <%-- data-build-type-id carries the build type ID safely without inline JS injection --%>
