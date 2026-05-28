@@ -1,6 +1,6 @@
 # JFrog Artifactory Integration
 
-TeamCity can authenticate to JFrog Artifactory using its [OIDC integration](https://jfrog.com/help/r/jfrog-platform-administration-documentation/openid-connect-integration). Builds exchange the `jwt.token` for a short-lived Artifactory access token without storing any Artifactory credentials in TeamCity.
+TeamCity can authenticate to JFrog Artifactory using its [OIDC integration](https://docs.jfrog.com/administration/docs/openid-connect-integration). Builds exchange the `jwt.token` for a short-lived Artifactory access token without storing any Artifactory credentials in TeamCity.
 
 The flow is:
 
