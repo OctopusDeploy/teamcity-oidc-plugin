@@ -31,6 +31,9 @@ public class JwtIssuanceServiceTest {
 
     @TempDir File tempDir;
 
+    private static final String CONNECTION_ID = "octopus-prod-connection";
+    private static final String CONNECTION_PROJECT_ID = "OctopusProject";
+
     private JwtIssuanceService service;
 
     @BeforeEach
@@ -121,15 +124,15 @@ public class JwtIssuanceServiceTest {
     @Test
     public void usesConnectionSettingsWhenConnectionIdSet() throws Exception {
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
-        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", "c1"));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", CONNECTION_ID));
         when(runningBuild.getBuildId()).thenReturn(42L);
         when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
         final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
         final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
         when(runningBuild.getBuildType()).thenReturn(buildType);
         when(buildType.getProject()).thenReturn(project);
-        when(connectionsManager.resolve(project, "c1")).thenReturn(java.util.Optional.of(
-                new OidcConnection("c1", "p1", "Test",
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
+                new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
                         new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()))));
 
         final var token = service.issueOrGet(runningBuild).orElseThrow();

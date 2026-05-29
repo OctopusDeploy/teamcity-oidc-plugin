@@ -11,11 +11,14 @@ import static org.mockito.Mockito.when;
 
 public class OidcConnectionTest {
 
+    private static final String CONNECTION_ID = "PROJECT_EXT_OAuth_42";
+    private static final String CONNECTION_PROJECT_ID = "MyProject";
+
     @Test
     public void fromDescriptorMapsAllFields() {
         final var descriptor = mock(OAuthConnectionDescriptor.class);
-        when(descriptor.getId()).thenReturn("PROJECT_EXT_OAuth_42");
-        when(descriptor.getProjectId()).thenReturn("MyProject");
+        when(descriptor.getId()).thenReturn(CONNECTION_ID);
+        when(descriptor.getProjectId()).thenReturn(CONNECTION_PROJECT_ID);
         when(descriptor.getConnectionDisplayName()).thenReturn("Octopus production");
         when(descriptor.getParameters()).thenReturn(Map.of(
                 "audience", "api://octopus",
@@ -25,8 +28,8 @@ public class OidcConnectionTest {
 
         final var connection = OidcConnection.fromDescriptor(descriptor, "https://teamcity.example.com", 720);
 
-        assertThat(connection.id()).isEqualTo("PROJECT_EXT_OAuth_42");
-        assertThat(connection.projectId()).isEqualTo("MyProject");
+        assertThat(connection.id()).isEqualTo(CONNECTION_ID);
+        assertThat(connection.projectId()).isEqualTo(CONNECTION_PROJECT_ID);
         assertThat(connection.displayName()).isEqualTo("Octopus production");
         assertThat(connection.settings().audience()).isEqualTo("api://octopus");
         assertThat(connection.settings().ttlMinutes()).isEqualTo(20);
@@ -37,8 +40,8 @@ public class OidcConnectionTest {
     @Test
     public void fromDescriptorAppliesDefaultsForMissingFields() {
         final var descriptor = mock(OAuthConnectionDescriptor.class);
-        when(descriptor.getId()).thenReturn("c1");
-        when(descriptor.getProjectId()).thenReturn("p1");
+        when(descriptor.getId()).thenReturn(CONNECTION_ID);
+        when(descriptor.getProjectId()).thenReturn(CONNECTION_PROJECT_ID);
         when(descriptor.getConnectionDisplayName()).thenReturn("Defaults");
         when(descriptor.getParameters()).thenReturn(Map.of());
 

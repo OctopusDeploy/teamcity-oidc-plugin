@@ -25,6 +25,10 @@ public class OidcConnectionsManagerTest {
 
     static final String TYPE = OidcConnectionProvider.TYPE;
 
+    private static final String CONNECTION_ID = "octopus-prod-connection";
+    private static final String SECOND_CONNECTION_ID = "octopus-staging-connection";
+    private static final String CONNECTION_PROJECT_ID = "OctopusProject";
+
     @Mock OAuthConnectionsManager teamcityOAuth;
     @Mock SProject project;
     @Mock SBuildServer buildServer;
@@ -55,8 +59,8 @@ public class OidcConnectionsManagerTest {
     public void listAvailableReturnsAllOidcConnectionsForProject() {
         // Create descriptors before the when() call — creating mocks inside thenReturn()
         // arguments confuses Mockito's stubbing state machine.
-        final var first = connection("c1", "P1", "First", Map.of("audience", "api://one"));
-        final var second = connection("c2", "P1", "Second", Map.of("audience", "api://two"));
+        final var first = connection(CONNECTION_ID, CONNECTION_PROJECT_ID, "First", Map.of("audience", "api://one"));
+        final var second = connection(SECOND_CONNECTION_ID, CONNECTION_PROJECT_ID, "Second", Map.of("audience", "api://two"));
         when(teamcityOAuth.getAvailableConnectionsOfType(project, TYPE)).thenReturn(List.of(first, second));
 
         final var result = manager.listAvailable(project);
@@ -69,13 +73,13 @@ public class OidcConnectionsManagerTest {
 
     @Test
     public void resolveReturnsConnectionWhenFound() {
-        final var descriptor = connection("c1", "P1", "First", Map.of("audience", "api://one"));
-        when(teamcityOAuth.findConnectionById(project, "c1")).thenReturn(descriptor);
+        final var descriptor = connection(CONNECTION_ID, CONNECTION_PROJECT_ID, "First", Map.of("audience", "api://one"));
+        when(teamcityOAuth.findConnectionById(project, CONNECTION_ID)).thenReturn(descriptor);
 
-        final var result = manager.resolve(project, "c1");
+        final var result = manager.resolve(project, CONNECTION_ID);
 
         assertThat(result).isPresent();
-        assertThat(result.get().id()).isEqualTo("c1");
+        assertThat(result.get().id()).isEqualTo(CONNECTION_ID);
         assertThat(result.get().settings().audience()).isEqualTo("api://one");
     }
 
