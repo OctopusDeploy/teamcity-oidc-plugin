@@ -6,6 +6,9 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.SelectOption;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
@@ -253,7 +256,6 @@ public class BuildFeatureUIIT {
         final var connectionId = createOidcConnection("_Root", "UI Test Conn",
                 "api://ui-test-audience", 30, "ES256", "");
 
-        // No-save inspection so we don't pollute the build feature's persistent state.
         inFeatureEditor(page -> {
             // The readonly Issuer (iss) row is always visible at the top with a real URL.
             assertThat(page.locator("#jwtIssuerUrl").isVisible()).isTrue();
@@ -273,7 +275,7 @@ public class BuildFeatureUIIT {
 
             // Select the connection by its generated id.
             page.selectOption("#connection_id",
-                    new com.microsoft.playwright.options.SelectOption().setValue(connectionId));
+                    new SelectOption().setValue(connectionId));
 
             // Inline fields remain visible but switch to readonly mode populated with the
             // connection's values and styled with the jwt-locked gray treatment.
@@ -288,7 +290,7 @@ public class BuildFeatureUIIT {
 
             // Switch back to "(none)".
             page.selectOption("#connection_id",
-                    new com.microsoft.playwright.options.SelectOption().setValue(""));
+                    new SelectOption().setValue(""));
 
             // Inline fields are editable again and the jwt-locked class is removed.
             assertThat(page.locator("#audience").isEditable()).isTrue();
@@ -305,7 +307,7 @@ public class BuildFeatureUIIT {
                 "api://ui-test-persist", 20, "RS256", "");
 
         editFeature(page -> page.selectOption("#connection_id",
-                new com.microsoft.playwright.options.SelectOption().setValue(connectionId)));
+                new SelectOption().setValue(connectionId)));
 
         assertThat(readFeatureProperties().get("connection_id"))
                 .as("connection_id should persist to the saved build feature properties")
@@ -339,7 +341,7 @@ public class BuildFeatureUIIT {
             assertThat(triggerType.isDisabled()).isFalse();
 
             page.selectOption("#connection_id",
-                    new com.microsoft.playwright.options.SelectOption().setValue(connectionId));
+                    new SelectOption().setValue(connectionId));
 
             // Connection-selected: matching dimensions are checked AND disabled.
             assertThat(triggerType.isChecked()).isTrue();
@@ -349,7 +351,7 @@ public class BuildFeatureUIIT {
 
             // Switch back: checkbox returns to unchecked + enabled.
             page.selectOption("#connection_id",
-                    new com.microsoft.playwright.options.SelectOption().setValue(""));
+                    new SelectOption().setValue(""));
             assertThat(triggerType.isChecked()).isFalse();
             assertThat(triggerType.isDisabled()).isFalse();
         });
@@ -426,7 +428,7 @@ public class BuildFeatureUIIT {
      * by createAdminUserToBypassFirstRunWizard.
      */
     private BrowserContext newLoggedInContext() {
-        return browser.newContext(new com.microsoft.playwright.Browser.NewContextOptions()
+        return browser.newContext(new Browser.NewContextOptions()
                 .setExtraHTTPHeaders(java.util.Map.of("Authorization", superUserAuthHeader)));
     }
 
@@ -443,11 +445,11 @@ public class BuildFeatureUIIT {
             page.locator("td.edit a").first().click();
             // #subject_dimensions is a hidden input — wait for it to be attached to the DOM
             // (Playwright's default waitFor requires visible, which a hidden input never becomes).
-            page.locator("#subject_dimensions").waitFor(new com.microsoft.playwright.Locator.WaitForOptions()
-                    .setState(com.microsoft.playwright.options.WaitForSelectorState.ATTACHED));
+            page.locator("#subject_dimensions").waitFor(new Locator.WaitForOptions()
+                    .setState(WaitForSelectorState.ATTACHED));
         } catch (final RuntimeException e) {
             try {
-                page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions()
+                page.screenshot(new Page.ScreenshotOptions()
                         .setPath(java.nio.file.Paths.get("/tmp/uiit-failed-" + System.currentTimeMillis() + ".png"))
                         .setFullPage(true));
                 java.nio.file.Files.writeString(
@@ -464,9 +466,9 @@ public class BuildFeatureUIIT {
         // clicking, wait for it to become hidden — TC reuses the modal DOM so we can't
         // wait for DETACHED, but visibility flips when the modal opens/closes.
         page.locator("#submitBuildFeatureId").click();
-        page.locator("#submitBuildFeatureId").waitFor(new com.microsoft.playwright.Locator.WaitForOptions()
-                .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
-        page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE);
+        page.locator("#submitBuildFeatureId").waitFor(new Locator.WaitForOptions()
+                .setState(WaitForSelectorState.HIDDEN));
+        page.waitForLoadState(LoadState.NETWORKIDLE);
     }
 
     // -------------------------------------------------------------------------
@@ -641,14 +643,14 @@ public class BuildFeatureUIIT {
     private static Path requirePluginZip() {
         final var targetDir = Path.of(
                 System.getProperty("project.basedir", "."), "../target/").normalize();
-        try (var stream = java.nio.file.Files.list(targetDir)) {
+        try (final var stream = java.nio.file.Files.list(targetDir)) {
             return stream
                     .filter(p -> p.getFileName().toString().matches("Octopus\\.TeamCity\\.OIDC\\..*\\.zip"))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException(
                             "Plugin zip not found in " + targetDir.toAbsolutePath()
                             + ". Run 'mvn package -DskipTests' first."));
-        } catch (java.io.IOException e) {
+        } catch (final java.io.IOException e) {
             throw new IllegalStateException("Could not list " + targetDir.toAbsolutePath(), e);
         }
     }
