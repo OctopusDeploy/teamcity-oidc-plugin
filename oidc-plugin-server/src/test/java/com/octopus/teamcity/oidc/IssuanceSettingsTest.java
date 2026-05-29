@@ -27,13 +27,13 @@ public class IssuanceSettingsTest {
 
     @Test
     public void fromBuildFeatureParamsUsesProvidedValues() {
+        final var params = Map.of(
+                "audience", "api://example",
+                "ttl_minutes", "30",
+                "algorithm", "ES256",
+                "subject_dimensions", "branch,trigger_type");
         final var settings = IssuanceSettings.fromBuildFeatureParams(
-                Map.of(
-                        "audience", "api://example",
-                        "ttl_minutes", "30",
-                        "algorithm", "ES256",
-                        "subject_dimensions", "branch,trigger_type"),
-                "https://teamcity.example.com", 720);
+                params,"https://teamcity.example.com", 720);
 
         assertThat(settings.audience()).isEqualTo("api://example");
         assertThat(settings.ttlMinutes()).isEqualTo(30);
@@ -89,9 +89,8 @@ public class IssuanceSettingsTest {
         };
         logger.addHandler(handler);
         try {
-            IssuanceSettings.fromBuildFeatureParams(
-                    Map.of("subject_dimensions", "branch,bogus"),
-                    "https://issuer", 720);
+            final var params = Map.of("subject_dimensions", "branch,bogus");
+            IssuanceSettings.fromBuildFeatureParams(params, "https://issuer", 720);
         } finally {
             logger.removeHandler(handler);
         }
