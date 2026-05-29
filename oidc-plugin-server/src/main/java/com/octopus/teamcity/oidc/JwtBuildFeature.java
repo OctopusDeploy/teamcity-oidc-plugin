@@ -153,18 +153,28 @@ public class JwtBuildFeature extends BuildFeature {
     public String describeParameters(@NotNull final java.util.Map<String, String> params) {
         final var connectionId = params.getOrDefault("connection_id", "").trim();
         if (!connectionId.isEmpty() && staticOidcConnectionsManager != null && staticBuildServer != null) {
-            final var resolved = resolveConnectionFromAnyProject(connectionId);
-            if (resolved.isPresent()) {
-                final var conn = resolved.get();
-                final var sb = new StringBuilder("connection: ").append(conn.displayName());
-                // Show the sub claim's template form — concrete IDs and runtime values aren't
-                // available here, but the template matches what the consumer will see.
-                sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
-                sb.append("\naud:").append(conn.settings().audience());
-                return sb.toString();
-            }
+            return describeConnection(connectionId);
+        }
+        return describeInline(params);
+    }
+
+    @NotNull
+    private static String describeConnection(@NotNull final String connectionId) {
+        final var resolved = resolveConnectionFromProjectOrAncestor(connectionId);
+        if (resolved.isEmpty()) {
             return "connection: <unknown id " + connectionId + ">";
         }
+        final var conn = resolved.get();
+        final var sb = new StringBuilder("connection: ").append(conn.displayName());
+        // Show the sub claim's template form — concrete IDs and runtime values aren't
+        // available here, but the template matches what the consumer will see.
+        sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
+        sb.append("\naud:").append(conn.settings().audience());
+        return sb.toString();
+    }
+
+    @NotNull
+    private static String describeInline(@NotNull final java.util.Map<String, String> params) {
         final var audience = params.get("audience");
         final var sb = new StringBuilder();
         // Show the sub claim's template form — concrete project/build_type IDs and the
@@ -179,12 +189,14 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     /**
-     * Walks all projects to find which one owns {@code connectionId}, then resolves the
-     * connection from there. Starting from root would only find connections defined
-     * directly at root; TC's {@code findConnectionById} walks upward from the given project,
-     * so we must start from the project that actually owns the connection.
+     * {@code describeParameters} has no build/project context — only the params map — so we
+     * can't resolve the connection against a known project. Connections are inherited
+     * downward, and TC's {@code findConnectionById} walks upward (project + ancestors), so a
+     * connection is only visible from its owning project or a descendant. We therefore scan
+     * every project and return the first that can resolve the id. (Resolving against root
+     * alone would only find connections defined directly at root.)
      */
-    private static Optional<OidcConnection> resolveConnectionFromAnyProject(final String connectionId) {
+    private static Optional<OidcConnection> resolveConnectionFromProjectOrAncestor(final String connectionId) {
         final var manager = staticOidcConnectionsManager;
         final var server = staticBuildServer;
         if (manager == null || server == null) return Optional.empty();
