@@ -1095,14 +1095,20 @@ public class OidcFlowIT {
             final String algorithm,
             final String subjectDimensions) throws Exception {
         final var json = """
-                {"type":"OAuthProvider","properties":{"property":[
-                  {"name":"providerType","value":"oidc-identity-token"},
-                  {"name":"displayName","value":"%s"},
-                  {"name":"audience","value":"%s"},
-                  {"name":"ttl_minutes","value":"%d"},
-                  {"name":"algorithm","value":"%s"},
-                  {"name":"subject_dimensions","value":"%s"}
-                ]}}
+                {
+                     "type": "OAuthProvider",
+                     "properties":
+                     {
+                       "property": [
+                         {"name":"providerType","value":"oidc-identity-token"},
+                         {"name":"displayName","value":"%s"},
+                         {"name":"audience","value":"%s"},
+                         {"name":"ttl_minutes","value":"%d"},
+                         {"name":"algorithm","value":"%s"},
+                         {"name":"subject_dimensions","value":"%s"}
+                       ]
+                     }
+                   }
                 """.formatted(displayName, audience, ttlMinutes, algorithm, subjectDimensions);
         final var responseBody = tcPost(
                 "/httpAuth/app/rest/projects/" + parentProjectId + "/projectFeatures", json);
