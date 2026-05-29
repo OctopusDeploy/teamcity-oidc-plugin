@@ -1152,10 +1152,16 @@ public class OidcFlowIT {
 
         // Capture-jwt step — writes jwt.token to jwt.txt for artifact retrieval
         final var stepJson = """
-                {"type":"simpleRunner","name":"capture-jwt","properties":{"property":[
-                  {"name":"script.content","value":"JWT=%jwt.token%\\nprintf 'JWT (first 50): %.50s\\\\n' \\"$JWT\\"\\nprintf '%s' \\"$JWT\\" > jwt.txt"},
-                  {"name":"use.custom.script","value":"true"}
-                ]}}
+                {
+                    "type": "simpleRunner",
+                    "name": "capture-jwt",
+                    "properties":{
+                        "property":[
+                            {"name": "script.content","value": "JWT=%jwt.token%\\nprintf 'JWT (first 50): %.50s\\\\n' \\"$JWT\\"\\nprintf '%s' \\"$JWT\\" > jwt.txt"},
+                            {"name": "use.custom.script","value": "true"}
+                        ]
+                    }
+                }
                 """;
         tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/steps", stepJson);
 
@@ -1168,15 +1174,20 @@ public class OidcFlowIT {
         tcPut("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/checkoutMode", "MANUAL");
         final var vcsRootId = projectId + "_VcsRoot";
         final var vcsRootJson = """
-                {"id":"%s","name":"%s VCS",
-                 "vcsName":"jetbrains.git",
-                 "project":{"id":"%s"},
-                 "properties":{"property":[
-                     {"name":"url","value":"https://github.com/octocat/Hello-World.git"},
-                     {"name":"branch","value":"refs/heads/master"},
-                     {"name":"teamcity:branchSpec","value":"+:refs/heads/*"},
-                     {"name":"authMethod","value":"ANONYMOUS"}
-                 ]}}
+                {
+                      "id": "%s",
+                      "name": "%s VCS",
+                      "vcsName": "jetbrains.git",
+                      "project": {"id": "%s"},
+                      "properties": {
+                        "property":[
+                          {"name":"url","value":"https://github.com/octocat/Hello-World.git"},
+                          {"name":"branch","value":"refs/heads/master"},
+                          {"name":"teamcity:branchSpec","value":"+:refs/heads/*"},
+                          {"name":"authMethod","value":"ANONYMOUS"}
+                        ]
+                      }
+                    }
                 """.formatted(vcsRootId, projectId, projectId);
         tcPost("/httpAuth/app/rest/vcs-roots", vcsRootJson);
         final var vcsEntryJson = """
