@@ -6,6 +6,7 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.assertions.PlaywrightAssertions;
 import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
@@ -127,10 +128,8 @@ public class BuildFeatureUIIT {
             final var checkboxes = page.locator(".jwt-subject-dimension-cb").all();
             assertThat(checkboxes).as("at least one optional-dimension checkbox should be rendered").isNotEmpty();
             for (final var cb : checkboxes) {
-                assertThat(cb.isChecked())
-                        .as("dimension '%s' should be unchecked when subject_dimensions is empty",
-                                cb.getAttribute("value"))
-                        .isFalse();
+                // Auto-retrying assertion: the checkbox may not have painted at first check.
+                PlaywrightAssertions.assertThat(cb).not().isChecked();
             }
         });
     }
@@ -220,9 +219,8 @@ public class BuildFeatureUIIT {
         setFeatureProperty("subject_dimensions", "trigger_type");
 
         inFeatureEditor(page -> {
-            assertThat(page.locator(".jwt-subject-dimension-cb[value='trigger_type']").isChecked())
-                    .as("trigger_type checkbox should be pre-checked from the saved value")
-                    .isTrue();
+            PlaywrightAssertions.assertThat(page.locator(".jwt-subject-dimension-cb[value='trigger_type']"))
+                    .isChecked();
             assertThat(page.locator("#jwtSubjectPreview").inputValue())
                     .as("preview should include the trigger_type segment from the saved state")
                     .contains(":trigger_type:");
@@ -258,18 +256,18 @@ public class BuildFeatureUIIT {
 
         inFeatureEditor(page -> {
             // The readonly Issuer (iss) row is always visible at the top with a real URL.
-            assertThat(page.locator("#jwtIssuerUrl").isVisible()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#jwtIssuerUrl")).isVisible();
             assertThat(page.locator("#jwtIssuerUrl").inputValue()).startsWith("https://");
             assertThat(page.locator("#jwtIssuerUrl").getAttribute("readonly")).isNotNull();
 
             // Connection dropdown must exist and list the new connection.
-            assertThat(page.locator("#connection_id").isVisible()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#connection_id")).isVisible();
             assertThat(page.locator("#connection_id option").allInnerTexts()
                     .stream().map(String::trim).toList()).contains("UI Test Conn");
 
             // Initial state: no connection selected — inline fields editable, no jwt-locked class.
-            assertThat(page.locator("#audience").isVisible()).isTrue();
-            assertThat(page.locator("#audience").isEditable()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isVisible();
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isEditable();
             assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
                     .isEqualTo(false);
 
@@ -279,25 +277,25 @@ public class BuildFeatureUIIT {
 
             // Inline fields remain visible but switch to readonly mode populated with the
             // connection's values and styled with the jwt-locked gray treatment.
-            assertThat(page.locator("#audience").isVisible()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isVisible();
             assertThat(page.locator("#audience").inputValue()).isEqualTo("api://ui-test-audience");
             assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
             assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
                     .isEqualTo(true);
             assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("30");
             assertThat(page.locator("#algorithm").inputValue()).isEqualTo("ES256");
-            assertThat(page.locator("#algorithm").isDisabled()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#algorithm")).isDisabled();
 
             // Switch back to "(none)".
             page.selectOption("#connection_id",
                     new SelectOption().setValue(""));
 
             // Inline fields are editable again and the jwt-locked class is removed.
-            assertThat(page.locator("#audience").isEditable()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isEditable();
             assertThat(page.locator("#audience").getAttribute("readonly")).isNull();
             assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
                     .isEqualTo(false);
-            assertThat(page.locator("#algorithm").isDisabled()).isFalse();
+            PlaywrightAssertions.assertThat(page.locator("#algorithm")).isEnabled();
         });
     }
 
@@ -322,7 +320,7 @@ public class BuildFeatureUIIT {
             assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
             assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("20");
             assertThat(page.locator("#algorithm").inputValue()).isEqualTo("RS256");
-            assertThat(page.locator("#algorithm").isDisabled()).isTrue();
+            PlaywrightAssertions.assertThat(page.locator("#algorithm")).isDisabled();
         });
     }
 
@@ -337,23 +335,23 @@ public class BuildFeatureUIIT {
             final var triggerType = page.locator(".jwt-subject-dimension-cb[value='trigger_type']");
 
             // Pre-selection: unchecked and editable.
-            assertThat(triggerType.isChecked()).isFalse();
-            assertThat(triggerType.isDisabled()).isFalse();
+            PlaywrightAssertions.assertThat(triggerType).not().isChecked();
+            PlaywrightAssertions.assertThat(triggerType).isEnabled();
 
             page.selectOption("#connection_id",
                     new SelectOption().setValue(connectionId));
 
             // Connection-selected: matching dimensions are checked AND disabled.
-            assertThat(triggerType.isChecked()).isTrue();
-            assertThat(triggerType.isDisabled()).isTrue();
+            PlaywrightAssertions.assertThat(triggerType).isChecked();
+            PlaywrightAssertions.assertThat(triggerType).isDisabled();
             // Live preview reflects the connection's dimensions.
             assertThat(page.locator("#jwtSubjectPreview").inputValue()).contains(":trigger_type:");
 
             // Switch back: checkbox returns to unchecked + enabled.
             page.selectOption("#connection_id",
                     new SelectOption().setValue(""));
-            assertThat(triggerType.isChecked()).isFalse();
-            assertThat(triggerType.isDisabled()).isFalse();
+            PlaywrightAssertions.assertThat(triggerType).not().isChecked();
+            PlaywrightAssertions.assertThat(triggerType).isEnabled();
         });
     }
 
