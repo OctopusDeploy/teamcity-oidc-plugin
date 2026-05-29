@@ -35,13 +35,16 @@ public class JwtBuildFeatureTest {
     @TempDir
     private File tempDir;
 
+    private static final String CONNECTION_ID = "octopus-prod-connection";
+    private static final String CONNECTION_PROJECT_ID = "OctopusProject";
+
     private JwtBuildFeature feature;
 
     @BeforeEach
     void setUp() {
         lenient().when(buildType.getProject()).thenReturn(project);
-        lenient().when(oidcConnectionsManager.resolve(project, "c1"))
-                .thenReturn(Optional.of(new OidcConnection("c1", "p1", "Octopus prod",
+        lenient().when(oidcConnectionsManager.resolve(project, CONNECTION_ID))
+                .thenReturn(Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus prod",
                         new IssuanceSettings("api://audience", 10, "RS256", Set.of()))));
         final var buildServer = buildServerWithRootUrl("https://teamcity.example.com");
         lenient().when(buildServer.getProjectManager()).thenReturn(projectManager);
@@ -233,11 +236,11 @@ public class JwtBuildFeatureTest {
         // ttl_minutes far out of range — would fail inline validation, but is ignored when connection_id is set.
         final var processor = feature.getParametersProcessor(buildType);
         final var errors = processor.process(Map.of(
-                "connection_id", "c1",
+                "connection_id", CONNECTION_ID,
                 "ttl_minutes", "9999",
                 "subject_dimensions", "bogus"));
 
-        // c1 resolves successfully (stubbed in setUp).
+        // The connection resolves successfully (stubbed in setUp).
         assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("ttl_minutes", "subject_dimensions");
     }
 
@@ -253,11 +256,11 @@ public class JwtBuildFeatureTest {
 
     @Test
     public void describeParametersUsesConnectionDisplayNameWhenSet() {
-        when(oidcConnectionsManager.resolve(rootProject, "c1"))
-                .thenReturn(java.util.Optional.of(new OidcConnection("c1", "p1", "Octopus production",
+        when(oidcConnectionsManager.resolve(rootProject, CONNECTION_ID))
+                .thenReturn(java.util.Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus production",
                         new IssuanceSettings("api://from-conn", 15, "ES256", java.util.Set.of("branch")))));
 
-        final var description = feature.describeParameters(Map.of("connection_id", "c1"));
+        final var description = feature.describeParameters(Map.of("connection_id", CONNECTION_ID));
 
         assertThat(description).contains("connection: Octopus production");
         assertThat(description).contains("aud:api://from-conn");
