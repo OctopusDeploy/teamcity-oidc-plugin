@@ -34,23 +34,22 @@ define once at the top of the hierarchy where it makes sense.
 
 1. Open the build feature editor.
 2. Pick the connection from the **Connection** dropdown at the top.
-3. The inline audience / TTL / algorithm / subject scoping fields hide; a
-   read-only summary of the connection's settings appears.
+3. The inline audience / TTL / algorithm / subject scoping fields become
+   read-only and are filled in with the connection's settings.
 
 ### What happens if the connection is deleted?
 
-- At save time, the build feature editor reports an `InvalidProperty` error on
+- At save time, the build feature editor reports an error on
   the connection field if the referenced connection is no longer reachable.
 - At build start, if the connection still cannot be resolved (e.g. it was
   deleted between the last save and the build), the build fails with a clear
-  error message identifying the missing connection. **No tokens are issued
-  with surprise claims.**
+  error message identifying the missing connection.
 
-### Coexistence with inline configuration
+### Inline configuration
 
-Inline (per-build-feature) configuration remains fully supported. Connections
-are optional and additive — pick "(no connection — configure inline below)" in
-the dropdown to use the existing inline fields.
+Instead of referencing a connection, a build feature can be configured inline.
+Pick "(no connection — configure inline below)" in the **Connection** dropdown to
+edit the audience / TTL / algorithm / subject scoping fields directly.
 
 ## Token claims
 
