@@ -32,8 +32,7 @@ public record IssuanceSettings(@NotNull String audience,
         final var rawAudience = params.getOrDefault("audience", "");
         final var audience = rawAudience.isBlank() ? issuerUrl : rawAudience;
 
-        final var ttlMinutes = parseTtl(params.getOrDefault("ttl_minutes", String.valueOf(DEFAULT_TTL_MINUTES)),
-                maxTtlMinutes);
+        final var ttlMinutes = parseTtl(params.getOrDefault("ttl_minutes", String.valueOf(DEFAULT_TTL_MINUTES)), maxTtlMinutes);
 
         final var algorithm = params.getOrDefault("algorithm", DEFAULT_ALGORITHM);
 
@@ -44,8 +43,7 @@ public record IssuanceSettings(@NotNull String audience,
 
     private static int parseTtl(final String raw, final int maxTtlMinutes) {
         try {
-            return Math.clamp(Integer.parseInt(raw),
-                    OidcSettings.MIN_TOKEN_LIFETIME_MINUTES, maxTtlMinutes);
+            return Math.clamp(Integer.parseInt(raw), OidcSettings.MIN_TOKEN_LIFETIME_MINUTES, maxTtlMinutes);
         } catch (final NumberFormatException e) {
             LOG.warning("JWT plugin: invalid ttl_minutes '" + sanitize(raw) + "' — using default "
                     + DEFAULT_TTL_MINUTES + " (clamped to server max " + maxTtlMinutes + ")");
