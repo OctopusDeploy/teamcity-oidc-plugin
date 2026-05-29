@@ -29,10 +29,10 @@
     pageContext.setAttribute("currentUserCanConfigureMax",
             editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
 
-    // Build a map-based view of each connection so EL can access them via ${c.id} etc.
-    // Standard EL property access on Map<String,String> works in all Jasper versions;
-    // record accessor EL calls (${c.id()}) require EL 2.2 method invocation which TC's
-    // bundled Jasper may not support at Java 8 source level.
+    // Build a map-based view of each connection so the JSP's ${c.id} expressions can read
+    // them. Property-style access like ${c.id} on a Map is just a key lookup and works in
+    // all Jasper versions; calling a record accessor (${c.id()}) needs method-invocation
+    // support that TC's bundled Jasper may not provide at Java 8 source level.
     final java.util.List<OidcConnection> jwtConnectionsRaw =
             JwtBuildFeature.availableConnectionsFor(request.getParameter("id"));
     final java.util.List<java.util.Map<String, String>> jwtConnections = new java.util.ArrayList<>();
@@ -74,7 +74,7 @@
                             </props:option>
                         </c:forEach>
                     </props:selectProperty>
-                    <span class="smallNote">Create credentials via the project's <a href="${pageContext.request.contextPath}/admin/editProject.html?projectId=${fn:escapeXml(projectExternalId)}&amp;tab=oauthConnections">Connections</a> page.</span>
+                    <span class="smallNote">Create and edit credentials via the project's <a href="${pageContext.request.contextPath}/admin/editProject.html?projectId=${fn:escapeXml(projectExternalId)}&amp;tab=oauthConnections">Connections</a> page.</span>
                 </c:otherwise>
             </c:choose>
             <span class="error" id="error_connection_id"></span>
@@ -163,8 +163,7 @@
     </tr>
 </l:settingsGroup>
 
-<%-- Connection metadata for JS — emitted as data-* attributes to avoid inline script injection.
-     Must live outside <l:settingsGroup> (which renders a <table>) — a <div> inside <table> is invalid HTML. --%>
+<%-- Connection metadata for JS — emitted as data-* attributes to avoid inline script injection --%>
 <div id="jwtConnectionsData" style="display:none;">
     <c:forEach var="c" items="${jwtConnections}">
         <span class="jwt-connection-entry"
@@ -396,27 +395,27 @@
 
         const refreshConnectionUI = () => {
             const selected = $j('#connection_id').val();
-            const c = selected && connectionData[selected];
+            const selectedConnection = selected && connectionData[selected];
 
             const $ttl = $j('#ttl_minutes');
             const $aud = $j('#audience');
             const $alg = $j('#algorithm');
             const $subj = $j('#subject_dimensions');
-            const $subjCbs = $j('.jwt-subject-dimension-cb');
+            const subjectCheckboxes = $j('.jwt-subject-dimension-cb');
 
-            if (c) {
+            if (selectedConnection) {
                 cacheInline($ttl, $ttl.val());
                 cacheInline($aud, $aud.val());
                 cacheInline($alg, $alg.val());
                 cacheInline($subj, $subj.val());
 
-                $ttl.val(c.ttl).prop('readonly', true).addClass('jwt-locked');
-                $aud.val(c.audience).prop('readonly', true).addClass('jwt-locked');
-                $alg.val(c.algorithm).prop('disabled', true).addClass('jwt-locked');
-                $subj.val(c.subjectDimensions || '');
-                const dims = (c.subjectDimensions || '').split(',').filter(s => s.length > 0);
-                $subjCbs.each((_, el) => {
-                    el.checked = dims.indexOf(el.value) !== -1;
+                $ttl.val(selectedConnection.ttl).prop('readonly', true).addClass('jwt-locked');
+                $aud.val(selectedConnection.audience).prop('readonly', true).addClass('jwt-locked');
+                $alg.val(selectedConnection.algorithm).prop('disabled', true).addClass('jwt-locked');
+                $subj.val(selectedConnection.subjectDimensions || '');
+                const subjectDimensions = (selectedConnection.subjectDimensions || '').split(',').filter(s => s.length > 0);
+                subjectCheckboxes.each((_, el) => {
+                    el.checked = subjectDimensions.indexOf(el.value) !== -1;
                     el.disabled = true;
                 });
             } else {
@@ -427,9 +426,9 @@
                 $ttl.prop('readonly', false).removeClass('jwt-locked');
                 $aud.prop('readonly', false).removeClass('jwt-locked');
                 $alg.prop('disabled', false).removeClass('jwt-locked');
-                const dims = $subj.val().split(',').filter(s => s.length > 0);
-                $subjCbs.each((_, el) => {
-                    el.checked = dims.indexOf(el.value) !== -1;
+                const subjectDimensions = $subj.val().split(',').filter(s => s.length > 0);
+                subjectCheckboxes.each((_, el) => {
+                    el.checked = subjectDimensions.indexOf(el.value) !== -1;
                     el.disabled = false;
                 });
             }
