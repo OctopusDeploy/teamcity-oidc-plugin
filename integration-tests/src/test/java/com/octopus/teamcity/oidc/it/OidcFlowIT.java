@@ -77,14 +77,14 @@ public class OidcFlowIT {
                 System.getProperty("project.basedir", "."),
                 "../target/"
         ).normalize();
-        try (var stream = java.nio.file.Files.list(targetDir)) {
+        try (final var stream = java.nio.file.Files.list(targetDir)) {
             return stream
                     .filter(p -> p.getFileName().toString().matches("Octopus\\.TeamCity\\.OIDC\\..*\\.zip"))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException(
                             "Plugin zip not found in: " + targetDir.toAbsolutePath() +
                             "\nRun 'mvn package -DskipTests' from the project root first."));
-        } catch (java.io.IOException e) {
+        } catch (final java.io.IOException e) {
             throw new IllegalStateException("Could not list target directory: " + targetDir.toAbsolutePath(), e);
         }
     }
@@ -148,7 +148,7 @@ public class OidcFlowIT {
             .withEnv("ACCEPT_EULA", "Y")
             .withEnv("MSSQL_SA_PASSWORD", MSSQL_PASSWORD)
             .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-mssql"))
-            // Wait for SQL Server to be fully initialised and accepting connections,
+            // Wait for SQL Server to be fully initialized and accepting connections,
             // not just the TCP port being open — Octopus will crash if it connects too early
             .waitingFor(Wait.forLogMessage(".*SQL Server is now ready for client connections.*\\n", 1)
                     .withStartupTimeout(Duration.ofMinutes(3)));
@@ -205,7 +205,7 @@ public class OidcFlowIT {
                 cmd.withCmd("/bin/sh", "-c",
                         // Make the custom cacerts world-readable (withCopyFileToContainer
                         // copies with the host file's mode; if it's 0600 the tcuser JVM
-                        // can't read it, causing SSLContext to initialise with no trust
+                        // can't read it, causing SSLContext to initialize with no trust
                         // anchors and all outbound TLS connections to fail).
                         "chmod 644 /opt/java/openjdk/lib/security/cacerts" +
                         " && chown -R tcuser:tcuser /data/teamcity_server/datadir/plugins" +
@@ -566,11 +566,7 @@ public class OidcFlowIT {
         }
     }
 
-    private static void tcPost(final String path, final String json) throws Exception {
-        tcPostReturningBody(path, json);
-    }
-
-    private static String tcPostReturningBody(final String path, final String json) throws Exception {
+    private static String tcPost(final String path, final String json) throws Exception {
         final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + path))
@@ -799,7 +795,7 @@ public class OidcFlowIT {
         // 1. Wait for agent idle, then trigger build
         waitForAgentIdle();
         log("Triggering build...");
-        final var queueResponse = triggerBuild();
+        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         if (buildId == null || buildId.equals("null")) throw new IllegalStateException(
                 "Could not parse build id from: " + queueResponse);
@@ -851,7 +847,7 @@ public class OidcFlowIT {
     void jwtTokenIsMaskedInBuildLogAndResultingProperties() throws Exception {
         waitForAgentIdle();
         log("Triggering build for masking assertions...");
-        final var queueResponse = triggerBuild();
+        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         log("Build queued, id=" + buildId);
         waitForBuildSuccess(buildId);
@@ -912,10 +908,6 @@ public class OidcFlowIT {
         return response.body();
     }
 
-    private static String triggerBuild() throws Exception {
-        return triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
-    }
-
     private static String triggerBuildFor(final String buildTypeExternalId) throws Exception {
         final var body = """
                 {"buildType":{"id":"%s"}}
@@ -934,12 +926,6 @@ public class OidcFlowIT {
             throw new IllegalStateException("Failed to queue build: " + response.statusCode() + " " + response.body());
         }
         return response.body();
-    }
-
-    private static void waitForBuildSuccessFor(final String buildTypeExternalId, final String buildId) throws Exception {
-        // buildTypeExternalId is unused here (build polling is by buildId), but it's kept in the
-        // signature alongside triggerBuildFor for readability — callers always pass both together.
-        waitForBuildSuccess(buildId);
     }
 
     private static void waitForBuildSuccess(final String buildId) throws Exception {
@@ -1014,11 +1000,6 @@ public class OidcFlowIT {
                             + " " + response.body());
         }
         return response.body().trim();
-    }
-
-    /** Same as {@link #extractJwtFromBuild(String)} — buildTypeExternalId kept for call-site clarity. */
-    private static String extractJwtFromBuildFor(final String buildTypeExternalId, final String buildId) throws Exception {
-        return extractJwtFromBuild(buildId);
     }
 
     private static void verifyJwtClaims(final String jwt) throws Exception {
@@ -1123,7 +1104,7 @@ public class OidcFlowIT {
                   {"name":"subject_dimensions","value":"%s"}
                 ]}}
                 """.formatted(displayName, audience, ttlMinutes, algorithm, subjectDimensions);
-        final var responseBody = tcPostReturningBody(
+        final var responseBody = tcPost(
                 "/httpAuth/app/rest/projects/" + parentProjectId + "/projectFeatures", json);
         final var id = (String) parseJson(responseBody).get("id");
         if (id == null) throw new IllegalStateException(
@@ -1215,10 +1196,10 @@ public class OidcFlowIT {
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         log("Build queued, id=" + buildId);
 
-        waitForBuildSuccessFor("OidcConnIT_Build", buildId);
+        waitForBuildSuccess(buildId);
         log("Build finished successfully.");
 
-        final var jwt = extractJwtFromBuildFor("OidcConnIT_Build", buildId);
+        final var jwt = extractJwtFromBuild(buildId);
         org.assertj.core.api.Assertions.assertThat(jwt)
                 .as("jwt.token must be present in build artifact")
                 .isNotBlank();
@@ -1271,7 +1252,7 @@ public class OidcFlowIT {
         attachSampleVcsRoot();
         log("Triggering sample build for manual stack...");
         waitForAgentIdle();
-        final var queueResponse = triggerBuild();
+        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         log("Sample build queued, id=" + buildId + " — waiting for it to finish...");
         waitForBuildSuccess(buildId);
