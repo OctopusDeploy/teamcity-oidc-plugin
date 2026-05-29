@@ -21,11 +21,19 @@
     </properties>
     <repositories>
         <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+        <repository>
             <id>JetBrains</id>
             <url>https://download.jetbrains.com/teamcity-repository</url>
         </repository>
     </repositories>
     <pluginRepositories>
+        <pluginRepository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </pluginRepository>
         <pluginRepository>
             <id>JetBrains</id>
             <url>https://download.jetbrains.com/teamcity-repository</url>
