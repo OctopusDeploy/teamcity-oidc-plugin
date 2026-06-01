@@ -308,7 +308,7 @@ final class SharedStack {
     }
 
     // -------------------------------------------------------------------------
-    // Host setup helpers (lifted verbatim from the original OidcFlowIT)
+    // Host setup helpers
     // -------------------------------------------------------------------------
 
     private static String generateApiKey() {
