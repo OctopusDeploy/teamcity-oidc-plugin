@@ -14,18 +14,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end integration tests: validates the plugin's OIDC endpoints over HTTP the same way a
- * cloud provider would. Containers and the one-time bring-up live in {@link SharedStack}; this
- * class only sets the global server root URL it needs (its own mapped {@code http://localhost}
- * URL, which its issuer assertions compare against) before running.
+ * cloud provider would. Containers, bring-up, and all server interaction come from
+ * {@link SharedStack} / {@link TeamCityClient}; this class only sets the global root URL it needs
+ * (its own mapped {@code http://localhost} URL, which its issuer assertions compare against).
  * <p>
  * Run with: mvn verify (from the project root, after mvn package).
  * Skipped by: mvn test (only failsafe/verify triggers these).
@@ -36,22 +34,15 @@ public class JwtPluginIT {
     static TeamCityClient tc;
     static String superUserAuthHeader;
 
-    /** Stateless client for the raw read-only GET helpers below. */
-    static HttpClient http;
-
     @BeforeAll
     static void setup() throws Exception {
         SharedStack.ensureStarted();
         tc = SharedStack.teamCity();
         baseUrl = SharedStack.tcBaseUrl();
         superUserAuthHeader = tc.authHeader();
-        http = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
 
         dumpTcPluginLog();
-        configureServerRootUrl();
+        tc.setRootUrl(baseUrl);
     }
 
     private static void dumpTcPluginLog() throws Exception {
@@ -82,7 +73,7 @@ public class JwtPluginIT {
          * Fix: configure TeamCity guest access for /.well-known/* paths, or implement
          * a RequestInterceptorAdapter that exempts these paths from auth.
          */
-        final var response = unauthenticatedGet("/.well-known/jwks.json");
+        final var response = tc.unauthenticatedGet("/.well-known/jwks.json");
 
         assertThat(response.statusCode())
                 .as("JWKS endpoint must return 200 without authentication — " +
@@ -93,8 +84,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksEndpointReturnsBothRsaAndEcPublicKeys() throws Exception {
-        final var body = publicGet("/.well-known/jwks.json");
-        final var jwks = JWKSet.parse(body);
+        final var jwks = tc.fetchJwks();
 
         boolean hasRsa = false, hasEc = false;
         for (final var key : jwks.getKeys()) {
@@ -108,8 +98,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksEndpointNeverExposesPrivateKeyMaterial() throws Exception {
-        final var body = publicGet("/.well-known/jwks.json");
-        final var jwks = JWKSet.parse(body);
+        final var jwks = tc.fetchJwks();
 
         for (final var key : jwks.getKeys()) {
             assertThat(key.isPrivate())
@@ -120,7 +109,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksResponseHasCacheControlHeader() throws Exception {
-        final var response = publicGetWithHeaders("/.well-known/jwks.json");
+        final var response = tc.unauthenticatedGet("/.well-known/jwks.json");
 
         assertThat(response.headers().firstValue("Cache-Control"))
                 .isPresent()
@@ -129,8 +118,7 @@ public class JwtPluginIT {
 
     @Test
     void jwksKeyIdsAreThumbprints() throws Exception {
-        final var body = publicGet("/.well-known/jwks.json");
-        final var jwks = JWKSet.parse(body);
+        final var jwks = tc.fetchJwks();
 
         for (final var key : jwks.getKeys()) {
             final var kid = key.getKeyID();
@@ -151,7 +139,7 @@ public class JwtPluginIT {
          * CRITICAL: same requirement as the JWKS endpoint. Cloud providers fetch
          * the discovery document without credentials during OIDC provider setup.
          */
-        final var response = unauthenticatedGet("/.well-known/openid-configuration");
+        final var response = tc.unauthenticatedGet("/.well-known/openid-configuration");
 
         assertThat(response.statusCode())
                 .as("Discovery endpoint must return 200 without authentication. " +
@@ -170,8 +158,9 @@ public class JwtPluginIT {
         final var doc = fetchDiscoveryDocument();
         final var jwksUri = doc.get("jwks_uri").getAsString();
 
-        // The URI in the document must be publicly accessible and return a valid JWKS
-        final var jwksResponse = http.send(
+        // The URI advertised in the document must be publicly accessible and return a valid JWKS.
+        // Fetch the literal advertised URI (an absolute URL) with a throwaway client.
+        final var jwksResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder().uri(URI.create(jwksUri)).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
         );
@@ -204,7 +193,7 @@ public class JwtPluginIT {
 
     @Test
     void discoveryDocumentHasCacheControlHeader() throws Exception {
-        final var response = publicGetWithHeaders("/.well-known/openid-configuration");
+        final var response = tc.unauthenticatedGet("/.well-known/openid-configuration");
 
         assertThat(response.headers().firstValue("Cache-Control"))
                 .isPresent()
@@ -237,7 +226,7 @@ public class JwtPluginIT {
 
     @Test
     void keyRotationEndpointRequiresPost() throws Exception {
-        final var response = authenticatedGet("/admin/jwtKeyRotate.html", superUserAuthHeader);
+        final var response = tc.authenticatedGet("/admin/jwtKeyRotate.html");
         // GET must be rejected
         assertThat(response.statusCode()).isEqualTo(405);
     }
@@ -245,9 +234,7 @@ public class JwtPluginIT {
     @Test
     void keyRotationEndpointRotatesKeysAndUpdatesJwks() throws Exception {
         // Capture current key IDs
-        final var jwksBefore = publicGet("/.well-known/jwks.json");
-        final var setsBefore = JWKSet.parse(jwksBefore);
-        final var kidsBefore = setsBefore.getKeys().stream().map(JWK::getKeyID).toList();
+        final var kidsBefore = tc.fetchJwks().getKeys().stream().map(JWK::getKeyID).toList();
 
         // Rotate
         final var rotateResponse = tc.adminFormPostRaw("/admin/jwtKeyRotate.html", "");
@@ -256,9 +243,7 @@ public class JwtPluginIT {
 
         // New JWKS should have new keys; previously-active keys become retired (overlap window).
         // Previously-retired keys are evicted, so not all old kids will be present.
-        final var jwksAfter = publicGet("/.well-known/jwks.json");
-        final var setsAfter = JWKSet.parse(jwksAfter);
-        final var kidsAfter = setsAfter.getKeys().stream().map(JWK::getKeyID).toList();
+        final var kidsAfter = tc.fetchJwks().getKeys().stream().map(JWK::getKeyID).toList();
 
         // Some old keys must still be in JWKS (the ones that were active are now retired)
         final List<String> retained = new ArrayList<>(kidsAfter);
@@ -279,39 +264,13 @@ public class JwtPluginIT {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private HttpResponse<String> unauthenticatedGet(final String path) throws Exception {
-        final var builder = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + path))
-                .GET();
-        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-    }
-
-    /** GETs via /httpAuth/ so TeamCity processes Basic auth credentials. */
-    private HttpResponse<String> authenticatedGet(final String path, final String authHeader) throws Exception {
-        final var builder = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + httpAuthPath(path)))
-                .GET();
-        builder.header("Authorization", authHeader);
-        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-    }
-
-    /** Prefixes the path with /httpAuth/ so TeamCity processes Basic auth credentials. */
-    private static String httpAuthPath(final String path) {
-        return "/httpAuth" + path;
-    }
-
-    /** Fetches a public path without authentication or /httpAuth/ prefix. */
+    /** Fetches a public path without authentication, asserting a 200, and returns the body. */
     private String publicGet(final String path) throws Exception {
-        final var response = unauthenticatedGet(path);
+        final var response = tc.unauthenticatedGet(path);
         assertThat(response.statusCode())
                 .as("GET %s returned unexpected status", path)
                 .isEqualTo(200);
         return response.body();
-    }
-
-    /** Fetches a public path without auth, returning the full response for header inspection. */
-    private HttpResponse<String> publicGetWithHeaders(final String path) throws Exception {
-        return unauthenticatedGet(path);
     }
 
     private JsonObject fetchDiscoveryDocument() throws Exception {
@@ -323,31 +282,5 @@ public class JwtPluginIT {
         final List<String> result = new ArrayList<>();
         array.forEach(e -> result.add(e.getAsString()));
         return result;
-    }
-
-    /**
-     * Updates TC's "Server URL" (root URL) to {@code baseUrl} via the admin settings form, then
-     * waits for the change to propagate. TC defaults to {@code http://localhost:8111} (its internal
-     * port); cloud providers and OIDC verifiers need the externally-accessible URL so the issuer in
-     * the discovery document and JWT tokens is reachable. The propagation wait matters on the shared
-     * server: another IT class may have set a different root URL, and the discovery issuer is read
-     * live from {@code getRootUrl()}.
-     */
-    private static void configureServerRootUrl() throws Exception {
-        final var encoded = URI.create(baseUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F");
-        // serverConfigGeneral.html is TC's built-in settings form — it returns HTML, not JSON, so
-        // use the raw POST (adminFormPost would try to parse the body as JSON).
-        final var resp = tc.adminFormPostRaw("/admin/serverConfigGeneral.html", "rootUrl=" + encoded + "&submitSettings=store");
-        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-            throw new IllegalStateException("TC root URL POST returned " + resp.statusCode() + ": " + resp.body());
-        }
-
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var webUrl = (String) Json.parse(tc.get("/httpAuth/app/rest/server")).get("webUrl");
-            if (baseUrl.equals(webUrl)) return;
-            TimeUnit.SECONDS.sleep(2);
-        }
-        throw new IllegalStateException("TC root URL did not update to " + baseUrl + " within 1 minute");
     }
 }

@@ -154,7 +154,7 @@ public class KeyRotationWarmupIT {
      * RSA-2048 key first.
      */
     private String captureCurrentSigningKid() throws Exception {
-        final var jwks = fetchJwks();
+        final var jwks = tc.fetchJwks();
         assertThat(jwks.getKeys()).as("JWKS before rotation").hasSize(3);
         return rsaKidAt(jwks, 0);
     }
@@ -177,7 +177,7 @@ public class KeyRotationWarmupIT {
                 .as("activeAt must be in the future (warmup window not yet elapsed)")
                 .isAfter(Instant.now());
 
-        final var jwks = fetchJwks();
+        final var jwks = tc.fetchJwks();
         assertThat(jwks.getKeys())
                 .as("JWKS during warmup must contain both current and pending keys")
                 .hasSize(6);
@@ -199,7 +199,7 @@ public class KeyRotationWarmupIT {
     private void assertSigningDuringWarmupStillUsesCurrent(final String currentKid) throws Exception {
         final var jwt = postStepJwt();
         assertThat(jwt.get("ok")).as("step=jwt during warmup").isEqualTo(true);
-        assertThat(rsaKidAt(fetchJwks(), 0))
+        assertThat(rsaKidAt(tc.fetchJwks(), 0))
                 .as("JWKS[0] must still be currentKid during warmup")
                 .isEqualTo(currentKid);
     }
@@ -244,7 +244,7 @@ public class KeyRotationWarmupIT {
     private void assertSigningAfterWarmupUsesFormerlyPending(final String pendingKid) throws Exception {
         final var jwt = postStepJwt();
         assertThat(jwt.get("ok")).as("step=jwt after warmup").isEqualTo(true);
-        assertThat(rsaKidAt(fetchJwks(), 0))
+        assertThat(rsaKidAt(tc.fetchJwks(), 0))
                 .as("After warmup, JWKS[0] must be the formerly-pending kid (promotion complete)")
                 .isEqualTo(pendingKid);
     }
@@ -289,14 +289,6 @@ public class KeyRotationWarmupIT {
     private static JSONObject postStepJwt() throws Exception {
         return tc.adminFormPost("/admin/jwtTest.html",
                 "step=jwt&algorithm=RS256&buildTypeId=" + BUILD_TYPE_ID);
-    }
-
-    private static JWKSet fetchJwks() throws Exception {
-        final var response = tc.unauthenticatedGet("/.well-known/jwks.json");
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("JWKS endpoint returned " + response.statusCode());
-        }
-        return JWKSet.parse(response.body());
     }
 
     /**

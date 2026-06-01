@@ -10,15 +10,11 @@ import com.microsoft.playwright.assertions.PlaywrightAssertions;
 import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
-import net.minidev.json.JSONArray;
-import net.minidev.json.JSONObject;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,8 +52,11 @@ public class BuildFeatureUIIT {
         baseUrl = SharedStack.tcBaseUrl();
         superUserAuthHeader = tc.authHeader();
 
-        configureServerRootUrl();
-        createAdminUserToBypassFirstRunWizard();
+        // Set the global root URL to a fake https:// form of the mapped URL so the plugin's
+        // HTTPS-required validation passes (it only checks the scheme; Playwright still drives the
+        // UI over plain HTTP). createAdminUser satisfies TC's first-run "Create Administrator" gate.
+        tc.setRootUrl(baseUrl.replaceFirst("^http://", "https://"));
+        tc.createAdminUser("admin", "admin");
         createProjectAndBuildType();
         featureId = addBuildFeature();
 
@@ -106,7 +105,7 @@ public class BuildFeatureUIIT {
         editFeature(page ->
                 page.locator(".jwt-subject-dimension-cb[value='trigger_type']").check());
 
-        assertThat((String) readFeatureProperties().get("subject_dimensions"))
+        assertThat((String) tc.featureProperties(BUILD_TYPE_ID, featureId).get("subject_dimensions"))
                 .as("saved subject_dimensions should list trigger_type")
                 .isEqualTo("trigger_type");
     }
@@ -118,7 +117,7 @@ public class BuildFeatureUIIT {
         // Phase 2: uncheck every checkbox, verify empty subject_dimensions is stored
         editFeature(page -> forEachDimensionCheckbox(page, Locator::uncheck));
 
-        assertThat((String) readFeatureProperties().get("subject_dimensions"))
+        assertThat((String) tc.featureProperties(BUILD_TYPE_ID, featureId).get("subject_dimensions"))
                 .as("all dimensions unchecked should store empty string (the default-minimal sub)")
                 .isNullOrEmpty();
     }
@@ -127,7 +126,7 @@ public class BuildFeatureUIIT {
     void algorithmSelectionPersistsAfterSave() throws Exception {
         editFeature(page -> page.selectOption("#algorithm", "ES256"));
 
-        assertThat(readFeatureProperties().get("algorithm"))
+        assertThat(tc.featureProperties(BUILD_TYPE_ID, featureId).get("algorithm"))
                 .as("algorithm should be ES256 after selecting and saving")
                 .isEqualTo("ES256");
     }
@@ -136,7 +135,7 @@ public class BuildFeatureUIIT {
     void ttlMinutesPersistsAfterSave() throws Exception {
         editFeature(page -> page.locator("#ttl_minutes").fill("15"));
 
-        assertThat(readFeatureProperties().get("ttl_minutes"))
+        assertThat(tc.featureProperties(BUILD_TYPE_ID, featureId).get("ttl_minutes"))
                 .as("ttl_minutes should be 15 after saving")
                 .isEqualTo("15");
     }
@@ -145,7 +144,7 @@ public class BuildFeatureUIIT {
     void audiencePersistsAfterSave() throws Exception {
         editFeature(page -> page.locator("#audience").fill("api://MyTestAudience"));
 
-        assertThat(readFeatureProperties().get("audience"))
+        assertThat(tc.featureProperties(BUILD_TYPE_ID, featureId).get("audience"))
                 .as("audience should match saved value")
                 .isEqualTo("api://MyTestAudience");
     }
@@ -183,7 +182,7 @@ public class BuildFeatureUIIT {
         // Configure the feature with subject_dimensions=trigger_type via REST so the UI has
         // a non-default state to load. Opening the dialog should reflect that — trigger_type
         // checkbox checked, preview includes the segment — without further user interaction.
-        setFeatureProperty("subject_dimensions", "trigger_type");
+        tc.setFeatureProperty(BUILD_TYPE_ID, featureId, "subject_dimensions", "trigger_type");
 
         inFeatureEditor(page -> {
             PlaywrightAssertions.assertThat(page.locator(".jwt-subject-dimension-cb[value='trigger_type']"))
@@ -210,7 +209,7 @@ public class BuildFeatureUIIT {
         });
 
         // Confirm via REST that the persisted value is unchanged.
-        assertThat(readFeatureProperties().get("ttl_minutes"))
+        assertThat(tc.featureProperties(BUILD_TYPE_ID, featureId).get("ttl_minutes"))
                 .as("invalid TTL should not have persisted")
                 .isEqualTo("10");
     }
@@ -273,7 +272,7 @@ public class BuildFeatureUIIT {
         editFeature(page -> page.selectOption("#connection_id",
                 new SelectOption().setValue(connectionId)));
 
-        assertThat(readFeatureProperties().get("connection_id"))
+        assertThat(tc.featureProperties(BUILD_TYPE_ID, featureId).get("connection_id"))
                 .as("connection_id should persist to the saved build feature properties")
                 .isEqualTo(connectionId);
 
@@ -343,7 +342,7 @@ public class BuildFeatureUIIT {
         });
 
         // Confirm via REST that the persisted value is unchanged (still empty / default).
-        assertThat((String) readFeatureProperties().get("subject_dimensions"))
+        assertThat((String) tc.featureProperties(BUILD_TYPE_ID, featureId).get("subject_dimensions"))
                 .as("invalid dimension value should not have persisted")
                 .isNullOrEmpty();
     }
@@ -439,29 +438,6 @@ public class BuildFeatureUIIT {
     // REST API helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Reads the current build feature's properties and returns them as a name→value map.
-     */
-    private JSONObject readFeatureProperties() throws Exception {
-        final var body = tc.get("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID
-                + "/features/" + featureId + "?fields=properties(property)");
-        final var propsContainer = (JSONObject) Json.parse(body).get("properties");
-        final var propArray = (JSONArray) propsContainer.get("property");
-        final var result = new JSONObject();
-        for (final var item : propArray) {
-            final var prop = (JSONObject) item;
-            result.put((String) prop.get("name"), prop.get("value"));
-        }
-        return result;
-    }
-
-    /** Sets a single feature property via REST PUT (bypasses any UI flow). TC's REST API
-     *  uses /parameters/ in the URL even though the JSON field is "properties". */
-    private void setFeatureProperty(final String name, final String value) throws Exception {
-        tc.put("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID
-                + "/features/" + featureId + "/parameters/" + name, value);
-    }
-
     private static String addBuildFeature() throws Exception {
         final var featureJson = """
                 {"type":"oidc-plugin","properties":{"property":[
@@ -475,45 +451,8 @@ public class BuildFeatureUIIT {
         return (String) Json.parse(body).get("id");
     }
 
-    /**
-     * Until a user with admin privileges exists, browser navigation to any admin URL is
-     * intercepted by TC's first-run "Create Administrator Account" wizard. Creating one
-     * via REST (super-user-authenticated) satisfies the wizard's gate so the browser
-     * flow can proceed straight to the admin pages.
-     */
-    private static void createAdminUserToBypassFirstRunWizard() throws Exception {
-        tc.post("/httpAuth/app/rest/users",
-                "{\"username\":\"admin\",\"password\":\"admin\","
-                        + "\"roles\":{\"role\":[{\"roleId\":\"SYSTEM_ADMIN\",\"scope\":\"g\"}]}}");
-    }
-
     private static void createProjectAndBuildType() throws Exception {
         tc.createProject(PROJECT_ID, "UI Test", "_Root");
         tc.createBuildType(BUILD_TYPE_ID, "UI Test Build", PROJECT_ID);
-    }
-
-    /**
-     * Sets the global server root URL to a fake {@code https://} form of the mapped URL (the
-     * plugin only checks the string starts with {@code https://}, not that the host serves TLS),
-     * then waits for the change to propagate. The wait matters on the shared server: another IT
-     * class may have set a different root URL, and the UI reads the issuer live from getRootUrl().
-     */
-    private static void configureServerRootUrl() throws Exception {
-        final var httpsRootUrl = baseUrl.replaceFirst("^http://", "https://");
-        final var encoded = java.net.URI.create(httpsRootUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F");
-        // serverConfigGeneral.html is TC's built-in settings form — it returns HTML, not JSON, so
-        // use the raw POST (adminFormPost would try to parse the body as JSON).
-        final var resp = tc.adminFormPostRaw("/admin/serverConfigGeneral.html", "rootUrl=" + encoded + "&submitSettings=store");
-        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-            throw new IllegalStateException("TC root URL POST returned " + resp.statusCode() + ": " + resp.body());
-        }
-
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var webUrl = (String) Json.parse(tc.get("/httpAuth/app/rest/server")).get("webUrl");
-            if (httpsRootUrl.equals(webUrl)) return;
-            TimeUnit.SECONDS.sleep(2);
-        }
-        throw new IllegalStateException("TC root URL did not update to " + httpsRootUrl + " within 1 minute");
     }
 }

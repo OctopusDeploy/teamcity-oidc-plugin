@@ -1,5 +1,7 @@
 package com.octopus.teamcity.oidc.it;
 
+import com.nimbusds.jose.jwk.JWKSet;
+import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
 import org.testcontainers.containers.GenericContainer;
 
@@ -273,6 +275,137 @@ final class TeamCityClient {
             throw new IllegalStateException("Could not extract connection id from TC response: " + responseBody);
         }
         return id;
+    }
+
+    // -------------------------------------------------------------------------
+    // Higher-level operations
+    // -------------------------------------------------------------------------
+
+    /** GETs an authenticated path (Basic auth, {@code /httpAuth} prefix), returning the raw response. */
+    HttpResponse<String> authenticatedGet(final String path) throws Exception {
+        return rest.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/httpAuth" + path))
+                        .header("Authorization", authHeader)
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /**
+     * Sets the global server root URL via the admin settings form, then polls until the change has
+     * propagated (the REST {@code /server} {@code webUrl} reflects it). The wait matters on the
+     * shared server, where another class may have set a different root URL.
+     */
+    void setRootUrl(final String rootUrl) throws Exception {
+        final var encoded = rootUrl.replace(":", "%3A").replace("/", "%2F");
+        final var resp = adminFormPostRaw("/admin/serverConfigGeneral.html",
+                "rootUrl=" + encoded + "&submitSettings=store");
+        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+            throw new IllegalStateException("TC root URL POST returned " + resp.statusCode() + ": " + resp.body());
+        }
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            final var webUrl = (String) Json.parse(get("/httpAuth/app/rest/server")).get("webUrl");
+            if (rootUrl.equals(webUrl)) return;
+            TimeUnit.SECONDS.sleep(2);
+        }
+        throw new IllegalStateException("TC root URL did not update to " + rootUrl + " within 1 minute");
+    }
+
+    /** Creates a system-administrator user (e.g. to satisfy TC's first-run wizard gate). */
+    void createAdminUser(final String username, final String password) throws Exception {
+        post("/httpAuth/app/rest/users",
+                "{\"username\":\"%s\",\"password\":\"%s\",\"roles\":{\"role\":[{\"roleId\":\"SYSTEM_ADMIN\",\"scope\":\"g\"}]}}"
+                        .formatted(username, password));
+    }
+
+    /** Fetches and parses the public JWKS document. */
+    JWKSet fetchJwks() throws Exception {
+        final var response = unauthenticatedGet("/.well-known/jwks.json");
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("JWKS endpoint returned " + response.statusCode());
+        }
+        return JWKSet.parse(response.body());
+    }
+
+    /** Queues a build for the given build type and returns the queued build's id. */
+    String triggerBuild(final String buildTypeId) throws Exception {
+        final var body = post("/httpAuth/app/rest/buildQueue",
+                "{\"buildType\":{\"id\":\"%s\"}}".formatted(buildTypeId));
+        return String.valueOf(Json.parse(body).get("id"));
+    }
+
+    /** Polls until the build finishes; throws if it did not finish SUCCESS within 3 minutes. */
+    void waitForBuildSuccess(final String buildId) throws Exception {
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            final var body = get("/httpAuth/app/rest/builds/id:" + buildId);
+            final var build = Json.parse(body);
+            if ("finished".equals(String.valueOf(build.get("state")))) {
+                final var status = String.valueOf(build.get("status"));
+                if (!"SUCCESS".equals(status)) {
+                    throw new IllegalStateException(
+                            "Build " + buildId + " finished with non-SUCCESS status: " + body);
+                }
+                return;
+            }
+            TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("Build " + buildId + " did not finish within 3 minutes");
+    }
+
+    /** Waits for an unauthorized agent to appear and authorizes it. */
+    void authorizeAgent() throws Exception {
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            final var body = get("/httpAuth/app/rest/agents?locator=authorized:false");
+            final var agents = (JSONArray) Json.parse(body).get("agent");
+            if (agents != null && !agents.isEmpty()) {
+                final var agentId = String.valueOf(((JSONObject) agents.getFirst()).get("id"));
+                put("/httpAuth/app/rest/agents/id:" + agentId + "/authorized", "true");
+                return;
+            }
+            TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("No unauthorized TC agent appeared within 3 minutes");
+    }
+
+    /** Waits until an authorized, connected, enabled agent is idle (running no build). */
+    void waitForAgentIdle() throws Exception {
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            final var body = get("/httpAuth/app/rest/agents"
+                    + "?locator=authorized:true,connected:true,enabled:true&fields=agent(id,build)");
+            final var agents = (JSONArray) Json.parse(body).get("agent");
+            if (agents != null) {
+                for (final var item : agents) {
+                    if (((JSONObject) item).get("build") == null) return;
+                }
+            }
+            TimeUnit.SECONDS.sleep(5);
+        }
+        throw new IllegalStateException("No idle TC agent within 5 minutes");
+    }
+
+    /** Reads a build feature's properties as a name→value map. */
+    JSONObject featureProperties(final String buildTypeId, final String featureId) throws Exception {
+        final var body = get("/httpAuth/app/rest/buildTypes/" + buildTypeId
+                + "/features/" + featureId + "?fields=properties(property)");
+        final var propsContainer = (JSONObject) Json.parse(body).get("properties");
+        final var propArray = (JSONArray) propsContainer.get("property");
+        final var result = new JSONObject();
+        for (final var item : propArray) {
+            final var prop = (JSONObject) item;
+            result.put((String) prop.get("name"), prop.get("value"));
+        }
+        return result;
+    }
+
+    /** Sets a single build-feature property via REST PUT. TC uses {@code /parameters/} in the URL. */
+    void setFeatureProperty(final String buildTypeId, final String featureId,
+                            final String name, final String value) throws Exception {
+        put("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/features/" + featureId
+                + "/parameters/" + name, value);
     }
 
     // -------------------------------------------------------------------------

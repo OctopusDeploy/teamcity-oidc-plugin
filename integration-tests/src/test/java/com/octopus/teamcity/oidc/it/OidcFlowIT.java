@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 
 import net.minidev.json.JSONArray;
-import net.minidev.json.JSONObject;
 
 import java.net.http.HttpClient;
 import java.nio.file.Files;
@@ -68,8 +67,7 @@ public class OidcFlowIT {
         log("TC super user token: " + tc.superUserToken() + "  (login at " + tcBaseUrl + " with empty username)");
 
         log("Configuring TC root URL to " + TC_HTTPS_BASE + "...");
-        configureTcServerRootUrl();
-        verifyTcRootUrl();
+        tc.setRootUrl(TC_HTTPS_BASE);
 
         log("Creating Octopus service account...");
         octopusExternalId = createOctopusServiceAccount();
@@ -79,7 +77,7 @@ public class OidcFlowIT {
         createTcProjectAndBuildConfig(octopusExternalId);
 
         log("Waiting for TC agent to register...");
-        authorizeAgent();
+        tc.authorizeAgent();
 
         log("Attaching Octopus OIDC identity...");
         attachOctopusOidcIdentity();
@@ -129,70 +127,18 @@ public class OidcFlowIT {
         log("Container logs written to " + logDir);
     }
 
-    private static void configureTcServerRootUrl() throws Exception {
-        final var page = tcHttp.send(
-                java.net.http.HttpRequest.newBuilder()
-                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/admin.html?item=serverConfigGeneral"))
-                        .header("Authorization", superUserAuthHeader)
-                        .GET().build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString()
-        );
-        final var csrfMatcher = java.util.regex.Pattern.compile(
-                "tc-csrf-token\" content=\"([^\"]+)\""
-        ).matcher(page.body());
-        if (!csrfMatcher.find()) throw new IllegalStateException("CSRF token not found");
-        final var csrf = csrfMatcher.group(1);
-
-        final var encodedUrl = TC_HTTPS_BASE.replace(":", "%3A").replace("/", "%2F");
-        final var form = "rootUrl=" + encodedUrl + "&submitSettings=store&tc-csrf-token=" + csrf;
-        final var postResponse = tcHttp.send(
-                java.net.http.HttpRequest.newBuilder()
-                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/admin/serverConfigGeneral.html"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(form))
-                        .build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString()
-        );
-        if (postResponse.statusCode() < 200 || postResponse.statusCode() >= 300) {
-            throw new IllegalStateException("TC root URL POST returned " + postResponse.statusCode());
-        }
-    }
-
-    private static void verifyTcRootUrl() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var response = tcHttp.send(
-                    java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/server"))
-                            .header("Authorization", superUserAuthHeader)
-                            .header("Accept", "application/json")
-                            .GET().build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofString()
-            );
-            final var rootUrl = (String) parseJson(response.body()).get("webUrl");
-            if (TC_HTTPS_BASE.equals(rootUrl)) {
-                log("TC root URL confirmed: " + rootUrl);
-                return;
-            }
-            log("TC root URL not yet updated (got: " + rootUrl + "), retrying...");
-            java.util.concurrent.TimeUnit.SECONDS.sleep(3);
-        }
-        throw new IllegalStateException("TC root URL did not update to " + TC_HTTPS_BASE + " within 1 minute");
-    }
-
     private static void createTcProjectAndBuildConfig(final String audience) throws Exception {
         // Create project
         final var projectJson = """
                 {"id":"OidcTest","name":"OidcTest","parentProject":{"id":"_Root"}}
                 """;
-        tcPost("/httpAuth/app/rest/projects", projectJson);
+        tc.post("/httpAuth/app/rest/projects", projectJson);
 
         // Create build config
         final var buildConfigJson = """
                 {"id":"OidcTest_Build","name":"OidcTest Build","project":{"id":"OidcTest"}}
                 """;
-        tcPost("/httpAuth/app/rest/buildTypes", buildConfigJson);
+        tc.post("/httpAuth/app/rest/buildTypes", buildConfigJson);
 
         // Fetch the internal IDs that TC auto-assigns. The Octopus OIDC identity subject
         // is built from these (project:<id>:build_type:<id>) so they need to match the
@@ -201,9 +147,9 @@ public class OidcFlowIT {
         //
         // TC's REST API omits `internalId` from the default response — it must be requested
         // explicitly via `?fields=internalId`.
-        projectInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/projects/" + PROJECT_EXTERNAL_ID + "?fields=internalId"))
+        projectInternalId = (String) Json.parse(tc.get("/httpAuth/app/rest/projects/" + PROJECT_EXTERNAL_ID + "?fields=internalId"))
                 .get("internalId");
-        buildTypeInternalId = (String) parseJson(tcGet("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID + "?fields=internalId"))
+        buildTypeInternalId = (String) Json.parse(tc.get("/httpAuth/app/rest/buildTypes/" + BUILD_CONFIG_EXTERNAL_ID + "?fields=internalId"))
                 .get("internalId");
 
         // Add JWT build feature — audience is the Octopus ExternalId GUID.
@@ -216,7 +162,7 @@ public class OidcFlowIT {
                   {"name":"ttl_minutes","value":"10"}
                 ]}}
                 """.formatted(audience);
-        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
+        tc.post("/httpAuth/app/rest/buildTypes/OidcTest_Build/features", featureJson);
 
         // Write jwt.token to a file artifact so we can retrieve it via the artifacts API.
         // jwt.token is masked in the resulting-properties API and in the build log; artifact
@@ -227,17 +173,17 @@ public class OidcFlowIT {
                   {"name":"use.custom.script","value":"true"}
                 ]}}
                 """;
-        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/steps", stepJson);
+        tc.post("/httpAuth/app/rest/buildTypes/OidcTest_Build/steps", stepJson);
 
         // Publish jwt.txt as an artifact so the test can download it via the artifacts API
-        tcPut("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/artifactRules", "jwt.txt");
+        tc.put("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/artifactRules", "jwt.txt");
 
         // Map jwt.token onto an env var, mirroring the real-world usage pattern
         // (env.ARM_OIDC_TOKEN=%jwt.token%) that exposed the masking bug.
         final var envVarParamJson = """
                 {"name":"env.ARM_OIDC_TOKEN","value":"%jwt.token%"}
                 """;
-        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/parameters", envVarParamJson);
+        tc.post("/httpAuth/app/rest/buildTypes/OidcTest_Build/parameters", envVarParamJson);
     }
 
     /**
@@ -247,7 +193,7 @@ public class OidcFlowIT {
      */
     private static void attachSampleVcsRoot() throws Exception {
         // Disable automatic checkout so the build doesn't depend on outbound Git access
-        tcPut("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/checkoutMode", "MANUAL");
+        tc.put("/httpAuth/app/rest/buildTypes/OidcTest_Build/settings/checkoutMode", "MANUAL");
 
         // teamcity:branchSpec must be set for builds to carry branch information;
         // without it, SBuild.getBranch() returns null and the JWT branch claim is blank.
@@ -262,60 +208,12 @@ public class OidcFlowIT {
                      {"name":"authMethod","value":"ANONYMOUS"}
                  ]}}
                 """;
-        tcPost("/httpAuth/app/rest/vcs-roots", vcsRootJson);
+        tc.post("/httpAuth/app/rest/vcs-roots", vcsRootJson);
 
         final var vcsEntryJson = """
                 {"id":"OidcTest_VcsRoot","vcs-root":{"id":"OidcTest_VcsRoot"},"checkout-rules":""}
                 """;
-        tcPost("/httpAuth/app/rest/buildTypes/OidcTest_Build/vcs-root-entries", vcsEntryJson);
-    }
-
-    private static JSONObject parseJson(final String body) {
-        return Json.parse(body);
-    }
-
-    private static void tcPut(final String path, final String textBody) throws Exception {
-        tc.put(path, textBody);
-    }
-
-    private static String tcPost(final String path, final String json) throws Exception {
-        return tc.post(path, json);
-    }
-
-    private static String tcGet(final String path) throws Exception {
-        return tc.get(path);
-    }
-
-    private static void authorizeAgent() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var response = tcHttp.send(
-                    java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create(
-                                    tcBaseUrl + "/httpAuth/app/rest/agents?locator=authorized:false"))
-                            .header("Authorization", superUserAuthHeader)
-                            .header("Accept", "application/json")
-                            .GET().build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofString()
-            );
-            final var agentList = (JSONArray) parseJson(response.body()).get("agent");
-            if (agentList != null && !agentList.isEmpty()) {
-                final var agentId = String.valueOf(((JSONObject) agentList.getFirst()).get("id"));
-                tcHttp.send(
-                        java.net.http.HttpRequest.newBuilder()
-                                .uri(java.net.URI.create(
-                                        tcBaseUrl + "/httpAuth/app/rest/agents/id:" + agentId + "/authorized"))
-                                .header("Authorization", superUserAuthHeader)
-                                .header("Content-Type", "text/plain")
-                                .PUT(java.net.http.HttpRequest.BodyPublishers.ofString("true"))
-                                .build(),
-                        java.net.http.HttpResponse.BodyHandlers.ofString()
-                );
-                return;
-            }
-            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
-        }
-        throw new IllegalStateException("No unauthorized TC agent appeared within 3 minutes");
+        tc.post("/httpAuth/app/rest/buildTypes/OidcTest_Build/vcs-root-entries", vcsEntryJson);
     }
 
     /**
@@ -342,7 +240,7 @@ public class OidcFlowIT {
                     java.util.concurrent.TimeUnit.SECONDS.sleep(5);
                     continue;
                 }
-                final var jwks = parseJson(jwksResponse.body());
+                final var jwks = Json.parse(jwksResponse.body());
                 final var keys = (JSONArray) jwks.get("keys");
                 if (keys == null || keys.isEmpty()) {
                     log("JWKS returned 200 but no keys yet (TC built-in?), retrying...");
@@ -359,7 +257,7 @@ public class OidcFlowIT {
                         java.net.http.HttpResponse.BodyHandlers.ofString()
                 );
                 if (discoveryResponse.statusCode() == 200) {
-                    final var issuer = (String) parseJson(discoveryResponse.body()).get("issuer");
+                    final var issuer = (String) Json.parse(discoveryResponse.body()).get("issuer");
                     if (TC_HTTPS_BASE.equals(issuer)) {
                         log("JWT plugin ready (JWKS has " + keys.size() + " key(s), issuer=" + issuer + ").");
                         return;
@@ -374,36 +272,6 @@ public class OidcFlowIT {
             java.util.concurrent.TimeUnit.SECONDS.sleep(5);
         }
         throw new IllegalStateException("JWT plugin did not become ready with correct issuer within 5 minutes");
-    }
-
-    private static void waitForAgentIdle() throws Exception {
-        log("Waiting for agent to become idle...");
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var response = tcHttp.send(
-                    java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create(
-                                    tcBaseUrl + "/httpAuth/app/rest/agents"
-                                            + "?locator=authorized:true,connected:true,enabled:true"
-                                            + "&fields=agent(id,build)"))
-                            .header("Authorization", superUserAuthHeader)
-                            .header("Accept", "application/json")
-                            .GET().build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofString()
-            );
-            final var agentList = (JSONArray) parseJson(response.body()).get("agent");
-            if (agentList != null) {
-                for (final var item : agentList) {
-                    final var agentObj = (JSONObject) item;
-                    if (agentObj.get("build") == null) {
-                        log("Agent is idle.");
-                        return;
-                    }
-                }
-            }
-            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
-        }
-        throw new IllegalStateException("No idle TC agent within 5 minutes");
     }
 
     private static String octopusGet(final String path) throws Exception {
@@ -451,14 +319,14 @@ public class OidcFlowIT {
                 {"Username":"teamcity-ci","DisplayName":"TeamCity CI",
                  "IsActive":true,"IsService":true,"Identities":[]}
                 """);
-        final var userId = (String) parseJson(userResponse).get("Id");
+        final var userId = (String) Json.parse(userResponse).get("Id");
         if (userId == null) throw new IllegalStateException(
                 "Could not extract user Id from Octopus response: " + userResponse);
 
         // Fetch ExternalId — the GUID Octopus expects in the JWT aud claim
         final var identitiesResponse = octopusGet(
                 "/api/serviceaccounts/" + userId + "/oidcidentities/v1?skip=0&take=1");
-        final var externalId = (String) parseJson(identitiesResponse).get("ExternalId");
+        final var externalId = (String) Json.parse(identitiesResponse).get("ExternalId");
         if (externalId == null) throw new IllegalStateException(
                 "Could not extract ExternalId from Octopus response: " + identitiesResponse);
 
@@ -481,17 +349,16 @@ public class OidcFlowIT {
     @Test
     void teamCityJwtIsAcceptedByOctopus() throws Exception {
         // 1. Wait for agent idle, then trigger build
-        waitForAgentIdle();
+        tc.waitForAgentIdle();
         log("Triggering build...");
-        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
-        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
-        if (buildId == null || buildId.equals("null")) throw new IllegalStateException(
-                "Could not parse build id from: " + queueResponse);
+        final var buildId = tc.triggerBuild(BUILD_CONFIG_EXTERNAL_ID);
+        if (buildId.equals("null")) throw new IllegalStateException(
+                "Could not parse build id for " + BUILD_CONFIG_EXTERNAL_ID);
         log("Build queued, id=" + buildId);
 
         // 2. Wait for build to finish
         log("Waiting for build to finish...");
-        waitForBuildSuccess(buildId);
+        tc.waitForBuildSuccess(buildId);
         log("Build finished successfully.");
 
         // 3. Extract jwt.token from artifact
@@ -533,12 +400,11 @@ public class OidcFlowIT {
 
     @Test
     void jwtTokenIsMaskedInBuildLogAndResultingProperties() throws Exception {
-        waitForAgentIdle();
+        tc.waitForAgentIdle();
         log("Triggering build for masking assertions...");
-        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
-        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
+        final var buildId = tc.triggerBuild(BUILD_CONFIG_EXTERNAL_ID);
         log("Build queued, id=" + buildId);
-        waitForBuildSuccess(buildId);
+        tc.waitForBuildSuccess(buildId);
 
         // Artifact contents are exempt from masking, so this gives us the literal JWT
         // value that should be replaced with ******* everywhere it appears.
@@ -594,80 +460,6 @@ public class OidcFlowIT {
                     "Failed to fetch build log: " + response.statusCode() + " " + response.body());
         }
         return response.body();
-    }
-
-    private static String triggerBuildFor(final String buildTypeExternalId) throws Exception {
-        final var body = """
-                {"buildType":{"id":"%s"}}
-                """.formatted(buildTypeExternalId);
-        final var response = tcHttp.send(
-                java.net.http.HttpRequest.newBuilder()
-                        .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/buildQueue"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
-                        .build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString()
-        );
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("Failed to queue build: " + response.statusCode() + " " + response.body());
-        }
-        return response.body();
-    }
-
-    private static void waitForBuildSuccess(final String buildId) throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(3).toMillis();
-        String lastState = null;
-        while (System.currentTimeMillis() < deadline) {
-            final var response = tcHttp.send(
-                    java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create(
-                                    tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId))
-                            .header("Authorization", superUserAuthHeader)
-                            .header("Accept", "application/json")
-                            .GET().build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofString()
-            );
-            final var build = parseJson(response.body());
-            final var state = String.valueOf(build.get("state"));
-            final var status = String.valueOf(build.get("status"));
-            if (!state.equals(lastState)) {
-                log("Build " + buildId + " state=" + state + " status=" + status);
-                lastState = state;
-            }
-            if ("finished".equals(state)) {
-                saveBuildLog(buildId);
-                if (!"SUCCESS".equals(status)) {
-                    throw new IllegalStateException(
-                            "Build " + buildId + " finished with non-SUCCESS status: " + response.body());
-                }
-                return;
-            }
-            java.util.concurrent.TimeUnit.SECONDS.sleep(5);
-        }
-        throw new IllegalStateException("Build " + buildId + " did not finish within 3 minutes");
-    }
-
-    private static void saveBuildLog(final String buildId) {
-        try {
-            final var response = tcHttp.send(
-                    java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create(
-                                    tcBaseUrl + "/httpAuth/downloadBuildLog.html?buildId=" + buildId))
-                            .header("Authorization", superUserAuthHeader)
-                            .GET().build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofString()
-            );
-            final var logDir = java.nio.file.Path.of(
-                    System.getProperty("java.io.tmpdir"), "tc-it-logs", CONTAINER_PREFIX);
-            Files.createDirectories(logDir);
-            Files.writeString(logDir.resolve("build-" + buildId + ".log"), response.body());
-            log("Build log saved to " + logDir.resolve("build-" + buildId + ".log")
-                    + " (status=" + response.statusCode() + ")");
-        } catch (final Exception e) {
-            log("Could not save build log: " + e.getMessage());
-        }
     }
 
     private static String extractJwtFromBuild(final String buildId) throws Exception {
@@ -730,7 +522,7 @@ public class OidcFlowIT {
                         .GET().build(),
                 java.net.http.HttpResponse.BodyHandlers.ofString()
         );
-        final var tokenEndpointStr = (String) parseJson(discoveryResponse.body()).get("token_endpoint");
+        final var tokenEndpointStr = (String) Json.parse(discoveryResponse.body()).get("token_endpoint");
         if (tokenEndpointStr == null) throw new IllegalStateException(
                 "token_endpoint not found in Octopus discovery doc: " + discoveryResponse.body());
 
@@ -760,7 +552,7 @@ public class OidcFlowIT {
                 .as("Octopus OIDC token exchange must return 200. Body: " + exchangeResponse.body())
                 .isEqualTo(200);
 
-        final var accessToken = (String) parseJson(exchangeResponse.body()).get("access_token");
+        final var accessToken = (String) Json.parse(exchangeResponse.body()).get("access_token");
         if (accessToken == null) throw new IllegalStateException(
                 "access_token not found in Octopus response: " + exchangeResponse.body());
         return accessToken;
@@ -784,7 +576,7 @@ public class OidcFlowIT {
         final var buildConfigJson = """
                 {"id":"%s","name":"%s","project":{"id":"%s"}}
                 """.formatted(buildTypeId, buildTypeId, projectId);
-        tcPost("/httpAuth/app/rest/buildTypes", buildConfigJson);
+        tc.post("/httpAuth/app/rest/buildTypes", buildConfigJson);
 
         // Build feature — only connection_id; all other issuance settings come from the connection
         final var featureJson = """
@@ -792,7 +584,7 @@ public class OidcFlowIT {
                   {"name":"connection_id","value":"%s"}
                 ]}}
                 """.formatted(connectionId);
-        tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/features", featureJson);
+        tc.post("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/features", featureJson);
 
         // Capture-jwt step — writes jwt.token to jwt.txt for artifact retrieval
         final var stepJson = """
@@ -807,15 +599,15 @@ public class OidcFlowIT {
                     }
                 }
                 """;
-        tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/steps", stepJson);
+        tc.post("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/steps", stepJson);
 
         // Publish jwt.txt as an artifact
-        tcPut("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/artifactRules", "jwt.txt");
+        tc.put("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/artifactRules", "jwt.txt");
 
         // VCS root with branch tracking so the build has branch info and the JWT carries
         // a :branch: segment (required by the subject_dimensions=branch connection setting).
         // Manual checkout avoids any outbound Git dependency.
-        tcPut("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/checkoutMode", "MANUAL");
+        tc.put("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/checkoutMode", "MANUAL");
         final var vcsRootId = projectId + "_VcsRoot";
         final var vcsRootJson = """
                 {
@@ -833,11 +625,11 @@ public class OidcFlowIT {
                       }
                     }
                 """.formatted(vcsRootId, projectId, projectId);
-        tcPost("/httpAuth/app/rest/vcs-roots", vcsRootJson);
+        tc.post("/httpAuth/app/rest/vcs-roots", vcsRootJson);
         final var vcsEntryJson = """
                 {"id":"%s","vcs-root":{"id":"%s"},"checkout-rules":""}
                 """.formatted(vcsRootId, vcsRootId);
-        tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/vcs-root-entries", vcsEntryJson);
+        tc.post("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/vcs-root-entries", vcsEntryJson);
     }
 
     @Test
@@ -851,13 +643,12 @@ public class OidcFlowIT {
         createBuildTypeReferencingConnection("OidcConnIT", "OidcConnIT_Build", connectionId);
         log("Created project OidcConnIT and build type OidcConnIT_Build referencing connection " + connectionId);
 
-        waitForAgentIdle();
+        tc.waitForAgentIdle();
         log("Triggering connection-inheritance build...");
-        final var queueResponse = triggerBuildFor("OidcConnIT_Build");
-        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
+        final var buildId = tc.triggerBuild("OidcConnIT_Build");
         log("Build queued, id=" + buildId);
 
-        waitForBuildSuccess(buildId);
+        tc.waitForBuildSuccess(buildId);
         log("Build finished successfully.");
 
         final var jwt = extractJwtFromBuild(buildId);
@@ -910,11 +701,10 @@ public class OidcFlowIT {
         log("Attaching VCS root for manual stack...");
         attachSampleVcsRoot();
         log("Triggering sample build for manual stack...");
-        waitForAgentIdle();
-        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
-        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
+        tc.waitForAgentIdle();
+        final var buildId = tc.triggerBuild(BUILD_CONFIG_EXTERNAL_ID);
         log("Sample build queued, id=" + buildId + " — waiting for it to finish...");
-        waitForBuildSuccess(buildId);
+        tc.waitForBuildSuccess(buildId);
         log("Sample build finished.");
 
         final int caddyPort = caddy.getMappedPort(443);
