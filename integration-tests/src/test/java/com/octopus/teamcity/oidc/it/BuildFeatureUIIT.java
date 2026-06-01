@@ -12,63 +12,35 @@ import com.microsoft.playwright.options.SelectOption;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.MountableFile;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Browser-driven UI integration tests for the JWT build feature editor.
  * <p>
- * Spins up a real TeamCity server with the plugin, creates a project and build type
- * via the REST API, then uses Playwright/Chromium to drive the build feature editor
- * and verify that form interactions persist correctly.
+ * Uses the shared {@link SharedStack} TeamCity server, sets the global server root URL it needs
+ * (a fake {@code https://} form of the mapped URL, so the plugin's HTTPS-required validation
+ * passes — Playwright still drives the UI over plain HTTP), creates a project and build type via
+ * the REST API, then uses Playwright/Chromium to drive the build feature editor.
  * <p>
  * Run with: {@code mvn verify -pl integration-tests -Dit.test=BuildFeatureUIIT}
  * Build the plugin zip first: {@code mvn package -DskipTests}
  */
-@Testcontainers
 public class BuildFeatureUIIT {
 
-    private static final int TC_PORT = 8111;
-    private static final String TC_IMAGE = "jetbrains/teamcity-server:2025.11";
     private static final String PROJECT_ID = "UITest";
     private static final String BUILD_TYPE_ID = "UITest_Build";
 
-    private static final Path PLUGIN_ZIP = requirePluginZip();
-
-    @Container
-    static final GenericContainer<?> teamcity = new GenericContainer<>(TC_IMAGE)
-            .withExposedPorts(TC_PORT)
-            .withEnv("TEAMCITY_SERVER_OPTS", "-Dteamcity.startup.maintenance=false")
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(PLUGIN_ZIP),
-                    "/data/teamcity_server/datadir/plugins/" + PLUGIN_ZIP.getFileName()
-            )
-            .waitingFor(Wait.forHttp("/mnt/").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(5)));
-
     static String baseUrl;
-    static HttpClient http;
-    static String superUserToken;
+    static TeamCityClient tc;
     static String superUserAuthHeader;
 
     /** ID of the JWT build feature; refreshed in @BeforeEach to ensure clean state. */
@@ -79,19 +51,10 @@ public class BuildFeatureUIIT {
 
     @BeforeAll
     static void setUpSuite() throws Exception {
-        baseUrl = "http://" + teamcity.getHost() + ":" + teamcity.getMappedPort(TC_PORT);
-        // No CookieManager: TC only enforces CSRF on POSTs that already hold a session cookie,
-        // so keeping the client stateless lets us POST to the REST API with basic auth alone.
-        http = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        acceptLicenseAgreementIfRequired();
-        waitForTcReady();
-
-        superUserToken = extractSuperUserTokenWithRetry();
-        superUserAuthHeader = "Basic " + Base64.getEncoder().encodeToString((":" + superUserToken).getBytes());
+        SharedStack.ensureStarted();
+        tc = SharedStack.teamCity();
+        baseUrl = SharedStack.tcBaseUrl();
+        superUserAuthHeader = tc.authHeader();
 
         configureServerRootUrl();
         createAdminUserToBypassFirstRunWizard();
@@ -114,7 +77,7 @@ public class BuildFeatureUIIT {
      */
     @BeforeEach
     void resetFeature() throws Exception {
-        tcDelete("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID + "/features/" + featureId);
+        tc.delete("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID + "/features/" + featureId);
         featureId = addBuildFeature();
     }
 
@@ -255,7 +218,7 @@ public class BuildFeatureUIIT {
     @Test
     void connectionSelectionLocksInlineFieldsToConnectionValues() throws Exception {
         // Create a connection at _Root so it is visible to the UITest project.
-        final var connectionId = createOidcConnection("_Root", "UI Test Conn",
+        final var connectionId = tc.createOidcConnection("_Root", "UI Test Conn",
                 "api://ui-test-audience", 30, "ES256", "");
 
         inFeatureEditor(page -> {
@@ -304,7 +267,7 @@ public class BuildFeatureUIIT {
 
     @Test
     void connectionSelectionPersistsAfterSave() throws Exception {
-        final var connectionId = createOidcConnection("_Root", "UI Test Conn Persist",
+        final var connectionId = tc.createOidcConnection("_Root", "UI Test Conn Persist",
                 "api://ui-test-persist", 20, "RS256", "");
 
         editFeature(page -> page.selectOption("#connection_id",
@@ -331,7 +294,7 @@ public class BuildFeatureUIIT {
     void connectionWithSubjectScopingChecksAndDisablesCheckboxes() throws Exception {
         // Use trigger_type — the branch checkbox is only rendered when the build type
         // has a VCS root attached, while trigger_type is always present.
-        final var connectionId = createOidcConnection("_Root", "UI Test Conn Subjects",
+        final var connectionId = tc.createOidcConnection("_Root", "UI Test Conn Subjects",
                 "api://ui-test-subj", 20, "RS256", "trigger_type");
 
         inFeatureEditor(page -> {
@@ -480,17 +443,9 @@ public class BuildFeatureUIIT {
      * Reads the current build feature's properties and returns them as a name→value map.
      */
     private JSONObject readFeatureProperties() throws Exception {
-        final var response = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID
-                                + "/features/" + featureId + "?fields=properties(property)"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Accept", "application/json")
-                        .GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        assertThat(response.statusCode()).as("feature properties GET").isEqualTo(200);
-        final var propsContainer = (JSONObject) parseJson(response.body()).get("properties");
+        final var body = tc.get("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID
+                + "/features/" + featureId + "?fields=properties(property)");
+        final var propsContainer = (JSONObject) Json.parse(body).get("properties");
         final var propArray = (JSONArray) propsContainer.get("property");
         final var result = new JSONObject();
         for (final var item : propArray) {
@@ -503,60 +458,8 @@ public class BuildFeatureUIIT {
     /** Sets a single feature property via REST PUT (bypasses any UI flow). TC's REST API
      *  uses /parameters/ in the URL even though the JSON field is "properties". */
     private void setFeatureProperty(final String name, final String value) throws Exception {
-        final var response = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID
-                                + "/features/" + featureId + "/parameters/" + name))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "text/plain")
-                        .PUT(HttpRequest.BodyPublishers.ofString(value))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("Setting feature property " + name + " failed: "
-                    + response.statusCode() + ": " + response.body());
-        }
-    }
-
-    /**
-     * Creates an OIDC Identity Token connection as a projectFeature on the given parent project
-     * and returns the generated connection id (PROJECT_EXT_* form).
-     */
-    private static String createOidcConnection(
-            final String parentProjectId,
-            final String displayName,
-            final String audience,
-            final int ttlMinutes,
-            final String algorithm,
-            final String subjectDimensions) throws Exception {
-        final var json = """
-                {"type":"OAuthProvider","properties":{"property":[
-                  {"name":"providerType","value":"oidc-identity-token"},
-                  {"name":"displayName","value":"%s"},
-                  {"name":"audience","value":"%s"},
-                  {"name":"ttl_minutes","value":"%d"},
-                  {"name":"algorithm","value":"%s"},
-                  {"name":"subject_dimensions","value":"%s"}
-                ]}}
-                """.formatted(displayName, audience, ttlMinutes, algorithm, subjectDimensions);
-        final var response = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/app/rest/projects/" + parentProjectId + "/projectFeatures"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(json))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException(
-                    "Failed to create OIDC connection: " + response.statusCode() + ": " + response.body());
-        }
-        final var id = (String) parseJson(response.body()).get("id");
-        if (id == null) throw new IllegalStateException(
-                "Could not extract connection id from TC response: " + response.body());
-        return id;
+        tc.put("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID
+                + "/features/" + featureId + "/parameters/" + name, value);
     }
 
     private static String addBuildFeature() throws Exception {
@@ -568,20 +471,8 @@ public class BuildFeatureUIIT {
                     {"name":"audience","value":""}
                 ]}}
                 """;
-        final var response = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID + "/features"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(featureJson))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("Failed to add build feature: " + response.statusCode() + ": " + response.body());
-        }
-        return (String) parseJson(response.body()).get("id");
+        final var body = tc.post("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID + "/features", featureJson);
+        return (String) Json.parse(body).get("id");
     }
 
     /**
@@ -591,134 +482,38 @@ public class BuildFeatureUIIT {
      * flow can proceed straight to the admin pages.
      */
     private static void createAdminUserToBypassFirstRunWizard() throws Exception {
-        tcPost("/httpAuth/app/rest/users",
+        tc.post("/httpAuth/app/rest/users",
                 "{\"username\":\"admin\",\"password\":\"admin\","
                         + "\"roles\":{\"role\":[{\"roleId\":\"SYSTEM_ADMIN\",\"scope\":\"g\"}]}}");
     }
 
     private static void createProjectAndBuildType() throws Exception {
-        tcPost("/httpAuth/app/rest/projects",
-                "{\"id\":\"" + PROJECT_ID + "\",\"name\":\"UI Test\",\"parentProject\":{\"id\":\"_Root\"}}");
-        tcPost("/httpAuth/app/rest/buildTypes",
-                "{\"id\":\"" + BUILD_TYPE_ID + "\",\"name\":\"UI Test Build\",\"project\":{\"id\":\"" + PROJECT_ID + "\"}}");
+        tc.createProject(PROJECT_ID, "UI Test", "_Root");
+        tc.createBuildType(BUILD_TYPE_ID, "UI Test Build", PROJECT_ID);
     }
 
-    private static void tcPost(final String path, final String json) throws Exception {
-        final var response = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + path))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(json))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("TC POST " + path + " returned " + response.statusCode() + ": " + response.body());
-        }
-    }
-
-    private static void tcDelete(final String path) throws Exception {
-        http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + path))
-                        .header("Authorization", superUserAuthHeader)
-                        .DELETE().build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-    }
-
-    private static JSONObject parseJson(final String body) {
-        try {
-            return (JSONObject) new JSONParser(JSONParser.DEFAULT_PERMISSIVE_MODE).parse(body);
-        } catch (final net.minidev.json.parser.ParseException e) {
-            throw new IllegalStateException("Failed to parse JSON: " + body, e);
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // TC container setup helpers (same pattern as JwtPluginIT)
-    // -------------------------------------------------------------------------
-
-    private static Path requirePluginZip() {
-        final var targetDir = Path.of(
-                System.getProperty("project.basedir", "."), "../target/").normalize();
-        try (final var stream = java.nio.file.Files.list(targetDir)) {
-            return stream
-                    .filter(p -> p.getFileName().toString().matches("Octopus\\.TeamCity\\.OIDC\\..*\\.zip"))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Plugin zip not found in " + targetDir.toAbsolutePath()
-                            + ". Run 'mvn package -DskipTests' first."));
-        } catch (final java.io.IOException e) {
-            throw new IllegalStateException("Could not list " + targetDir.toAbsolutePath(), e);
-        }
-    }
-
-    private static void acceptLicenseAgreementIfRequired() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            if (teamcity.execInContainer("grep", "-q",
-                    "Review and accept TeamCity license agreement",
-                    "/opt/teamcity/logs/teamcity-server.log").getExitCode() == 0) {
-                break;
-            }
-            TimeUnit.SECONDS.sleep(3);
-        }
-        teamcity.execInContainer("sh", "-c",
-                "curl -sc /tmp/tc-cookies.txt http://localhost:8111/mnt/ > /dev/null && " +
-                "curl -sb /tmp/tc-cookies.txt -X POST http://localhost:8111/mnt/do/acceptLicenseAgreement");
-    }
-
-    private static void waitForTcReady() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(5).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var r = http.send(
-                    HttpRequest.newBuilder().uri(URI.create(baseUrl + "/")).GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (r.statusCode() == 401 || r.statusCode() == 200) return;
-            TimeUnit.SECONDS.sleep(3);
-        }
-        throw new IllegalStateException("TeamCity did not become ready in time");
-    }
-
+    /**
+     * Sets the global server root URL to a fake {@code https://} form of the mapped URL (the
+     * plugin only checks the string starts with {@code https://}, not that the host serves TLS),
+     * then waits for the change to propagate. The wait matters on the shared server: another IT
+     * class may have set a different root URL, and the UI reads the issuer live from getRootUrl().
+     */
     private static void configureServerRootUrl() throws Exception {
-        final var page = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/admin/admin.html?item=serverConfigGeneral"))
-                        .header("Authorization", superUserAuthHeader)
-                        .GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        final var m = Pattern.compile("tc-csrf-token\" content=\"([^\"]+)\"").matcher(page.body());
-        if (!m.find()) throw new IllegalStateException("CSRF token not found on global settings page");
-        final var csrf = m.group(1);
-        // Set the root URL to a fake https://... so the plugin's HTTPS-required validation
-        // passes (it only checks the URL string starts with "https://", not that the host
-        // actually serves TLS). Playwright continues to hit baseUrl over plain HTTP.
         final var httpsRootUrl = baseUrl.replaceFirst("^http://", "https://");
-        final var form = "rootUrl=" + URI.create(httpsRootUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F")
-                       + "&submitSettings=store&tc-csrf-token=" + csrf;
-        http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/admin/serverConfigGeneral.html"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .POST(HttpRequest.BodyPublishers.ofString(form))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-    }
-
-    private static String extractSuperUserTokenWithRetry() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var result = teamcity.execInContainer(
-                    "grep", "-o", "Super user authentication token: [0-9]*",
-                    "/opt/teamcity/logs/teamcity-server.log");
-            final var matcher = Pattern.compile("Super user authentication token: (\\d+)").matcher(result.getStdout().trim());
-            if (matcher.find()) return matcher.group(1);
-            TimeUnit.SECONDS.sleep(5);
+        final var encoded = java.net.URI.create(httpsRootUrl).toASCIIString().replace(":", "%3A").replace("/", "%2F");
+        // serverConfigGeneral.html is TC's built-in settings form — it returns HTML, not JSON, so
+        // use the raw POST (adminFormPost would try to parse the body as JSON).
+        final var resp = tc.adminFormPostRaw("/admin/serverConfigGeneral.html", "rootUrl=" + encoded + "&submitSettings=store");
+        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+            throw new IllegalStateException("TC root URL POST returned " + resp.statusCode() + ": " + resp.body());
         }
-        throw new IllegalStateException("TC super user token not found in log after 60s");
+
+        final var deadline = System.currentTimeMillis() + Duration.ofMinutes(1).toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            final var webUrl = (String) Json.parse(tc.get("/httpAuth/app/rest/server")).get("webUrl");
+            if (httpsRootUrl.equals(webUrl)) return;
+            TimeUnit.SECONDS.sleep(2);
+        }
+        throw new IllegalStateException("TC root URL did not update to " + httpsRootUrl + " within 1 minute");
     }
 }

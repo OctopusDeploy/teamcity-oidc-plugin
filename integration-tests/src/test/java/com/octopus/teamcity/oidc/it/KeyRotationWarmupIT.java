@@ -4,7 +4,6 @@ import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -14,18 +13,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
-import java.net.CookieManager;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,28 +36,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Assert a subsequent rotation succeeds (no longer blocked).</li>
  * </ol>
  * <p>
+ * Unlike the other ITs, this test does <b>not</b> use {@link SharedStack}: its assertions depend on
+ * a <i>pristine</i> global signing-key state (exactly 3 keys on a fresh server, 6 during warmup),
+ * which a shared TeamCity server cannot guarantee once another test has rotated keys. It therefore
+ * keeps its own throwaway TC container (so {@code jwksCacheLifetimeMinutes=1} and its rotations
+ * stay contained) while reusing {@link TeamCityClient} for bring-up and all server interaction.
+ * <p>
  * Notes on HTTPS and issuer URL:
- * {@code JwtTestController.stepJwt()} requires the issuer URL to use HTTPS. This test
- * sets the {@code overrideIssuerUrl} to a synthetic {@code https://} address before
- * calling the test-connection endpoint. The reachability check in
- * {@code OidcSettingsController} will warn but still persist the value, which is
- * sufficient for our purposes (we only need {@code sign()} to run, not the JWT to be
- * exchangeable with a real IdP).
+ * {@code JwtTestController.stepJwt()} requires the issuer URL to use HTTPS. This test sets the
+ * {@code overrideIssuerUrl} to a synthetic {@code https://} address before calling the
+ * test-connection endpoint. The reachability check in {@code OidcSettingsController} will warn but
+ * still persist the value, which is sufficient (we only need {@code sign()} to run, not the JWT to
+ * be exchangeable with a real IdP).
  * <p>
  * Run with: {@code mvn verify -pl integration-tests -Dit.test=KeyRotationWarmupIT}
  * (point {@code JAVA_HOME} at a JDK 21 install first).
  * Build the plugin zip first: {@code mvn package -DskipTests}
  */
-// TODO: the stack-provisioning helpers below (acceptLicenseAgreementIfRequired,
-// waitForTcReady, extractSuperUserTokenWithRetry, fetchCsrfToken,
-// createProjectAndBuildType, plus the cookie-aware http / stateless httpRest
-// client setup) are duplicated almost verbatim across this IT, JwtPluginIT, and
-// OidcFlowIT. The right shape is a base class (something like AbstractTeamCityIT
-// or a shared @ExtendWith helper) that owns container startup + auth + REST API
-// scaffolding, leaving each subclass to declare its own @Test. Deferred to a
-// follow-up PR so this branch stays scoped to the warmup feature. Splitting
-// would also let multiple ITs reuse a single TC container instance, which would
-// recover the ~40 s startup cost per test class. Item 6 from the PR review.
 @Testcontainers
 @Timeout(value = 7, unit = TimeUnit.MINUTES)
 public class KeyRotationWarmupIT {
@@ -84,9 +70,6 @@ public class KeyRotationWarmupIT {
 
     private static final String PROJECT_ID = "WarmupTest";
     private static final String BUILD_TYPE_ID = "WarmupTest_Build";
-
-    private static final Duration TC_READY_TIMEOUT = Duration.ofMinutes(5);
-    private static final Duration LICENSE_ACCEPTANCE_TIMEOUT = Duration.ofMinutes(2);
 
     private static final Path PLUGIN_ZIP = requirePluginZip();
 
@@ -121,47 +104,12 @@ public class KeyRotationWarmupIT {
                             .withStartupTimeout(Duration.ofMinutes(5))
             );
 
-    static String baseUrl;
-    /**
-     * Cookie-aware client — TC session cookies are required for CSRF-protected POST endpoints
-     * (jwtKeyRotate.html, jwtOidcSettings.html, jwtTest.html).
-     */
-    static HttpClient http;
-    /**
-     * Stateless client for the TC REST API. Must NOT share the CookieManager from {@link #http}:
-     * once a session cookie is established, TC treats REST API requests as cookie-authenticated
-     * and enforces CSRF on them too. Using a separate client without a CookieManager avoids
-     * this; Basic auth alone is sufficient for the REST API.
-     */
-    static HttpClient httpRest;
-    static String superUserAuthHeader;
-    /** CSRF token obtained once from the admin settings page and reused for all POSTs. */
-    static String csrfToken;
+    private static TeamCityClient tc;
 
     @BeforeAll
     static void setup() throws Exception {
-        baseUrl = "http://" + teamcity.getHost() + ":" + teamcity.getMappedPort(TC_PORT);
-        // CookieManager is essential: TC's admin endpoints (jwtKeyRotate.html,
-        // jwtOidcSettings.html, jwtTest.html) check the CSRF token stored in the session
-        // cookie alongside the tc-csrf-token form parameter.
-        http = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .connectTimeout(Duration.ofSeconds(10))
-                .cookieHandler(new CookieManager())
-                .build();
-        // Stateless REST client — no CookieManager so TC doesn't enforce CSRF on REST calls.
-        httpRest = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        acceptLicenseAgreementIfRequired();
-        waitForTcReady();
-
-        final var token = extractSuperUserTokenWithRetry();
-        superUserAuthHeader = "Basic " + Base64.getEncoder().encodeToString((":" + token).getBytes());
-
-        fetchCsrfToken();
+        final var baseUrl = "http://" + teamcity.getHost() + ":" + teamcity.getMappedPort(TC_PORT);
+        tc = TeamCityClient.bringUp(teamcity, baseUrl);
         createProjectAndBuildType();
     }
 
@@ -195,8 +143,8 @@ public class KeyRotationWarmupIT {
      * sign(). The save happens even when the reachability check warns (URL not reachable).
      */
     private void configureForFastWarmup() throws Exception {
-        postAdminForm("/admin/jwtOidcSettings.html", "jwksCacheLifetimeMinutes=1");
-        postAdminForm("/admin/jwtOidcSettings.html",
+        tc.adminFormPost("/admin/jwtOidcSettings.html", "jwksCacheLifetimeMinutes=1");
+        tc.adminFormPost("/admin/jwtOidcSettings.html",
                 "overrideIssuerUrl=" + encode(FAKE_HTTPS_ISSUER));
     }
 
@@ -221,7 +169,7 @@ public class KeyRotationWarmupIT {
      * </pre>
      */
     private PendingState triggerRotationAndCapturePending(final String currentKid) throws Exception {
-        final var rotateBody = postAdminForm("/admin/jwtKeyRotate.html", "");
+        final var rotateBody = tc.adminFormPost("/admin/jwtKeyRotate.html", "");
         assertThat(rotateBody.get("status")).as("rotation status").isEqualTo("rotated");
         assertThat(rotateBody).as("rotation response must contain activeAt").containsKey("activeAt");
         final var activeAt = Instant.parse((String) rotateBody.get("activeAt"));
@@ -258,11 +206,11 @@ public class KeyRotationWarmupIT {
 
     /** A second rotation while pending is warming up must return HTTP 409 with status=warmupInProgress. */
     private void assertSecondRotationDuringWarmupReturns409() throws Exception {
-        final var resp = postAdminFormRaw("/admin/jwtKeyRotate.html", "");
+        final var resp = tc.adminFormPostRaw("/admin/jwtKeyRotate.html", "");
         assertThat(resp.statusCode())
                 .as("rotation during warmup must return HTTP 409")
                 .isEqualTo(409);
-        final var body = parseJson(resp.body());
+        final var body = Json.parse(resp.body());
         assertThat(body.get("status"))
                 .as("409 body must report warmupInProgress")
                 .isEqualTo("warmupInProgress");
@@ -280,7 +228,7 @@ public class KeyRotationWarmupIT {
             Thread.sleep(waitMs);
         }
         log("Warmup elapsed — triggering promotion via sign().");
-        fetchCsrfToken();
+        tc.refreshCsrf();
     }
 
     /**
@@ -303,11 +251,11 @@ public class KeyRotationWarmupIT {
 
     /** Pending was promoted; another rotation is allowed again. */
     private void assertRotationAfterWarmupSucceeds() throws Exception {
-        final var resp = postAdminFormRaw("/admin/jwtKeyRotate.html", "");
+        final var resp = tc.adminFormPostRaw("/admin/jwtKeyRotate.html", "");
         assertThat(resp.statusCode())
                 .as("rotation after promotion must return HTTP 200")
                 .isEqualTo(200);
-        final var body = parseJson(resp.body());
+        final var body = Json.parse(resp.body());
         assertThat(body.get("status"))
                 .as("post-promotion rotation status must be rotated")
                 .isEqualTo("rotated");
@@ -317,116 +265,19 @@ public class KeyRotationWarmupIT {
     // Setup helpers
     // -------------------------------------------------------------------------
 
-    private static void acceptLicenseAgreementIfRequired() throws Exception {
-        final var deadline = System.currentTimeMillis() + LICENSE_ACCEPTANCE_TIMEOUT.toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var result = teamcity.execInContainer(
-                    "grep", "-q", "Review and accept TeamCity license agreement",
-                    "/opt/teamcity/logs/teamcity-server.log"
-            );
-            if (result.getExitCode() == 0) break;
-            TimeUnit.SECONDS.sleep(3);
-        }
-        teamcity.execInContainer(
-                "sh", "-c",
-                "curl -sc /tmp/tc-cookies.txt http://localhost:8111/mnt/ > /dev/null && " +
-                "curl -sb /tmp/tc-cookies.txt -X POST " +
-                "http://localhost:8111/mnt/do/acceptLicenseAgreement"
-        );
-    }
-
-    private static void waitForTcReady() throws Exception {
-        final var deadline = System.currentTimeMillis() + TC_READY_TIMEOUT.toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            // Use httpRest (no CookieManager) — we don't want a session cookie from the root
-            // redirect, which would later cause the REST API to enforce CSRF.
-            final var r = httpRest.send(
-                    HttpRequest.newBuilder().uri(URI.create(baseUrl + "/")).GET().build(),
-                    HttpResponse.BodyHandlers.ofString()
-            );
-            if (r.statusCode() == 401 || r.statusCode() == 200) return;
-            TimeUnit.SECONDS.sleep(3);
-        }
-        throw new IllegalStateException("TeamCity did not become ready within " + TC_READY_TIMEOUT.toMinutes() + " minutes");
-    }
-
-    private static String extractSuperUserTokenWithRetry() throws Exception {
-        final var deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
-        while (System.currentTimeMillis() < deadline) {
-            final var result = teamcity.execInContainer(
-                    "grep", "-o", "Super user authentication token: [0-9]*",
-                    "/opt/teamcity/logs/teamcity-server.log"
-            );
-            final var matcher = Pattern.compile("Super user authentication token: (\\d+)")
-                    .matcher(result.getStdout().trim());
-            if (matcher.find()) return matcher.group(1);
-            TimeUnit.SECONDS.sleep(5);
-        }
-        throw new IllegalStateException("TC super user token not found in server log after 60s");
-    }
-
-    /**
-     * Fetches the CSRF token from the admin settings page and stores it in {@link #csrfToken}.
-     * The token is bound to the HTTP session maintained by the {@link CookieManager}; it must
-     * be resent in every CSRF-protected POST as the {@code tc-csrf-token} form parameter.
-     */
-    private static void fetchCsrfToken() throws Exception {
-        final var page = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/admin/admin.html?item=serverConfigGeneral"))
-                        .header("Authorization", superUserAuthHeader)
-                        .GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        final var matcher = Pattern.compile("tc-csrf-token\" content=\"([^\"]+)\"").matcher(page.body());
-        if (!matcher.find()) throw new IllegalStateException("CSRF token not found on admin page");
-        csrfToken = matcher.group(1);
-    }
-
     /**
      * Creates the project and build type used as the signing context for {@code step=jwt}.
      * JwtTestController requires a valid build type for which the calling user has
      * EDIT_PROJECT permission; the super-user satisfies this for any build type.
      */
     private static void createProjectAndBuildType() throws Exception {
-        tcRestPost("/httpAuth/app/rest/projects",
-                "{\"id\":\"" + PROJECT_ID + "\",\"name\":\"WarmupTest\",\"parentProject\":{\"id\":\"_Root\"}}");
-        tcRestPost("/httpAuth/app/rest/buildTypes",
-                "{\"id\":\"" + BUILD_TYPE_ID + "\",\"name\":\"WarmupTest Build\","
-                + "\"project\":{\"id\":\"" + PROJECT_ID + "\"}}");
+        tc.createProject(PROJECT_ID, "WarmupTest", "_Root");
+        tc.createBuildType(BUILD_TYPE_ID, "WarmupTest Build", PROJECT_ID);
     }
 
     // -------------------------------------------------------------------------
     // Request helpers
     // -------------------------------------------------------------------------
-
-    /**
-     * POSTs a form body to a CSRF-protected admin endpoint and returns the parsed JSON response.
-     * Passes the super-user auth header and the CSRF token automatically.
-     */
-    private static JSONObject postAdminForm(final String path, final String extraParams) throws Exception {
-        final var response = postAdminFormRaw(path, extraParams);
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException(
-                    "POST " + path + " returned " + response.statusCode() + ": " + response.body());
-        }
-        return parseJson(response.body());
-    }
-
-    private static HttpResponse<String> postAdminFormRaw(final String path,
-                                                          final String extraParams) throws Exception {
-        final var csrf = "tc-csrf-token=" + csrfToken;
-        final var body = extraParams.isEmpty() ? csrf : extraParams + "&" + csrf;
-        return http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth" + path))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .POST(HttpRequest.BodyPublishers.ofString(body))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-    }
 
     /**
      * Calls the test-connection endpoint with {@code step=jwt} to issue a signed JWT.
@@ -436,51 +287,12 @@ public class KeyRotationWarmupIT {
      * — the mechanism the warmup lifecycle relies on.
      */
     private static JSONObject postStepJwt() throws Exception {
-        final var body = "step=jwt&algorithm=RS256"
-                + "&buildTypeId=" + BUILD_TYPE_ID
-                + "&tc-csrf-token=" + csrfToken;
-        final var response = http.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/httpAuth/admin/jwtTest.html"))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .POST(HttpRequest.BodyPublishers.ofString(body))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException(
-                    "step=jwt returned " + response.statusCode() + ": " + response.body());
-        }
-        return parseJson(response.body());
-    }
-
-    private static void tcRestPost(final String path, final String json) throws Exception {
-        // Use the stateless REST client — no session cookie, so TC doesn't require CSRF.
-        final var response = httpRest.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + path))
-                        .header("Authorization", superUserAuthHeader)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(json))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException(
-                    "TC REST POST " + path + " returned " + response.statusCode() + ": " + response.body());
-        }
+        return tc.adminFormPost("/admin/jwtTest.html",
+                "step=jwt&algorithm=RS256&buildTypeId=" + BUILD_TYPE_ID);
     }
 
     private static JWKSet fetchJwks() throws Exception {
-        // Use httpRest (no CookieManager) — the JWKS endpoint is public and needs no session.
-        final var response = httpRest.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/.well-known/jwks.json"))
-                        .GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-        );
+        final var response = tc.unauthenticatedGet("/.well-known/jwks.json");
         if (response.statusCode() != 200) {
             throw new IllegalStateException("JWKS endpoint returned " + response.statusCode());
         }
@@ -504,14 +316,6 @@ public class KeyRotationWarmupIT {
                 .as("JWKS must contain at least " + (positionAmongRsa2048Keys + 1) + " RSA-2048 key(s)")
                 .hasSizeGreaterThan(positionAmongRsa2048Keys);
         return rsa2048Keys.get(positionAmongRsa2048Keys);
-    }
-
-    private static JSONObject parseJson(final String body) {
-        try {
-            return (JSONObject) new JSONParser(JSONParser.MODE_PERMISSIVE).parse(body);
-        } catch (final net.minidev.json.parser.ParseException e) {
-            throw new IllegalStateException("Failed to parse JSON: " + body, e);
-        }
     }
 
     private static String encode(final String value) {
