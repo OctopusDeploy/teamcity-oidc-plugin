@@ -188,9 +188,7 @@ final class TeamCityClient {
      */
     HttpResponse<String> adminFormPostRaw(final String path, final String extraParams) throws Exception {
         var response = sendAdminForm(path, extraParams);
-        // The session CSRF token rotates during idle periods, and the shared server is long-lived
-        // (one class's bring-up token is stale by the time a later class POSTs). A 403 here means
-        // the cached token no longer matches the session — re-scrape it and retry once.
+        // The session CSRF token can go stale on the long-lived shared session; refresh and retry once on a 403.
         if (response.statusCode() == 403 && response.body().contains("CSRF")) {
             refreshCsrf();
             response = sendAdminForm(path, extraParams);
@@ -435,7 +433,7 @@ final class TeamCityClient {
                 "http://localhost:8111/mnt/do/acceptLicenseAgreement");
     }
 
-    /** Waits until TC transitions from 503 (loading / awaiting license) to 401/200 (ready). */
+    /** Waits until TC returns 401/200 (i.e. it's up and serving). */
     private static void waitForTcReady(final HttpClient rest, final String baseUrl) throws Exception {
         final var deadline = System.currentTimeMillis() + READY_TIMEOUT.toMillis();
         while (System.currentTimeMillis() < deadline) {
