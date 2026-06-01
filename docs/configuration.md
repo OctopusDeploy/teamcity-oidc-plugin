@@ -13,6 +13,44 @@ Add the **OIDC Identity Token** build feature to a build configuration. Multiple
 | Signing algorithm | RS256 (RSA-2048, default), RS384 (RSA-3072), or ES256 (ECDSA P-256). |
 | Subject scoping | Which optional dimensions are appended to the composite `sub` claim. None are included by default, so `sub` is just `project:<id>:build_type:<id>` and a single consumer-side trust binding matches every build of this build type. Opt in to `branch` and/or `trigger_type` for tighter scoping. See [Subject claim](#subject-claim) below. |
 
+## Connections
+
+A **Connection** is a reusable bundle of OIDC issuance settings (audience, token
+lifetime, signing algorithm, subject scoping) defined at the project level.
+Multiple build features can reference the same connection.
+
+### Creating a connection
+
+1. Navigate to **Project Admin → Connections → Add connection**.
+2. Pick **OIDC Identity Token**.
+3. Fill in the display name, audience, lifetime, signing algorithm, and subject
+   scoping; click **Preview sample token** to see the resulting `sub` and `aud`.
+4. Save.
+
+Connections defined at a parent project are inherited by all sub-projects —
+define them at the point in the hierarchy where it makes sense.
+
+### Using a connection
+
+1. Open the build feature editor.
+2. Pick the connection from the **Connection** dropdown at the top.
+3. The inline audience / TTL / algorithm / subject scoping fields become
+   read-only and are filled in with the connection's settings.
+
+### What happens if the connection is deleted?
+
+- At save time, the build feature editor reports an error on
+  the connection field if the referenced connection is no longer reachable.
+- At build start, if the connection still cannot be resolved (e.g. it was
+  deleted between the last save and the build), the build fails with a clear
+  error message identifying the missing connection.
+
+### Inline configuration
+
+Instead of referencing a connection, a build feature can be configured inline.
+Pick "(no connection — configure inline below)" in the **Connection** dropdown to
+edit the audience / TTL / algorithm / subject scoping fields directly.
+
 ## Token claims
 
 Reference the token in build steps as `%jwt.token%`. It is injected as a masked parameter, so its value is redacted in build logs.

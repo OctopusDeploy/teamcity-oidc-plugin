@@ -77,14 +77,14 @@ public class OidcFlowIT {
                 System.getProperty("project.basedir", "."),
                 "../target/"
         ).normalize();
-        try (var stream = java.nio.file.Files.list(targetDir)) {
+        try (final var stream = java.nio.file.Files.list(targetDir)) {
             return stream
                     .filter(p -> p.getFileName().toString().matches("Octopus\\.TeamCity\\.OIDC\\..*\\.zip"))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException(
                             "Plugin zip not found in: " + targetDir.toAbsolutePath() +
                             "\nRun 'mvn package -DskipTests' from the project root first."));
-        } catch (java.io.IOException e) {
+        } catch (final java.io.IOException e) {
             throw new IllegalStateException("Could not list target directory: " + targetDir.toAbsolutePath(), e);
         }
     }
@@ -148,7 +148,7 @@ public class OidcFlowIT {
             .withEnv("ACCEPT_EULA", "Y")
             .withEnv("MSSQL_SA_PASSWORD", MSSQL_PASSWORD)
             .withCreateContainerCmdModifier(cmd -> cmd.withName(CONTAINER_PREFIX + "-mssql"))
-            // Wait for SQL Server to be fully initialised and accepting connections,
+            // Wait for SQL Server to be fully initialized and accepting connections,
             // not just the TCP port being open — Octopus will crash if it connects too early
             .waitingFor(Wait.forLogMessage(".*SQL Server is now ready for client connections.*\\n", 1)
                     .withStartupTimeout(Duration.ofMinutes(3)));
@@ -205,7 +205,7 @@ public class OidcFlowIT {
                 cmd.withCmd("/bin/sh", "-c",
                         // Make the custom cacerts world-readable (withCopyFileToContainer
                         // copies with the host file's mode; if it's 0600 the tcuser JVM
-                        // can't read it, causing SSLContext to initialise with no trust
+                        // can't read it, causing SSLContext to initialize with no trust
                         // anchors and all outbound TLS connections to fail).
                         "chmod 644 /opt/java/openjdk/lib/security/cacerts" +
                         " && chown -R tcuser:tcuser /data/teamcity_server/datadir/plugins" +
@@ -566,7 +566,7 @@ public class OidcFlowIT {
         }
     }
 
-    private static void tcPost(final String path, final String json) throws Exception {
+    private static String tcPost(final String path, final String json) throws Exception {
         final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + path))
@@ -580,6 +580,7 @@ public class OidcFlowIT {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IllegalStateException("TC POST " + path + " returned " + response.statusCode() + ": " + response.body());
         }
+        return response.body();
     }
 
     private static String tcGet(final String path) throws Exception {
@@ -794,7 +795,7 @@ public class OidcFlowIT {
         // 1. Wait for agent idle, then trigger build
         waitForAgentIdle();
         log("Triggering build...");
-        final var queueResponse = triggerBuild();
+        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         if (buildId == null || buildId.equals("null")) throw new IllegalStateException(
                 "Could not parse build id from: " + queueResponse);
@@ -846,7 +847,7 @@ public class OidcFlowIT {
     void jwtTokenIsMaskedInBuildLogAndResultingProperties() throws Exception {
         waitForAgentIdle();
         log("Triggering build for masking assertions...");
-        final var queueResponse = triggerBuild();
+        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         log("Build queued, id=" + buildId);
         waitForBuildSuccess(buildId);
@@ -907,10 +908,10 @@ public class OidcFlowIT {
         return response.body();
     }
 
-    private static String triggerBuild() throws Exception {
+    private static String triggerBuildFor(final String buildTypeExternalId) throws Exception {
         final var body = """
-                {"buildType":{"id":"OidcTest_Build"}}
-                """;
+                {"buildType":{"id":"%s"}}
+                """.formatted(buildTypeExternalId);
         final var response = tcHttp.send(
                 java.net.http.HttpRequest.newBuilder()
                         .uri(java.net.URI.create(tcBaseUrl + "/httpAuth/app/rest/buildQueue"))
@@ -1077,6 +1078,171 @@ public class OidcFlowIT {
         return accessToken;
     }
 
+    // -------------------------------------------------------------------------
+    // Helpers for the connection-inheritance integration test
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates an OIDC Identity Token connection as a projectFeature on the given parent project.
+     *
+     * @return the generated connection id (PROJECT_EXT_* form) from the TC response
+     */
+    private static String createOidcConnection(
+            final String parentProjectId,
+            final String displayName,
+            final String audience,
+            final int ttlMinutes,
+            final String algorithm,
+            final String subjectDimensions) throws Exception {
+        final var json = """
+                {
+                     "type": "OAuthProvider",
+                     "properties":
+                     {
+                       "property": [
+                         {"name":"providerType","value":"oidc-identity-token"},
+                         {"name":"displayName","value":"%s"},
+                         {"name":"audience","value":"%s"},
+                         {"name":"ttl_minutes","value":"%d"},
+                         {"name":"algorithm","value":"%s"},
+                         {"name":"subject_dimensions","value":"%s"}
+                       ]
+                     }
+                   }
+                """.formatted(displayName, audience, ttlMinutes, algorithm, subjectDimensions);
+        final var responseBody = tcPost(
+                "/httpAuth/app/rest/projects/" + parentProjectId + "/projectFeatures", json);
+        final var id = (String) parseJson(responseBody).get("id");
+        if (id == null) throw new IllegalStateException(
+                "Could not extract connection id from TC response: " + responseBody);
+        return id;
+    }
+
+    /** Creates a TC project under the given parent project. */
+    private static void createProject(final String projectId, final String parentId) throws Exception {
+        final var json = """
+                {"id":"%s","name":"%s","parentProject":{"id":"%s"}}
+                """.formatted(projectId, projectId, parentId);
+        tcPost("/httpAuth/app/rest/projects", json);
+    }
+
+    /**
+     * Creates a build configuration that references an OIDC connection by id (no inline
+     * audience/ttl/algorithm — those are resolved from the connection at build time).
+     * Adds the same capture-jwt step and artifact rule used by the existing OidcTest_Build
+     * so we can read the JWT back via the artifacts API.
+     */
+    private static void createBuildTypeReferencingConnection(
+            final String projectId,
+            final String buildTypeId,
+            final String connectionId) throws Exception {
+        // Build config
+        final var buildConfigJson = """
+                {"id":"%s","name":"%s","project":{"id":"%s"}}
+                """.formatted(buildTypeId, buildTypeId, projectId);
+        tcPost("/httpAuth/app/rest/buildTypes", buildConfigJson);
+
+        // Build feature — only connection_id; all other issuance settings come from the connection
+        final var featureJson = """
+                {"type":"oidc-plugin","properties":{"property":[
+                  {"name":"connection_id","value":"%s"}
+                ]}}
+                """.formatted(connectionId);
+        tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/features", featureJson);
+
+        // Capture-jwt step — writes jwt.token to jwt.txt for artifact retrieval
+        final var stepJson = """
+                {
+                    "type": "simpleRunner",
+                    "name": "capture-jwt",
+                    "properties":{
+                        "property":[
+                            {"name": "script.content","value": "JWT=%jwt.token%\\nprintf 'JWT (first 50): %.50s\\\\n' \\"$JWT\\"\\nprintf '%s' \\"$JWT\\" > jwt.txt"},
+                            {"name": "use.custom.script","value": "true"}
+                        ]
+                    }
+                }
+                """;
+        tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/steps", stepJson);
+
+        // Publish jwt.txt as an artifact
+        tcPut("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/artifactRules", "jwt.txt");
+
+        // VCS root with branch tracking so the build has branch info and the JWT carries
+        // a :branch: segment (required by the subject_dimensions=branch connection setting).
+        // Manual checkout avoids any outbound Git dependency.
+        tcPut("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/checkoutMode", "MANUAL");
+        final var vcsRootId = projectId + "_VcsRoot";
+        final var vcsRootJson = """
+                {
+                      "id": "%s",
+                      "name": "%s VCS",
+                      "vcsName": "jetbrains.git",
+                      "project": {"id": "%s"},
+                      "properties": {
+                        "property":[
+                          {"name":"url","value":"https://github.com/octocat/Hello-World.git"},
+                          {"name":"branch","value":"refs/heads/master"},
+                          {"name":"teamcity:branchSpec","value":"+:refs/heads/*"},
+                          {"name":"authMethod","value":"ANONYMOUS"}
+                        ]
+                      }
+                    }
+                """.formatted(vcsRootId, projectId, projectId);
+        tcPost("/httpAuth/app/rest/vcs-roots", vcsRootJson);
+        final var vcsEntryJson = """
+                {"id":"%s","vcs-root":{"id":"%s"},"checkout-rules":""}
+                """.formatted(vcsRootId, vcsRootId);
+        tcPost("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/vcs-root-entries", vcsEntryJson);
+    }
+
+    @Test
+    void connectionInheritedFromParentProjectIsUsed() throws Exception {
+        // Create an OIDC connection at _Root so it is accessible to all sub-projects
+        final var connectionId = createOidcConnection(
+                "_Root", "IT Connection", "api://it-connection-audience", 30, "ES256", "branch");
+        log("Created OIDC connection: " + connectionId);
+
+        createProject("OidcConnIT", "_Root");
+        createBuildTypeReferencingConnection("OidcConnIT", "OidcConnIT_Build", connectionId);
+        log("Created project OidcConnIT and build type OidcConnIT_Build referencing connection " + connectionId);
+
+        waitForAgentIdle();
+        log("Triggering connection-inheritance build...");
+        final var queueResponse = triggerBuildFor("OidcConnIT_Build");
+        final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
+        log("Build queued, id=" + buildId);
+
+        waitForBuildSuccess(buildId);
+        log("Build finished successfully.");
+
+        final var jwt = extractJwtFromBuild(buildId);
+        org.assertj.core.api.Assertions.assertThat(jwt)
+                .as("jwt.token must be present in build artifact")
+                .isNotBlank();
+        log("JWT extracted (length=" + jwt.length() + ")");
+
+        final var claims = com.nimbusds.jwt.SignedJWT.parse(jwt).getJWTClaimsSet();
+
+        org.assertj.core.api.Assertions.assertThat(claims.getAudience())
+                .as("aud must match the connection's audience")
+                .containsExactly("api://it-connection-audience");
+
+        final var ttlSeconds =
+                (claims.getExpirationTime().getTime() - claims.getIssueTime().getTime()) / 1000;
+        org.assertj.core.api.Assertions.assertThat(ttlSeconds)
+                .as("TTL must be within the 30-minute window set on the connection")
+                .isBetween(29L * 60, 30L * 60);
+
+        org.assertj.core.api.Assertions.assertThat(claims.getSubject())
+                .as("sub must be project:<id>:build_type:<id>:branch:<branch> with every segment "
+                        + "populated (subject_dimensions=branch on the connection requires a non-empty branch)")
+                .matches("project:[^:]+:build_type:[^:]+:branch:.+");
+
+        log("JWT claims verified: aud=" + claims.getAudience()
+                + " ttl=" + ttlSeconds + "s sub=" + claims.getSubject());
+    }
+
     /**
      * Blocks until Enter is pressed, keeping all containers alive for manual UI testing.
      * Run with:
@@ -1101,7 +1267,7 @@ public class OidcFlowIT {
         attachSampleVcsRoot();
         log("Triggering sample build for manual stack...");
         waitForAgentIdle();
-        final var queueResponse = triggerBuild();
+        final var queueResponse = triggerBuildFor(BUILD_CONFIG_EXTERNAL_ID);
         final var buildId = String.valueOf(parseJson(queueResponse).get("id"));
         log("Sample build queued, id=" + buildId + " — waiting for it to finish...");
         waitForBuildSuccess(buildId);

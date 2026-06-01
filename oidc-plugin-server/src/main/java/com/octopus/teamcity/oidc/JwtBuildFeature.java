@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,26 +29,37 @@ public class JwtBuildFeature extends BuildFeature {
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
     private static volatile SBuildServer staticBuildServer;
     private static volatile OidcSettingsManager staticOidcSettingsManager;
+    private static volatile OidcConnectionsManager staticOidcConnectionsManager;
 
     private final PluginDescriptor pluginDescriptor;
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final OidcSettingsManager oidcSettingsManager;
+    private final OidcConnectionsManager oidcConnectionsManager;
 
     public JwtBuildFeature(@NotNull final PluginDescriptor pluginDescriptor,
                            @NotNull final SBuildServer buildServer,
                            @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
-                           @NotNull final OidcSettingsManager oidcSettingsManager) {
+                           @NotNull final OidcSettingsManager oidcSettingsManager,
+                           @NotNull final OidcConnectionsManager oidcConnectionsManager) {
         this.pluginDescriptor = pluginDescriptor;
         this.issuerUrlProvider = issuerUrlProvider;
         this.oidcSettingsManager = oidcSettingsManager;
+        this.oidcConnectionsManager = oidcConnectionsManager;
         staticIssuerUrlProvider = issuerUrlProvider;
         staticBuildServer = buildServer;
         staticOidcSettingsManager = oidcSettingsManager;
+        staticOidcConnectionsManager = oidcConnectionsManager;
     }
 
     /** Used by the edit JSP to check the issuer URL without Spring context access. */
     public static boolean isRootUrlHttps() {
         return staticIssuerUrlProvider != null && OidcUrlUtils.isHttpsUrl(staticIssuerUrlProvider.getIssuerUrl());
+    }
+
+    /** Used by the edit JSP to display the resolved issuer URL as a readonly field. */
+    public static @NotNull String issuerUrl() {
+        final var provider = staticIssuerUrlProvider;
+        return provider == null ? "" : provider.getIssuerUrl();
     }
 
     /**
@@ -72,12 +84,19 @@ public class JwtBuildFeature extends BuildFeature {
                                @NotNull String triggerType,
                                boolean hasVcsRoot,
                                @NotNull String projectInternalId,
-                               @NotNull String buildTypeInternalId) {}
+                               @NotNull String projectExternalId,
+                               @NotNull String buildTypeInternalId) {
+
+        /** Blank claims, used when there's no build context to resolve sample values from. */
+        public static SampleClaims empty() {
+            return new SampleClaims("", "", false, "", "", "");
+        }
+    }
 
     public static SampleClaims sampleClaimsFor(@Nullable final String buildTypeIdParam) {
         final var server = staticBuildServer;
         if (server == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
-            return new SampleClaims("", "", false, "", "");
+            return SampleClaims.empty();
         }
         // The build feature edit dialog passes id as "buildType:<externalId>".
         // Strip the prefix when present so findBuildTypeByExternalId resolves it.
@@ -85,18 +104,36 @@ public class JwtBuildFeature extends BuildFeature {
                 ? buildTypeIdParam.substring("buildType:".length())
                 : buildTypeIdParam;
         final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
-        if (buildType == null) return new SampleClaims("", "", false, "", "");
+        if (buildType == null) return SampleClaims.empty();
         final var hasVcsRoot = !buildType.getVcsRoots().isEmpty();
         final var projectInternalId = buildType.getProjectId();
+        final var projectExternalId = buildType.getProjectExternalId();
         final var buildTypeInternalId = buildType.getInternalId();
         final var history = buildType.getHistory();
         if (history.isEmpty()) {
-            return new SampleClaims("", "", hasVcsRoot, projectInternalId, buildTypeInternalId);
+            return new SampleClaims("", "", hasVcsRoot, projectInternalId, projectExternalId, buildTypeInternalId);
         }
         final var lastBuild = history.get(0);
         final var branchName = ClaimsResolver.resolveBranchName(lastBuild);
         final var triggerType = ClaimsResolver.resolveTriggerType(lastBuild.getTriggeredBy());
-        return new SampleClaims(branchName, triggerType, hasVcsRoot, projectInternalId, buildTypeInternalId);
+        return new SampleClaims(branchName, triggerType, hasVcsRoot, projectInternalId, projectExternalId, buildTypeInternalId);
+    }
+
+    /** Used by the edit JSP to populate the connection dropdown. */
+    public static @NotNull java.util.List<OidcConnection> availableConnectionsFor(@Nullable final String buildTypeIdParam) {
+        final var server = staticBuildServer;
+        final var manager = staticOidcConnectionsManager;
+        if (server == null || manager == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
+            return java.util.List.of();
+        }
+        // The build feature edit dialog passes id as "buildType:<externalId>".
+        // Strip the prefix when present so findBuildTypeByExternalId resolves it.
+        final var externalId = buildTypeIdParam.startsWith("buildType:")
+                ? buildTypeIdParam.substring("buildType:".length())
+                : buildTypeIdParam;
+        final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
+        if (buildType == null) return java.util.List.of();
+        return manager.listAvailable(buildType.getProject());
     }
 
     @NotNull
@@ -114,6 +151,30 @@ public class JwtBuildFeature extends BuildFeature {
     @NotNull
     @Override
     public String describeParameters(@NotNull final java.util.Map<String, String> params) {
+        final var connectionId = params.getOrDefault("connection_id", "").trim();
+        if (!connectionId.isEmpty() && staticOidcConnectionsManager != null && staticBuildServer != null) {
+            return describeConnection(connectionId);
+        }
+        return describeInline(params);
+    }
+
+    @NotNull
+    private static String describeConnection(@NotNull final String connectionId) {
+        final var resolved = resolveConnectionFromProjectOrAncestor(connectionId);
+        if (resolved.isEmpty()) {
+            return "connection: <unknown id " + connectionId + ">";
+        }
+        final var conn = resolved.get();
+        final var sb = new StringBuilder("connection: ").append(conn.displayName());
+        // Show the sub claim's template form — concrete IDs and runtime values aren't
+        // available here, but the template matches what the consumer will see.
+        sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
+        sb.append("\naud:").append(conn.settings().audience());
+        return sb.toString();
+    }
+
+    @NotNull
+    private static String describeInline(@NotNull final java.util.Map<String, String> params) {
         final var audience = params.get("audience");
         final var sb = new StringBuilder();
         // Show the sub claim's template form — concrete project/build_type IDs and the
@@ -125,6 +186,25 @@ public class JwtBuildFeature extends BuildFeature {
             sb.append("\naud:").append(audience);
         }
         return sb.toString();
+    }
+
+    /**
+     * {@code describeParameters} has only the params map — no build/project context — so the
+     * connection cannot be resolved against a known project. Connections are inherited
+     * downward, and TC's {@code findConnectionById} walks upward (project + ancestors), so a
+     * connection is only visible from its owning project or a descendant. Hence this scans
+     * every project and returns the first that can resolve the id. (Resolving against root
+     * alone would only find connections defined directly at root.)
+     */
+    private static Optional<OidcConnection> resolveConnectionFromProjectOrAncestor(final String connectionId) {
+        final var manager = staticOidcConnectionsManager;
+        final var server = staticBuildServer;
+        if (manager == null || server == null) return Optional.empty();
+        for (final var project : server.getProjectManager().getProjects()) {
+            final var resolved = manager.resolve(project, connectionId);
+            if (resolved.isPresent()) return resolved;
+        }
+        return Optional.empty();
     }
 
     private static String subjectTemplate(@Nullable final String subjectDimensionsParam) {
@@ -140,7 +220,7 @@ public class JwtBuildFeature extends BuildFeature {
         }
         final var sb = new StringBuilder("project:<project_id>:build_type:<build_type_id>");
         if (includeBranch) sb.append(":branch:<branch>");
-        if (includeTriggerType) sb.append(":trigger_type:<trigger>");
+        if (includeTriggerType) sb.append(":trigger_type:<trigger_type>");
         return sb.toString();
     }
 
@@ -169,6 +249,21 @@ public class JwtBuildFeature extends BuildFeature {
                         "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
                                 "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
             }
+            final var connectionId = params.getOrDefault("connection_id", "").trim();
+            if (!connectionId.isEmpty()) {
+                // When a connection is selected, skip inline TTL/subject validation and instead
+                // verify the connection still exists in the project hierarchy.
+                if (buildTypeOrTemplate instanceof final jetbrains.buildServer.serverSide.SBuildType bt) {
+                    final var resolved = oidcConnectionsManager.resolve(bt.getProject(), connectionId);
+                    if (resolved.isEmpty()) {
+                        errors.add(new InvalidProperty("connection_id",
+                                "Selected connection no longer exists in this project. "
+                                        + "Pick another connection or clear the field to configure inline settings."));
+                    }
+                }
+                return errors;
+            }
+            // Inline validation: TTL and subject_dimensions.
             final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
             final var ttl = params.getOrDefault("ttl_minutes", "10");
             try {

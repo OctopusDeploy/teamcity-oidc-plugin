@@ -21,6 +21,11 @@ Copy the plugin zip to `<TeamCity data directory>/plugins/` and restart TeamCity
 3. In your cloud provider, create an OIDC identity that trusts your TeamCity server as the issuer, and configure conditions based on the claims in the token.
 4. Reference the token in build steps as `%jwt.token%`.
 
+> Tip: audience, token lifetime, signing algorithm, and subject scoping can
+> also be defined as a reusable **OIDC Identity Token** connection under
+> Project Admin → Connections. Multiple build features can then reference
+> the same connection.
+
 ## Screenshot
 
 ![OIDC Identity Token build feature](docs/images/screenshot-build-features.png)

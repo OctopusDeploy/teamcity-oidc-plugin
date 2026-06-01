@@ -25,5 +25,7 @@
     <bean id="keyRotationController" class="com.octopus.teamcity.oidc.KeyRotationController"/>
     <bean id="rotationSettingsController" class="com.octopus.teamcity.oidc.RotationSettingsController"/>
     <bean id="wellKnownPublicFilter" class="com.octopus.teamcity.oidc.WellKnownPublicFilter" destroy-method="destroy"/>
+    <bean id="oidcConnectionProvider" class="com.octopus.teamcity.oidc.OidcConnectionProvider"/>
+    <bean id="oidcConnectionsManager" class="com.octopus.teamcity.oidc.OidcConnectionsManager"/>
 </beans>
 

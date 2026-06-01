@@ -5,6 +5,7 @@
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 <%@ page import="com.octopus.teamcity.oidc.JwtBuildFeature" %>
+<%@ page import="com.octopus.teamcity.oidc.OidcConnection" %>
 <%@ page import="jetbrains.buildServer.serverSide.auth.Permission" %>
 <%@ page import="jetbrains.buildServer.users.SUser" %>
 <%@ page import="jetbrains.buildServer.web.util.SessionUser" %>
@@ -16,15 +17,36 @@
     pageContext.setAttribute("sampleTriggerType", jwtSamples.triggerType());
     pageContext.setAttribute("sampleHasVcsRoot", jwtSamples.hasVcsRoot());
     pageContext.setAttribute("projectInternalId", jwtSamples.projectInternalId());
+    pageContext.setAttribute("projectExternalId", jwtSamples.projectExternalId());
     pageContext.setAttribute("buildTypeInternalId", jwtSamples.buildTypeInternalId());
 
     // OidcSettingsManager lives in the plugin's child Spring context, not TC's root web
     // context, so WebApplicationContextUtils can't see it. Use the static accessor instead.
     pageContext.setAttribute("maxTokenLifetimeMinutes", JwtBuildFeature.maxTokenLifetimeMinutes());
+    pageContext.setAttribute("jwtIssuerUrl", JwtBuildFeature.issuerUrl());
 
     final SUser editJwtCurrentUser = SessionUser.getUser(request);
     pageContext.setAttribute("currentUserCanConfigureMax",
             editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
+
+    // Build a map-based view of each connection so the JSP's ${c.id} expressions can read
+    // them. Property-style access like ${c.id} on a Map is a key lookup and works in
+    // all Jasper versions; calling a record accessor (${c.id()}) needs method-invocation
+    // support that TC's bundled Jasper may not provide at Java 8 source level.
+    final java.util.List<OidcConnection> jwtConnectionsRaw =
+            JwtBuildFeature.availableConnectionsFor(request.getParameter("id"));
+    final java.util.List<java.util.Map<String, String>> jwtConnections = new java.util.ArrayList<>();
+    for (final OidcConnection conn : jwtConnectionsRaw) {
+        final java.util.Map<String, String> view = new java.util.HashMap<>();
+        view.put("id", conn.id());
+        view.put("displayName", conn.displayName());
+        view.put("audience", conn.settings().audience());
+        view.put("ttl", String.valueOf(conn.settings().ttlMinutes()));
+        view.put("algorithm", conn.settings().signingAlgorithm());
+        view.put("subjectDimensions", String.join(",", conn.settings().subjectDimensions()));
+        jwtConnections.add(view);
+    }
+    pageContext.setAttribute("jwtConnections", jwtConnections);
 %>
 <link rel="stylesheet" href="${pageContext.request.contextPath}/plugins/teamcity-oidc-plugin/jwt-admin.css"/>
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
@@ -35,6 +57,38 @@
             <td colspan="2"><span class="error" id="error_root_url">The TeamCity server root URL must use HTTPS for OIDC token issuance. Update it in Administration &#x2192; Global Settings.</span></td>
         </tr>
     </c:if>
+    <tr id="row_connection_id">
+        <th><label for="connection_id">Connection:</label></th>
+        <td>
+            <c:choose>
+                <c:when test="${empty jwtConnections}">
+                    <span class="smallNote">No connections configured for this project. Create one via the project's <a href="${pageContext.request.contextPath}/admin/editProject.html?projectId=${fn:escapeXml(projectExternalId)}&amp;tab=oauthConnections">Connections</a> page.</span>
+                </c:when>
+                <c:otherwise>
+                    <props:selectProperty name="connection_id">
+                        <props:option value="">(none)</props:option>
+                        <c:forEach var="c" items="${jwtConnections}">
+                            <props:option value="${fn:escapeXml(c.id)}"
+                                          selected="${propertiesBean.properties['connection_id'] == c.id}">
+                                <c:out value="${c.displayName}"/>
+                            </props:option>
+                        </c:forEach>
+                    </props:selectProperty>
+                    <span class="smallNote">Create and edit credentials via the project's <a href="${pageContext.request.contextPath}/admin/editProject.html?projectId=${fn:escapeXml(projectExternalId)}&amp;tab=oauthConnections">Connections</a> page.</span>
+                </c:otherwise>
+            </c:choose>
+            <span class="error" id="error_connection_id"></span>
+        </td>
+    </tr>
+
+    <tr>
+        <th><label>Issuer (<code>iss</code>):</label></th>
+        <td>
+            <input type="text" id="jwtIssuerUrl" readonly value="${fn:escapeXml(jwtIssuerUrl)}" style="width:30em;"/>
+            <span class="smallNote">The OIDC issuer URL (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
+        </td>
+    </tr>
+
     <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
@@ -108,6 +162,19 @@
         </td>
     </tr>
 </l:settingsGroup>
+
+<%-- Connection metadata for JS — emitted as data-* attributes to avoid inline script injection --%>
+<div id="jwtConnectionsData" style="display:none;">
+    <c:forEach var="c" items="${jwtConnections}">
+        <span class="jwt-connection-entry"
+              data-id="${fn:escapeXml(c.id)}"
+              data-display-name="${fn:escapeXml(c.displayName)}"
+              data-audience="${fn:escapeXml(c.audience)}"
+              data-ttl="${fn:escapeXml(c.ttl)}"
+              data-algorithm="${fn:escapeXml(c.algorithm)}"
+              data-subject-dimensions="${fn:escapeXml(c.subjectDimensions)}"></span>
+    </c:forEach>
+</div>
 
 <%-- Hidden holder; JS moves its contents into TC's editBuildFeatureAdditionalButtons on DOM ready --%>
 <%-- data-build-type-id carries the build type ID safely without inline JS injection --%>
@@ -183,54 +250,9 @@
         }).then(r => r.json());
     }
 
-    window.jwtTestRunChecks = async () => {
-        const algorithm = document.getElementById('algorithm').value;
-        const ttl = document.getElementById('ttl_minutes').value || '10';
-        const audience = document.getElementById('audience').value;
-        const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
-
-        document.getElementById('jwtRow0').textContent = '⏳ Issuing JWT...';
-        const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
-        jwtSetRow('jwtRow0', r1.ok, r1.message);
-        if (!r1.ok) return;
-        _jwtTokenRef = r1.tokenRef;
-
-        document.getElementById('jwtRow1').textContent = '⏳ Checking discovery endpoint...';
-        const r2 = await jwtPost({step:'discovery'});
-        jwtSetRow('jwtRow1', r2.ok, r2.message);
-        if (!r2.ok) return;
-
-        document.getElementById('jwtRow2').textContent = '⏳ Verifying JWKS signature...';
-        const r3 = await jwtPost({step:'jwks', tokenRef:_jwtTokenRef});
-        jwtSetRow('jwtRow2', r3.ok, r3.message);
-        if (!r3.ok) return;
-
-        document.getElementById('jwtServiceUrl').disabled = false;
-        document.getElementById('jwtExchangeBtn').disabled = false;
-    };
-
-    window.jwtTestExchange = async () => {
-        const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
-        if (!serviceUrl) return;
-        const algorithm = document.getElementById('algorithm').value;
-        const ttl = document.getElementById('ttl_minutes').value || '10';
-        const audience = document.getElementById('audience').value;
-        const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
-        document.getElementById('jwtExchangeBtn').disabled = true;
-        document.getElementById('jwtRow3').textContent = '\u23f3 Issuing fresh JWT for exchange...';
-        document.getElementById('jwtRow3').style.color = '#888';
-        // Issue a fresh token each time — the 1-minute TTL may have expired since
-        // the initial Test Connection checks ran.
-        const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
-        if (!r1.ok) {
-            jwtSetRow('jwtRow3', false, 'Could not issue JWT: ' + r1.message);
-            document.getElementById('jwtExchangeBtn').disabled = false;
-            return;
-        }
-        const r = await jwtPost({step:'exchange', tokenRef:r1.tokenRef, serviceUrl:serviceUrl, audience:audience});
-        jwtSetRow('jwtRow3', r.ok, r.message);
-        document.getElementById('jwtExchangeBtn').disabled = false;
-    };
+    // jwtTestRunChecks and jwtTestExchange are defined inside $j(document).ready()
+    // so they can access connectionData. They are assigned to window.* for the inline
+    // onclick handlers on the modal buttons.
 
     (() => {
         // Hide the empty groupingTitle row the l:settingsGroup tag always renders
@@ -285,5 +307,135 @@
         });
 
         updatePreview();
+
+        // Read connection metadata once from the data-* attributes emitted by the JSP.
+        const connectionData = {};
+        $j('#jwtConnectionsData .jwt-connection-entry').each((_, el) => {
+            const $e = $j(el);
+            connectionData[$e.attr('data-id')] = {
+                displayName: $e.attr('data-display-name'),
+                audience: $e.attr('data-audience'),
+                ttl: $e.attr('data-ttl'),
+                algorithm: $e.attr('data-algorithm'),
+                subjectDimensions: $e.attr('data-subject-dimensions')
+            };
+        });
+
+        // Helper: resolve algorithm/ttl/audience from the selected connection (if any),
+        // falling back to the inline form fields when no connection is selected.
+        const resolveTestParams = () => {
+            const selectedConn = document.getElementById('connection_id') ? document.getElementById('connection_id').value : '';
+            const fromConn = selectedConn && connectionData[selectedConn];
+            return {
+                algorithm: fromConn ? fromConn.algorithm : document.getElementById('algorithm').value,
+                ttl: fromConn ? fromConn.ttl : (document.getElementById('ttl_minutes').value || '10'),
+                audience: fromConn ? fromConn.audience : document.getElementById('audience').value
+            };
+        };
+
+        window.jwtTestRunChecks = async () => {
+            const {algorithm, ttl, audience} = resolveTestParams();
+            const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
+
+            document.getElementById('jwtRow0').textContent = '⏳ Issuing JWT...';
+            const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+            jwtSetRow('jwtRow0', r1.ok, r1.message);
+            if (!r1.ok) return;
+            _jwtTokenRef = r1.tokenRef;
+
+            document.getElementById('jwtRow1').textContent = '⏳ Checking discovery endpoint...';
+            const r2 = await jwtPost({step:'discovery'});
+            jwtSetRow('jwtRow1', r2.ok, r2.message);
+            if (!r2.ok) return;
+
+            document.getElementById('jwtRow2').textContent = '⏳ Verifying JWKS signature...';
+            const r3 = await jwtPost({step:'jwks', tokenRef:_jwtTokenRef});
+            jwtSetRow('jwtRow2', r3.ok, r3.message);
+            if (!r3.ok) return;
+
+            document.getElementById('jwtServiceUrl').disabled = false;
+            document.getElementById('jwtExchangeBtn').disabled = false;
+        };
+
+        window.jwtTestExchange = async () => {
+            const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
+            if (!serviceUrl) return;
+            const {algorithm, ttl, audience} = resolveTestParams();
+            const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
+            document.getElementById('jwtExchangeBtn').disabled = true;
+            document.getElementById('jwtRow3').textContent = '⏳ Issuing fresh JWT for exchange...';
+            document.getElementById('jwtRow3').style.color = '#888';
+            // Issue a fresh token each time — the 1-minute TTL may have expired since
+            // the initial Test Connection checks ran.
+            const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+            if (!r1.ok) {
+                jwtSetRow('jwtRow3', false, 'Could not issue JWT: ' + r1.message);
+                document.getElementById('jwtExchangeBtn').disabled = false;
+                return;
+            }
+            const r = await jwtPost({step:'exchange', tokenRef:r1.tokenRef, serviceUrl:serviceUrl, audience:audience});
+            jwtSetRow('jwtRow3', r.ok, r.message);
+            document.getElementById('jwtExchangeBtn').disabled = false;
+        };
+
+        // When a connection is selected, overlay the inline form fields with the
+        // connection's values and lock them. When the user deselects the connection,
+        // restore the previously-saved inline values from the per-input cache.
+        const cacheInline = ($el, value) => {
+            if ($el.data('inlineCached') === undefined) {
+                $el.data('inlineCached', value);
+            }
+        };
+        const restoreInline = ($el) => {
+            if ($el.data('inlineCached') !== undefined) {
+                $el.val($el.data('inlineCached'));
+                $el.removeData('inlineCached');
+            }
+        };
+
+        const refreshConnectionUI = () => {
+            const selected = $j('#connection_id').val();
+            const selectedConnection = selected && connectionData[selected];
+
+            const $ttl = $j('#ttl_minutes');
+            const $aud = $j('#audience');
+            const $alg = $j('#algorithm');
+            const $subj = $j('#subject_dimensions');
+            const subjectCheckboxes = $j('.jwt-subject-dimension-cb');
+
+            if (selectedConnection) {
+                cacheInline($ttl, $ttl.val());
+                cacheInline($aud, $aud.val());
+                cacheInline($alg, $alg.val());
+                cacheInline($subj, $subj.val());
+
+                $ttl.val(selectedConnection.ttl).prop('readonly', true).addClass('jwt-locked');
+                $aud.val(selectedConnection.audience).prop('readonly', true).addClass('jwt-locked');
+                $alg.val(selectedConnection.algorithm).prop('disabled', true).addClass('jwt-locked');
+                $subj.val(selectedConnection.subjectDimensions || '');
+                const subjectDimensions = (selectedConnection.subjectDimensions || '').split(',').filter(s => s.length > 0);
+                subjectCheckboxes.each((_, el) => {
+                    el.checked = subjectDimensions.indexOf(el.value) !== -1;
+                    el.disabled = true;
+                });
+            } else {
+                restoreInline($ttl);
+                restoreInline($aud);
+                restoreInline($alg);
+                restoreInline($subj);
+                $ttl.prop('readonly', false).removeClass('jwt-locked');
+                $aud.prop('readonly', false).removeClass('jwt-locked');
+                $alg.prop('disabled', false).removeClass('jwt-locked');
+                const subjectDimensions = $subj.val().split(',').filter(s => s.length > 0);
+                subjectCheckboxes.each((_, el) => {
+                    el.checked = subjectDimensions.indexOf(el.value) !== -1;
+                    el.disabled = false;
+                });
+            }
+            updatePreview();
+        };
+
+        $j('#connection_id').on('change', refreshConnectionUI);
+        refreshConnectionUI();
     });
 </script>

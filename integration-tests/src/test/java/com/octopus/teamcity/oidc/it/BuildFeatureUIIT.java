@@ -6,6 +6,10 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.assertions.PlaywrightAssertions;
+import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.SelectOption;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
@@ -124,10 +128,12 @@ public class BuildFeatureUIIT {
             final var checkboxes = page.locator(".jwt-subject-dimension-cb").all();
             assertThat(checkboxes).as("at least one optional-dimension checkbox should be rendered").isNotEmpty();
             for (final var cb : checkboxes) {
-                assertThat(cb.isChecked())
-                        .as("dimension '%s' should be unchecked when subject_dimensions is empty",
-                                cb.getAttribute("value"))
-                        .isFalse();
+                // Assert via a value-specific locator so the auto-retrying assertion's failure
+                // message names the dimension — LocatorAssertions has no AssertJ-style .as().
+                // (Web-first assertion: the checkbox may not have painted at first check.)
+                final var value = cb.getAttribute("value");
+                PlaywrightAssertions.assertThat(page.locator(".jwt-subject-dimension-cb[value='" + value + "']"))
+                        .not().isChecked();
             }
         });
     }
@@ -217,9 +223,8 @@ public class BuildFeatureUIIT {
         setFeatureProperty("subject_dimensions", "trigger_type");
 
         inFeatureEditor(page -> {
-            assertThat(page.locator(".jwt-subject-dimension-cb[value='trigger_type']").isChecked())
-                    .as("trigger_type checkbox should be pre-checked from the saved value")
-                    .isTrue();
+            PlaywrightAssertions.assertThat(page.locator(".jwt-subject-dimension-cb[value='trigger_type']"))
+                    .isChecked();
             assertThat(page.locator("#jwtSubjectPreview").inputValue())
                     .as("preview should include the trigger_type segment from the saved state")
                     .contains(":trigger_type:");
@@ -245,6 +250,112 @@ public class BuildFeatureUIIT {
         assertThat(readFeatureProperties().get("ttl_minutes"))
                 .as("invalid TTL should not have persisted")
                 .isEqualTo("10");
+    }
+
+    @Test
+    void connectionSelectionLocksInlineFieldsToConnectionValues() throws Exception {
+        // Create a connection at _Root so it is visible to the UITest project.
+        final var connectionId = createOidcConnection("_Root", "UI Test Conn",
+                "api://ui-test-audience", 30, "ES256", "");
+
+        inFeatureEditor(page -> {
+            // The readonly Issuer (iss) row is always visible at the top with a real URL.
+            PlaywrightAssertions.assertThat(page.locator("#jwtIssuerUrl")).isVisible();
+            assertThat(page.locator("#jwtIssuerUrl").inputValue()).startsWith("https://");
+            assertThat(page.locator("#jwtIssuerUrl").getAttribute("readonly")).isNotNull();
+
+            // Connection dropdown must exist and list the new connection.
+            PlaywrightAssertions.assertThat(page.locator("#connection_id")).isVisible();
+            assertThat(page.locator("#connection_id option").allInnerTexts()
+                    .stream().map(String::trim).toList()).contains("UI Test Conn");
+
+            // Initial state: no connection selected — inline fields editable, no jwt-locked class.
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isVisible();
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isEditable();
+            assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
+                    .isEqualTo(false);
+
+            page.selectOption("#connection_id",
+                    new SelectOption().setValue(connectionId));
+
+            // Inline fields remain visible but switch to readonly mode populated with the
+            // connection's values and styled with the jwt-locked gray treatment.
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isVisible();
+            assertThat(page.locator("#audience").inputValue()).isEqualTo("api://ui-test-audience");
+            assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
+            assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
+                    .isEqualTo(true);
+            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("30");
+            assertThat(page.locator("#algorithm").inputValue()).isEqualTo("ES256");
+            PlaywrightAssertions.assertThat(page.locator("#algorithm")).isDisabled();
+
+            // Switch back to "(none)".
+            page.selectOption("#connection_id",
+                    new SelectOption().setValue(""));
+
+            // Inline fields are editable again and the jwt-locked class is removed.
+            PlaywrightAssertions.assertThat(page.locator("#audience")).isEditable();
+            assertThat(page.locator("#audience").getAttribute("readonly")).isNull();
+            assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
+                    .isEqualTo(false);
+            PlaywrightAssertions.assertThat(page.locator("#algorithm")).isEnabled();
+        });
+    }
+
+    @Test
+    void connectionSelectionPersistsAfterSave() throws Exception {
+        final var connectionId = createOidcConnection("_Root", "UI Test Conn Persist",
+                "api://ui-test-persist", 20, "RS256", "");
+
+        editFeature(page -> page.selectOption("#connection_id",
+                new SelectOption().setValue(connectionId)));
+
+        assertThat(readFeatureProperties().get("connection_id"))
+                .as("connection_id should persist to the saved build feature properties")
+                .isEqualTo(connectionId);
+
+        // Reopen the editor and verify the dropdown still reflects the saved selection,
+        // and that the inline fields are in connection-locked mode populated from the
+        // connection's values.
+        inFeatureEditor(page -> {
+            assertThat(page.locator("#connection_id").inputValue()).isEqualTo(connectionId);
+            assertThat(page.locator("#audience").inputValue()).isEqualTo("api://ui-test-persist");
+            assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
+            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("20");
+            assertThat(page.locator("#algorithm").inputValue()).isEqualTo("RS256");
+            PlaywrightAssertions.assertThat(page.locator("#algorithm")).isDisabled();
+        });
+    }
+
+    @Test
+    void connectionWithSubjectScopingChecksAndDisablesCheckboxes() throws Exception {
+        // Use trigger_type — the branch checkbox is only rendered when the build type
+        // has a VCS root attached, while trigger_type is always present.
+        final var connectionId = createOidcConnection("_Root", "UI Test Conn Subjects",
+                "api://ui-test-subj", 20, "RS256", "trigger_type");
+
+        inFeatureEditor(page -> {
+            final var triggerType = page.locator(".jwt-subject-dimension-cb[value='trigger_type']");
+
+            // Pre-selection: unchecked and editable.
+            PlaywrightAssertions.assertThat(triggerType).not().isChecked();
+            PlaywrightAssertions.assertThat(triggerType).isEnabled();
+
+            page.selectOption("#connection_id",
+                    new SelectOption().setValue(connectionId));
+
+            // Connection-selected: matching dimensions are checked AND disabled.
+            PlaywrightAssertions.assertThat(triggerType).isChecked();
+            PlaywrightAssertions.assertThat(triggerType).isDisabled();
+            // Live preview reflects the connection's dimensions.
+            assertThat(page.locator("#jwtSubjectPreview").inputValue()).contains(":trigger_type:");
+
+            // Switch back: checkbox returns to unchecked + enabled.
+            page.selectOption("#connection_id",
+                    new SelectOption().setValue(""));
+            PlaywrightAssertions.assertThat(triggerType).not().isChecked();
+            PlaywrightAssertions.assertThat(triggerType).isEnabled();
+        });
     }
 
     @Test
@@ -318,7 +429,7 @@ public class BuildFeatureUIIT {
      * by createAdminUserToBypassFirstRunWizard.
      */
     private BrowserContext newLoggedInContext() {
-        return browser.newContext(new com.microsoft.playwright.Browser.NewContextOptions()
+        return browser.newContext(new Browser.NewContextOptions()
                 .setExtraHTTPHeaders(java.util.Map.of("Authorization", superUserAuthHeader)));
     }
 
@@ -335,11 +446,11 @@ public class BuildFeatureUIIT {
             page.locator("td.edit a").first().click();
             // #subject_dimensions is a hidden input — wait for it to be attached to the DOM
             // (Playwright's default waitFor requires visible, which a hidden input never becomes).
-            page.locator("#subject_dimensions").waitFor(new com.microsoft.playwright.Locator.WaitForOptions()
-                    .setState(com.microsoft.playwright.options.WaitForSelectorState.ATTACHED));
+            page.locator("#subject_dimensions").waitFor(new Locator.WaitForOptions()
+                    .setState(WaitForSelectorState.ATTACHED));
         } catch (final RuntimeException e) {
             try {
-                page.screenshot(new com.microsoft.playwright.Page.ScreenshotOptions()
+                page.screenshot(new Page.ScreenshotOptions()
                         .setPath(java.nio.file.Paths.get("/tmp/uiit-failed-" + System.currentTimeMillis() + ".png"))
                         .setFullPage(true));
                 java.nio.file.Files.writeString(
@@ -356,9 +467,9 @@ public class BuildFeatureUIIT {
         // clicking, wait for it to become hidden — TC reuses the modal DOM so we can't
         // wait for DETACHED, but visibility flips when the modal opens/closes.
         page.locator("#submitBuildFeatureId").click();
-        page.locator("#submitBuildFeatureId").waitFor(new com.microsoft.playwright.Locator.WaitForOptions()
-                .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
-        page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE);
+        page.locator("#submitBuildFeatureId").waitFor(new Locator.WaitForOptions()
+                .setState(WaitForSelectorState.HIDDEN));
+        page.waitForLoadState(LoadState.NETWORKIDLE);
     }
 
     // -------------------------------------------------------------------------
@@ -405,6 +516,47 @@ public class BuildFeatureUIIT {
             throw new IllegalStateException("Setting feature property " + name + " failed: "
                     + response.statusCode() + ": " + response.body());
         }
+    }
+
+    /**
+     * Creates an OIDC Identity Token connection as a projectFeature on the given parent project
+     * and returns the generated connection id (PROJECT_EXT_* form).
+     */
+    private static String createOidcConnection(
+            final String parentProjectId,
+            final String displayName,
+            final String audience,
+            final int ttlMinutes,
+            final String algorithm,
+            final String subjectDimensions) throws Exception {
+        final var json = """
+                {"type":"OAuthProvider","properties":{"property":[
+                  {"name":"providerType","value":"oidc-identity-token"},
+                  {"name":"displayName","value":"%s"},
+                  {"name":"audience","value":"%s"},
+                  {"name":"ttl_minutes","value":"%d"},
+                  {"name":"algorithm","value":"%s"},
+                  {"name":"subject_dimensions","value":"%s"}
+                ]}}
+                """.formatted(displayName, audience, ttlMinutes, algorithm, subjectDimensions);
+        final var response = http.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/httpAuth/app/rest/projects/" + parentProjectId + "/projectFeatures"))
+                        .header("Authorization", superUserAuthHeader)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException(
+                    "Failed to create OIDC connection: " + response.statusCode() + ": " + response.body());
+        }
+        final var id = (String) parseJson(response.body()).get("id");
+        if (id == null) throw new IllegalStateException(
+                "Could not extract connection id from TC response: " + response.body());
+        return id;
     }
 
     private static String addBuildFeature() throws Exception {
@@ -492,14 +644,14 @@ public class BuildFeatureUIIT {
     private static Path requirePluginZip() {
         final var targetDir = Path.of(
                 System.getProperty("project.basedir", "."), "../target/").normalize();
-        try (var stream = java.nio.file.Files.list(targetDir)) {
+        try (final var stream = java.nio.file.Files.list(targetDir)) {
             return stream
                     .filter(p -> p.getFileName().toString().matches("Octopus\\.TeamCity\\.OIDC\\..*\\.zip"))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException(
                             "Plugin zip not found in " + targetDir.toAbsolutePath()
                             + ". Run 'mvn package -DskipTests' first."));
-        } catch (java.io.IOException e) {
+        } catch (final java.io.IOException e) {
             throw new IllegalStateException("Could not list " + targetDir.toAbsolutePath(), e);
         }
     }

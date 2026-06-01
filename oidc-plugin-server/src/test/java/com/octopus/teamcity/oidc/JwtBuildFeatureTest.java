@@ -2,8 +2,10 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.serverSide.BuildTypeIdentity;
 import jetbrains.buildServer.serverSide.InvalidProperty;
+import jetbrains.buildServer.serverSide.ProjectManager;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,7 +13,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -19,14 +24,36 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 public class JwtBuildFeatureTest {
 
-    @Mock
-    private PluginDescriptor pluginDescriptor;
-
-    @Mock
-    private BuildTypeIdentity buildTypeOrTemplate;
+    @Mock private PluginDescriptor pluginDescriptor;
+    @Mock private BuildTypeIdentity buildTypeOrTemplate;
+    @Mock private OidcConnectionsManager oidcConnectionsManager;
+    @Mock private jetbrains.buildServer.serverSide.SBuildType buildType;
+    @Mock private jetbrains.buildServer.serverSide.SProject project;
+    @Mock private jetbrains.buildServer.serverSide.SProject rootProject;
+    @Mock private ProjectManager projectManager;
 
     @TempDir
     private File tempDir;
+
+    private static final String CONNECTION_ID = "octopus-prod-connection";
+    private static final String CONNECTION_PROJECT_ID = "OctopusProject";
+
+    private JwtBuildFeature feature;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(buildType.getProject()).thenReturn(project);
+        lenient().when(oidcConnectionsManager.resolve(project, CONNECTION_ID))
+                .thenReturn(Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus prod",
+                        new IssuanceSettings("api://audience", 10, "RS256", Set.of()))));
+        final var buildServer = buildServerWithRootUrl("https://teamcity.example.com");
+        lenient().when(buildServer.getProjectManager()).thenReturn(projectManager);
+        lenient().when(projectManager.getRootProject()).thenReturn(rootProject);
+        lenient().when(projectManager.getProjects()).thenReturn(List.of(rootProject));
+        feature = new JwtBuildFeature(pluginDescriptor, buildServer,
+                providerFor("https://teamcity.example.com"), new OidcSettingsManager(tempDir),
+                oidcConnectionsManager);
+    }
 
     private SBuildServer buildServerWithRootUrl(final String url) {
         final var server = mock(SBuildServer.class);
@@ -40,7 +67,7 @@ public class JwtBuildFeatureTest {
 
     private JwtBuildFeature newFeature(final String rootUrl) {
         return new JwtBuildFeature(pluginDescriptor, buildServerWithRootUrl(rootUrl),
-                providerFor(rootUrl), new OidcSettingsManager(tempDir));
+                providerFor(rootUrl), new OidcSettingsManager(tempDir), mock(OidcConnectionsManager.class));
     }
 
     @Test
@@ -194,7 +221,7 @@ public class JwtBuildFeatureTest {
     public void describeParametersIncludesAllConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("subject_dimensions", "branch,trigger_type"));
-        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger>");
+        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger_type>");
     }
 
     @Test
@@ -202,5 +229,41 @@ public class JwtBuildFeatureTest {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("subject_dimensions", "branch"));
         assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>");
+    }
+
+    @Test
+    public void skipsInlineValidationWhenConnectionIdSet() {
+        // ttl_minutes far out of range — would fail inline validation, but is ignored when connection_id is set.
+        final var processor = feature.getParametersProcessor(buildType);
+        final var errors = processor.process(Map.of(
+                "connection_id", CONNECTION_ID,
+                "ttl_minutes", "9999",
+                "subject_dimensions", "bogus"));
+
+        // The connection resolves successfully (stubbed in setUp).
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("ttl_minutes", "subject_dimensions");
+    }
+
+    @Test
+    public void reportsInvalidPropertyWhenConnectionIdUnresolvable() {
+        when(oidcConnectionsManager.resolve(project, "missing"))
+                .thenReturn(java.util.Optional.empty());
+
+        final var errors = feature.getParametersProcessor(buildType).process(Map.of("connection_id", "missing"));
+
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).contains("connection_id");
+    }
+
+    @Test
+    public void describeParametersShowsConnectionDisplayNameAudienceAndSubject() {
+        when(oidcConnectionsManager.resolve(rootProject, CONNECTION_ID))
+                .thenReturn(java.util.Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus production",
+                        new IssuanceSettings("api://from-conn", 15, "ES256", java.util.Set.of("branch")))));
+
+        final var description = feature.describeParameters(Map.of("connection_id", CONNECTION_ID));
+
+        assertThat(description).contains("connection: Octopus production");
+        assertThat(description).contains("aud:api://from-conn");
+        assertThat(description).contains(":branch:<branch>");
     }
 }

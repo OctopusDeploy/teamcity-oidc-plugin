@@ -26,6 +26,16 @@ sequenceDiagram
     end
 ```
 
+### Settings resolution
+
+When the build feature has a `connection_id` set, the plugin resolves the
+referenced OIDC Identity Token connection from the build's project hierarchy
+and uses its audience, TTL, signing algorithm, and subject scoping. If the
+connection cannot be resolved (deleted or moved out of the project tree),
+the build fails with an error identifying the missing connection.
+
+When `connection_id` is unset, the build feature's inline parameters are used.
+
 ## Token verification by relying parties (e.g. cloud providers)
 
 A build step sends `%jwt.token%` to the cloud provider (e.g. as a header or request body). The provider verifies it using the standard OIDC discovery protocol — no prior configuration of public keys is needed.
