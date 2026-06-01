@@ -255,7 +255,7 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
-    public void describeParametersUsesConnectionDisplayNameWhenSet() {
+    public void describeParametersShowsConnectionDisplayNameAudienceAndSubject() {
         when(oidcConnectionsManager.resolve(rootProject, CONNECTION_ID))
                 .thenReturn(java.util.Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus production",
                         new IssuanceSettings("api://from-conn", 15, "ES256", java.util.Set.of("branch")))));

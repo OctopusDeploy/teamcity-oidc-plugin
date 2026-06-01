@@ -1235,11 +1235,9 @@ public class OidcFlowIT {
                 .isBetween(29L * 60, 30L * 60);
 
         org.assertj.core.api.Assertions.assertThat(claims.getSubject())
-                .as("sub must start with 'project:'")
-                .startsWith("project:");
-        org.assertj.core.api.Assertions.assertThat(claims.getSubject())
-                .as("sub must contain ':branch:' (subject_dimensions=branch on the connection)")
-                .contains(":branch:");
+                .as("sub must be project:<id>:build_type:<id>:branch:<branch> with every segment "
+                        + "populated (subject_dimensions=branch on the connection requires a non-empty branch)")
+                .matches("project:[^:]+:build_type:[^:]+:branch:.+");
 
         log("JWT claims verified: aud=" + claims.getAudience()
                 + " ttl=" + ttlSeconds + "s sub=" + claims.getSubject());

@@ -28,7 +28,7 @@ Multiple build features can reference the same connection.
 4. Save.
 
 Connections defined at a parent project are inherited by all sub-projects —
-define once at the top of the hierarchy where it makes sense.
+define them at the point in the hierarchy where it makes sense.
 
 ### Using a connection
 

@@ -53,10 +53,10 @@ public class IssuanceSettingsTest {
     }
 
     @Test
-    public void invalidTtlFallsBackToTenClampedToMax() {
+    public void invalidTtlFallsBackToDefaultClampedToMax() {
         final var fallback = IssuanceSettings.fromBuildFeatureParams(
                 Map.of("ttl_minutes", "not-a-number"), "https://issuer", 720);
-        assertThat(fallback.ttlMinutes()).isEqualTo(10);
+        assertThat(fallback.ttlMinutes()).isEqualTo(IssuanceSettings.DEFAULT_TTL_MINUTES);
 
         final var fallbackClamped = IssuanceSettings.fromBuildFeatureParams(
                 Map.of("ttl_minutes", "not-a-number"), "https://issuer", 5);

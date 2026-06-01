@@ -128,8 +128,12 @@ public class BuildFeatureUIIT {
             final var checkboxes = page.locator(".jwt-subject-dimension-cb").all();
             assertThat(checkboxes).as("at least one optional-dimension checkbox should be rendered").isNotEmpty();
             for (final var cb : checkboxes) {
-                // Auto-retrying assertion: the checkbox may not have painted at first check.
-                PlaywrightAssertions.assertThat(cb).not().isChecked();
+                // Assert via a value-specific locator so the auto-retrying assertion's failure
+                // message names the dimension — LocatorAssertions has no AssertJ-style .as().
+                // (Web-first assertion: the checkbox may not have painted at first check.)
+                final var value = cb.getAttribute("value");
+                PlaywrightAssertions.assertThat(page.locator(".jwt-subject-dimension-cb[value='" + value + "']"))
+                        .not().isChecked();
             }
         });
     }
@@ -271,7 +275,6 @@ public class BuildFeatureUIIT {
             assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
                     .isEqualTo(false);
 
-            // Select the connection by its generated id.
             page.selectOption("#connection_id",
                     new SelectOption().setValue(connectionId));
 

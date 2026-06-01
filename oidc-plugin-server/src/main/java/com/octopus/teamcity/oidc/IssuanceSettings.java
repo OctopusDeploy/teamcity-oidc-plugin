@@ -22,7 +22,7 @@ public record IssuanceSettings(@NotNull String audience,
 
     private static final Logger LOG = Logger.getLogger(IssuanceSettings.class.getName());
     private static final Pattern SUBJECT_DIMENSIONS_SPLIT = Pattern.compile("\\s*,\\s*");
-    private static final int DEFAULT_TTL_MINUTES = 10;
+    static final int DEFAULT_TTL_MINUTES = 10;
     private static final String DEFAULT_ALGORITHM = "RS256";
 
     public static @NotNull IssuanceSettings fromBuildFeatureParams(
