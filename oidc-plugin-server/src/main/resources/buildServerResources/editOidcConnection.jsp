@@ -84,7 +84,7 @@
 
 <script type="text/javascript">
     // Hide the redundant "Connection type:" row TC's dialog chrome renders
-    // before our fragment, and surface the type name in the OAuth title heading
+    // before the plugin's fragment, and surface the type name in the OAuth title heading
     // (TC leaves #OAuthConnectionTitle empty for unknown providers).
     $j(document).ready(() => {
         $j('th').filter((_, th) => $j(th).text().trim().startsWith('Connection type'))

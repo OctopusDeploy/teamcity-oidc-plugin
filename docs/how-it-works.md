@@ -34,8 +34,7 @@ and uses its audience, TTL, signing algorithm, and subject scoping. If the
 connection cannot be resolved (deleted or moved out of the project tree),
 the build fails with an error identifying the missing connection.
 
-When `connection_id` is unset, the build feature's inline parameters are used
-(the existing behaviour).
+When `connection_id` is unset, the build feature's inline parameters are used.
 
 ## Token verification by relying parties (e.g. cloud providers)
 

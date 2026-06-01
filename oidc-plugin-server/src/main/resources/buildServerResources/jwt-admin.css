@@ -331,9 +331,7 @@
     box-sizing: border-box;
 }
 
-/* Shared "informational, not editable" look applied to:
-   - the always-readonly issuer field
-   - inline TTL/audience/algorithm inputs while a connection is overriding them */
+/* Shared "informational, not editable" look */
 #jwtIssuerUrl,
 .jwt-locked {
     font-family: monospace;

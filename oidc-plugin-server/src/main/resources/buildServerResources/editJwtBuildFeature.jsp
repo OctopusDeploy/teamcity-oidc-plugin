@@ -30,7 +30,7 @@
             editJwtCurrentUser != null && editJwtCurrentUser.isPermissionGrantedGlobally(Permission.CHANGE_SERVER_SETTINGS));
 
     // Build a map-based view of each connection so the JSP's ${c.id} expressions can read
-    // them. Property-style access like ${c.id} on a Map is just a key lookup and works in
+    // them. Property-style access like ${c.id} on a Map is a key lookup and works in
     // all Jasper versions; calling a record accessor (${c.id()}) needs method-invocation
     // support that TC's bundled Jasper may not provide at Java 8 source level.
     final java.util.List<OidcConnection> jwtConnectionsRaw =

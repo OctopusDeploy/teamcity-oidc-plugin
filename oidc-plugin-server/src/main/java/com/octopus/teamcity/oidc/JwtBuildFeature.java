@@ -189,11 +189,11 @@ public class JwtBuildFeature extends BuildFeature {
     }
 
     /**
-     * {@code describeParameters} has no build/project context — only the params map — so we
-     * can't resolve the connection against a known project. Connections are inherited
+     * {@code describeParameters} has only the params map — no build/project context — so the
+     * connection cannot be resolved against a known project. Connections are inherited
      * downward, and TC's {@code findConnectionById} walks upward (project + ancestors), so a
-     * connection is only visible from its owning project or a descendant. We therefore scan
-     * every project and return the first that can resolve the id. (Resolving against root
+     * connection is only visible from its owning project or a descendant. Hence this scans
+     * every project and returns the first that can resolve the id. (Resolving against root
      * alone would only find connections defined directly at root.)
      */
     private static Optional<OidcConnection> resolveConnectionFromProjectOrAncestor(final String connectionId) {
