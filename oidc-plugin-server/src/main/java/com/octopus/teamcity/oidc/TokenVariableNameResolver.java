@@ -24,7 +24,12 @@ public final class TokenVariableNameResolver {
         if (!override.isBlank()) {
             return override;
         }
-        // Connection-default branch is completed in Task 2 (OidcConnection.tokenVariableName()).
+        if (connection.isPresent()) {
+            final var connectionName = connection.get().tokenVariableName().trim();
+            if (!connectionName.isBlank()) {
+                return connectionName;
+            }
+        }
         return DEFAULT_VARIABLE_NAME;
     }
 }

@@ -45,7 +45,7 @@ public class JwtBuildFeatureTest {
         lenient().when(buildType.getProject()).thenReturn(project);
         lenient().when(oidcConnectionsManager.resolve(project, CONNECTION_ID))
                 .thenReturn(Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus prod",
-                        new IssuanceSettings("api://audience", 10, "RS256", Set.of()))));
+                        new IssuanceSettings("api://audience", 10, "RS256", Set.of()), "jwt.token")));
         final var buildServer = buildServerWithRootUrl("https://teamcity.example.com");
         lenient().when(buildServer.getProjectManager()).thenReturn(projectManager);
         lenient().when(projectManager.getRootProject()).thenReturn(rootProject);
@@ -258,7 +258,7 @@ public class JwtBuildFeatureTest {
     public void describeParametersShowsConnectionDisplayNameAudienceAndSubject() {
         when(oidcConnectionsManager.resolve(rootProject, CONNECTION_ID))
                 .thenReturn(java.util.Optional.of(new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus production",
-                        new IssuanceSettings("api://from-conn", 15, "ES256", java.util.Set.of("branch")))));
+                        new IssuanceSettings("api://from-conn", 15, "ES256", java.util.Set.of("branch")), "jwt.token")));
 
         final var description = feature.describeParameters(Map.of("connection_id", CONNECTION_ID));
 

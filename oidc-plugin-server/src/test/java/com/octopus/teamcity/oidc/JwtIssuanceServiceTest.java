@@ -133,7 +133,7 @@ public class JwtIssuanceServiceTest {
         when(buildType.getProject()).thenReturn(project);
         when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
                 new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
-                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()))));
+                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()), "jwt.token")));
 
         final var token = service.issueOrGet(runningBuild).orElseThrow();
         final var parsed = com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet();

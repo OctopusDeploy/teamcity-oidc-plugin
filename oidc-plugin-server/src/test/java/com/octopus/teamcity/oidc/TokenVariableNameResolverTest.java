@@ -30,4 +30,28 @@ public class TokenVariableNameResolverTest {
         assertThat(TokenVariableNameResolver.resolve(Map.of(), Optional.empty()))
                 .isEqualTo("jwt.token");
     }
+
+    @Test
+    public void usesConnectionDefaultWhenOverrideBlank() {
+        final var conn = new OidcConnection("id", "proj", "Display",
+                new IssuanceSettings("aud", 10, "RS256", java.util.Set.of()), "conn.token");
+        assertThat(TokenVariableNameResolver.resolve(Map.of(), Optional.of(conn)))
+                .isEqualTo("conn.token");
+    }
+
+    @Test
+    public void featureOverrideBeatsConnectionDefault() {
+        final var conn = new OidcConnection("id", "proj", "Display",
+                new IssuanceSettings("aud", 10, "RS256", java.util.Set.of()), "conn.token");
+        assertThat(TokenVariableNameResolver.resolve(Map.of("token_variable_name", "feature.token"), Optional.of(conn)))
+                .isEqualTo("feature.token");
+    }
+
+    @Test
+    public void fallsBackToDefaultWhenConnectionVariableNameBlank() {
+        final var conn = new OidcConnection("id", "proj", "Display",
+                new IssuanceSettings("aud", 10, "RS256", java.util.Set.of()), "  ");
+        assertThat(TokenVariableNameResolver.resolve(Map.of(), Optional.of(conn)))
+                .isEqualTo("jwt.token");
+    }
 }
