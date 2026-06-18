@@ -678,6 +678,119 @@ public class OidcFlowIT {
                 + " ttl=" + ttlSeconds + "s sub=" + claims.getSubject());
     }
 
+    // -------------------------------------------------------------------------
+    // Helpers and test for two-feature / distinct-variable coverage
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a build configuration with two OIDC build features using different
+     * {@code token_variable_name} values, and two capture steps that write each token to
+     * a separate artifact file. The audience is a dummy literal — no Octopus exchange is needed
+     * for this test; we only care that two distinct variables are issued and masked.
+     */
+    private static void createTwoFeatureBuildConfig(
+            final String projectId, final String buildTypeId) throws Exception {
+        // Project
+        tc.createProject(projectId, "_Root");
+
+        // Build config
+        tc.createBuildType(buildTypeId, buildTypeId, projectId);
+
+        // First OIDC feature — no token_variable_name → defaults to jwt.token
+        final var feature1Json = """
+                {"type":"oidc-plugin","properties":{"property":[
+                  {"name":"audience","value":"api://two-feature-it"},
+                  {"name":"ttl_minutes","value":"10"}
+                ]}}
+                """;
+        tc.post("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/features", feature1Json);
+
+        // Second OIDC feature — explicit token_variable_name=second.token
+        final var feature2Json = """
+                {"type":"oidc-plugin","properties":{"property":[
+                  {"name":"audience","value":"api://two-feature-it"},
+                  {"name":"ttl_minutes","value":"10"},
+                  {"name":"token_variable_name","value":"second.token"}
+                ]}}
+                """;
+        tc.post("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/features", feature2Json);
+
+        // Capture both tokens to separate artifact files
+        final var stepJson = """
+                {"type":"simpleRunner","name":"capture-both-tokens","properties":{"property":[
+                  {"name":"script.content","value":"printf '%s' \\"%jwt.token%\\" > jwt.txt\\nprintf '%s' \\"%second.token%\\" > second-token.txt"},
+                  {"name":"use.custom.script","value":"true"}
+                ]}}
+                """;
+        tc.post("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/steps", stepJson);
+
+        // Publish both files as artifacts
+        tc.put("/httpAuth/app/rest/buildTypes/" + buildTypeId + "/settings/artifactRules",
+                "jwt.txt\nsecond-token.txt");
+    }
+
+    /** Downloads an artifact by filename from the given build. */
+    private static String extractArtifact(final String buildId, final String filename) throws Exception {
+        final var response = tcHttp.send(
+                java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(
+                                tcBaseUrl + "/httpAuth/app/rest/builds/id:" + buildId
+                                        + "/artifacts/content/" + filename))
+                        .header("Authorization", superUserAuthHeader)
+                        .GET().build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+        );
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Failed to download artifact " + filename + ": " + response.statusCode()
+                            + " " + response.body());
+        }
+        return response.body().trim();
+    }
+
+    @Test
+    void twoOidcFeaturesEmitTwoDistinctMaskedVariables() throws Exception {
+        final var projectId = "OidcTwoFeatIT";
+        final var buildTypeId = "OidcTwoFeatIT_Build";
+        createTwoFeatureBuildConfig(projectId, buildTypeId);
+        log("Created project " + projectId + " and build type " + buildTypeId
+                + " with two OIDC features (jwt.token + second.token).");
+
+        tc.waitForAgentIdle();
+        log("Triggering two-feature build...");
+        final var buildId = tc.triggerBuild(buildTypeId);
+        log("Build queued, id=" + buildId);
+
+        tc.waitForBuildSuccess(buildId);
+        log("Build finished successfully.");
+
+        // Read both tokens back from their artifact files
+        final var firstToken = extractArtifact(buildId, "jwt.txt");
+        final var secondToken = extractArtifact(buildId, "second-token.txt");
+
+        log("jwt.token length=" + firstToken.length() + "  second.token length=" + secondToken.length());
+
+        // both variables resolve to distinct, non-empty tokens in the artifacts
+        org.assertj.core.api.Assertions.assertThat(firstToken)
+                .as("jwt.token must be present").isNotBlank();
+        org.assertj.core.api.Assertions.assertThat(secondToken)
+                .as("second.token must be present").isNotBlank();
+        org.assertj.core.api.Assertions.assertThat(secondToken)
+                .as("second.token must differ from jwt.token")
+                .isNotEqualTo(firstToken);
+
+        // both masked in resulting-properties
+        final var resultingProperties = fetchResultingProperties(buildId);
+        org.assertj.core.api.Assertions.assertThat(resultingProperties)
+                .as("jwt.token must be masked in resulting-properties")
+                .contains("name=\"jwt.token\" value=\"*******\"");
+        org.assertj.core.api.Assertions.assertThat(resultingProperties)
+                .as("second.token must be masked in resulting-properties")
+                .contains("name=\"second.token\" value=\"*******\"");
+
+        log("Two-feature assertions passed: both tokens distinct and both masked.");
+    }
+
     /**
      * Blocks until Enter is pressed, keeping all containers alive for manual UI testing.
      * Run with:
