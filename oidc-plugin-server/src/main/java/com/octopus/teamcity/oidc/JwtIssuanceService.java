@@ -20,7 +20,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Issues a single JWT per build and caches it for the build's lifetime.
+ * Issues one JWT per build feature, keyed by each feature's effective variable name, cached per build.
  *
  * <p>We have a separate service, as the {@code PasswordsBuildStartContextProcessor}
  * runs before our {@link JwtBuildStartContext} does, and queries every {@code PasswordsProvider}
@@ -63,7 +63,12 @@ public class JwtIssuanceService {
         if (build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
             return Map.of();
         }
-        return tokensByBuildId.computeIfAbsent(build.getBuildId(), id -> issueAllFresh(build));
+        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
+        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
+            LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
+            return Map.of();
+        }
+        return tokensByBuildId.computeIfAbsent(build.getBuildId(), id -> issueAllFresh(build, issuerUrl));
     }
 
     /**
@@ -83,24 +88,30 @@ public class JwtIssuanceService {
         tokensByBuildId.remove(buildId);
     }
 
-    private Map<String, String> issueAllFresh(final SBuild build) {
-        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
-        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
-            LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
-            return Map.of();
-        }
+    private Map<String, String> issueAllFresh(final SBuild build, final String issuerUrl) {
         final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
         final var result = new LinkedHashMap<String, String>();
         for (final var descriptor : build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)) {
             final var params = descriptor.getParameters();
-            final var variableName = effectiveVariableName(build, params);
+            final var connectionId = params.getOrDefault("connection_id", "").trim();
+            final Optional<OidcConnection> connection = connectionId.isBlank() || build.getBuildType() == null
+                    ? Optional.empty()
+                    : connectionsManager.resolve(build.getBuildType().getProject(), connectionId);
+            final var variableName = TokenVariableNameResolver.resolve(params, connection);
             if (result.containsKey(variableName)) {
                 LOG.warning("JWT plugin: duplicate token variable name '" + sanitize(variableName)
                         + "' across OIDC build features for build " + build.getBuildId()
                         + "; keeping the first and skipping the duplicate.");
                 continue;
             }
-            final var settings = resolveSettings(build, params, issuerUrl, maxTtl);
+            if (!connectionId.isBlank() && connection.isEmpty()) {
+                throw new RuntimeException("JWT plugin: OIDC Identity Token connection '"
+                        + sanitize(connectionId) + "' could not be found in this project or any parent. "
+                        + "Edit the build feature and select a valid connection, or remove the connection reference.");
+            }
+            final var settings = connection.isPresent()
+                    ? connection.get().settings()
+                    : IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
             result.put(variableName, mintToken(build, settings, issuerUrl));
         }
         return result;
@@ -113,24 +124,6 @@ public class JwtIssuanceService {
                         ? Optional.empty()
                         : connectionsManager.resolve(build.getBuildType().getProject(), connectionId);
         return TokenVariableNameResolver.resolve(params, connection);
-    }
-
-    private IssuanceSettings resolveSettings(final SBuild build,
-                                             final Map<String, String> params,
-                                             final String issuerUrl,
-                                             final int maxTtl) {
-        final var connectionId = params.get("connection_id");
-        if (connectionId != null && !connectionId.isBlank()) {
-            final var project = build.getBuildType().getProject();
-            final var resolved = connectionsManager.resolve(project, connectionId);
-            if (resolved.isEmpty()) {
-                throw new RuntimeException("JWT plugin: OIDC Identity Token connection '"
-                        + sanitize(connectionId) + "' could not be found in this project or any parent. "
-                        + "Edit the build feature and select a valid connection, or remove the connection reference.");
-            }
-            return resolved.get().settings();
-        }
-        return IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
     }
 
     private String mintToken(final SBuild build, final IssuanceSettings settings, final String issuerUrl) {
