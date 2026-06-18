@@ -254,9 +254,8 @@ public class JwtBuildFeature extends BuildFeature {
             // OLD persisted siblings — the candidate is not yet merged). Strip it so it is not
             // persisted as a feature parameter. The production properties map is mutable; the
             // try/catch only guards the immutable maps some unit tests pass.
-            var selfFeatureId = "";
+            final var selfFeatureId = params.getOrDefault("self_feature_id", "");
             if (params.containsKey("self_feature_id")) {
-                selfFeatureId = params.getOrDefault("self_feature_id", "");
                 try {
                     params.remove("self_feature_id");
                 } catch (final UnsupportedOperationException ignored) {
