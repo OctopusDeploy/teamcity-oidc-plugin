@@ -153,19 +153,22 @@ public class JwtBuildFeature extends BuildFeature {
     public String describeParameters(@NotNull final java.util.Map<String, String> params) {
         final var connectionId = params.getOrDefault("connection_id", "").trim();
         if (!connectionId.isEmpty() && staticOidcConnectionsManager != null && staticBuildServer != null) {
-            return describeConnection(connectionId);
+            return describeConnection(connectionId, params);
         }
         return describeInline(params);
     }
 
     @NotNull
-    private static String describeConnection(@NotNull final String connectionId) {
+    private static String describeConnection(@NotNull final String connectionId,
+                                             @NotNull final java.util.Map<String, String> params) {
         final var resolved = resolveConnectionFromProjectOrAncestor(connectionId);
+        final var variableName = TokenVariableNameResolver.resolve(params, resolved);
         if (resolved.isEmpty()) {
-            return "connection: <unknown id " + connectionId + ">";
+            return "var:" + variableName + "\nconnection: <unknown id " + connectionId + ">";
         }
         final var conn = resolved.get();
-        final var sb = new StringBuilder("connection: ").append(conn.displayName());
+        final var sb = new StringBuilder("var:").append(variableName);
+        sb.append("\nconnection: ").append(conn.displayName());
         // Show the sub claim's template form — concrete IDs and runtime values aren't
         // available here, but the template matches what the consumer will see.
         sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
@@ -176,12 +179,13 @@ public class JwtBuildFeature extends BuildFeature {
     @NotNull
     private static String describeInline(@NotNull final java.util.Map<String, String> params) {
         final var audience = params.get("audience");
-        final var sb = new StringBuilder();
+        final var variableName = TokenVariableNameResolver.resolve(params, Optional.empty());
+        final var sb = new StringBuilder("var:").append(variableName);
         // Show the sub claim's template form — concrete project/build_type IDs and the
         // branch/trigger values aren't available here (no build context), but the template
         // matches what the consumer (e.g. Octopus) will see and helps admins differentiate
         // features with different subject scoping.
-        sb.append("sub:").append(subjectTemplate(params.get("subject_dimensions")));
+        sb.append("\nsub:").append(subjectTemplate(params.get("subject_dimensions")));
         if (audience != null && !audience.isBlank()) {
             sb.append("\naud:").append(audience);
         }
@@ -237,13 +241,42 @@ public class JwtBuildFeature extends BuildFeature {
 
     @Override
     public boolean isMultipleFeaturesPerBuildTypeAllowed() {
-        return false;
+        return true;
     }
 
     @Override
     public PropertiesProcessor getParametersProcessor(@NotNull final BuildTypeIdentity buildTypeOrTemplate) {
         return params -> {
             final Collection<InvalidProperty> errors = new ArrayList<>();
+            // The edit JSP renders the descriptor id of the feature being edited into the
+            // hidden `self_feature_id` property so we can exclude it from the duplicate-name
+            // check (otherwise an unchanged feature would flag itself, since process() sees the
+            // OLD persisted siblings — the candidate is not yet merged). Strip it so it is not
+            // persisted as a feature parameter. The production properties map is mutable; the
+            // try/catch only guards the immutable maps some unit tests pass.
+            var selfFeatureId = "";
+            if (params.containsKey("self_feature_id")) {
+                selfFeatureId = params.getOrDefault("self_feature_id", "");
+                try {
+                    params.remove("self_feature_id");
+                } catch (final UnsupportedOperationException ignored) {
+                    // immutable test map — nothing to strip
+                }
+            }
+            if (buildTypeOrTemplate instanceof final jetbrains.buildServer.serverSide.SBuildType bt) {
+                final var candidateName = resolveVariableName(bt, params);
+                for (final var sibling : bt.getBuildFeaturesOfType(FEATURE_TYPE)) {
+                    if (sibling.getId().equals(selfFeatureId)) {
+                        continue;
+                    }
+                    if (resolveVariableName(bt, sibling.getParameters()).equals(candidateName)) {
+                        errors.add(new InvalidProperty("token_variable_name",
+                                "Another OIDC build feature on this build configuration already emits the "
+                                        + "variable '" + candidateName + "'. Set a different variable name."));
+                        break;
+                    }
+                }
+            }
             if (!OidcUrlUtils.isHttpsUrl(issuerUrlProvider.getIssuerUrl())) {
                 errors.add(new InvalidProperty("root_url",
                         "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
@@ -291,5 +324,19 @@ public class JwtBuildFeature extends BuildFeature {
             }
             return errors;
         };
+    }
+
+    /**
+     * The effective variable name a feature with these params would emit, resolving its
+     * connection (if any) against the build type's project. Mirrors the runtime resolution in
+     * {@link JwtIssuanceService}, so the save-time uniqueness check matches what builds emit.
+     */
+    private String resolveVariableName(@NotNull final jetbrains.buildServer.serverSide.SBuildType bt,
+                                       @NotNull final java.util.Map<String, String> params) {
+        final var connectionId = params.getOrDefault("connection_id", "").trim();
+        final var connection = connectionId.isBlank()
+                ? Optional.<OidcConnection>empty()
+                : oidcConnectionsManager.resolve(bt.getProject(), connectionId);
+        return TokenVariableNameResolver.resolve(params, connection);
     }
 }

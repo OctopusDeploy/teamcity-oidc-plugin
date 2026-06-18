@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -200,7 +201,7 @@ public class JwtBuildFeatureTest {
     public void describeParametersShowsMinimalSubjectTemplateByDefault() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of());
-        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>");
+        assertThat(description).isEqualTo("var:jwt.token\nsub:project:<project_id>:build_type:<build_type_id>");
     }
 
     @Test
@@ -221,14 +222,14 @@ public class JwtBuildFeatureTest {
     public void describeParametersIncludesAllConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("subject_dimensions", "branch,trigger_type"));
-        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger_type>");
+        assertThat(description).isEqualTo("var:jwt.token\nsub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger_type>");
     }
 
     @Test
     public void describeParametersIncludesOnlyConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("subject_dimensions", "branch"));
-        assertThat(description).isEqualTo("sub:project:<project_id>:build_type:<build_type_id>:branch:<branch>");
+        assertThat(description).isEqualTo("var:jwt.token\nsub:project:<project_id>:build_type:<build_type_id>:branch:<branch>");
     }
 
     @Test
@@ -265,5 +266,74 @@ public class JwtBuildFeatureTest {
         assertThat(description).contains("connection: Octopus production");
         assertThat(description).contains("aud:api://from-conn");
         assertThat(description).contains(":branch:<branch>");
+    }
+
+    @Test
+    public void allowsMultipleFeaturesPerBuildType() {
+        final var feature = newFeature("https://teamcity.example.com");
+        assertThat(feature.isMultipleFeaturesPerBuildTypeAllowed()).isTrue();
+    }
+
+    @Test
+    public void rejectsDuplicateVariableNameAcrossFeatures() {
+        // Sibling feature already emits "jwt.token" (default, inline).
+        final var sibling = mock(jetbrains.buildServer.serverSide.SBuildFeatureDescriptor.class);
+        when(sibling.getId()).thenReturn("SIBLING_ID");
+        when(sibling.getParameters()).thenReturn(Map.of());
+        when(buildType.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(sibling));
+
+        final var processor = feature.getParametersProcessor(buildType);
+        final var errors = processor.process(new HashMap<>(Map.of(
+                "self_feature_id", "NEW_ID")));  // candidate also resolves to jwt.token
+
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).contains("token_variable_name");
+    }
+
+    @Test
+    public void allowsDistinctVariableNamesAcrossFeatures() {
+        final var sibling = mock(jetbrains.buildServer.serverSide.SBuildFeatureDescriptor.class);
+        when(sibling.getId()).thenReturn("SIBLING_ID");
+        when(sibling.getParameters()).thenReturn(Map.of()); // jwt.token
+        when(buildType.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(sibling));
+
+        final var processor = feature.getParametersProcessor(buildType);
+        final var errors = processor.process(new HashMap<>(Map.of(
+                "self_feature_id", "NEW_ID",
+                "token_variable_name", "other.token")));
+
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("token_variable_name");
+    }
+
+    @Test
+    public void doesNotFlagFeatureAgainstItselfOnEdit() {
+        // The persisted sibling list contains the feature being edited (same id as self).
+        final var self = mock(jetbrains.buildServer.serverSide.SBuildFeatureDescriptor.class);
+        when(self.getId()).thenReturn("SELF_ID");
+        lenient().when(self.getParameters()).thenReturn(Map.of()); // jwt.token — skipped because self is excluded
+        when(buildType.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(self));
+
+        final var processor = feature.getParametersProcessor(buildType);
+        final var errors = processor.process(new HashMap<>(Map.of(
+                "self_feature_id", "SELF_ID")));  // unchanged name jwt.token, but it's the same feature
+
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("token_variable_name");
+    }
+
+    @Test
+    public void stripsSelfFeatureIdFromPersistedProperties() {
+        when(buildType.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of());
+        final var processor = feature.getParametersProcessor(buildType);
+        final var params = new HashMap<>(Map.of("self_feature_id", "NEW_ID"));
+        processor.process(params);
+        assertThat(params).doesNotContainKey("self_feature_id");
+    }
+
+    @Test
+    public void describeParametersInlineShowsVariableName() {
+        final var feature = newFeature("https://teamcity.example.com");
+        assertThat(feature.describeParameters(Map.of("token_variable_name", "octopus.token")))
+                .startsWith("var:octopus.token");
+        assertThat(feature.describeParameters(Map.of()))
+                .startsWith("var:jwt.token");
     }
 }
