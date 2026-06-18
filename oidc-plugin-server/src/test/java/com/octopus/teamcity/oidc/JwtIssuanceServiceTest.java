@@ -59,33 +59,29 @@ public class JwtIssuanceServiceTest {
     @Test
     public void returnsEmptyWhenBuildHasNoJwtFeature() {
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(Collections.emptyList());
-
-        assertThat(service.issueOrGet(runningBuild)).isEmpty();
+        assertThat(service.issueAll(runningBuild)).isEmpty();
     }
 
     @Test
-    public void issuesAndCachesPerBuildId() {
+    public void issuesOneTokenUnderDefaultVariableNameAndCachesPerBuildId() {
         enableFeature();
         when(runningBuild.getBuildId()).thenReturn(42L);
 
-        final var first = service.issueOrGet(runningBuild);
-        final var second = service.issueOrGet(runningBuild);
+        final var first = service.issueAll(runningBuild);
+        final var second = service.issueAll(runningBuild);
 
-        assertThat(first).isPresent();
-        assertThat(second).isPresent();
-        assertThat(second).isEqualTo(first);
+        assertThat(first).containsOnlyKeys("jwt.token");
+        assertThat(second).isEqualTo(first); // cached: identical token value
     }
 
     @Test
     public void differentBuildsGetDifferentTokens() {
         enableFeature();
         when(runningBuild.getBuildId()).thenReturn(42L);
-        final var firstBuildToken = service.issueOrGet(runningBuild).orElseThrow();
+        final var firstBuildToken = service.issueAll(runningBuild).get("jwt.token");
 
-        // Re-stub to make the same mock represent a different build id.
-        // computeIfAbsent treats this as a new key, so a fresh token is issued.
         when(runningBuild.getBuildId()).thenReturn(43L);
-        final var secondBuildToken = service.issueOrGet(runningBuild).orElseThrow();
+        final var secondBuildToken = service.issueAll(runningBuild).get("jwt.token");
 
         assertThat(secondBuildToken).isNotEqualTo(firstBuildToken);
     }
@@ -95,19 +91,17 @@ public class JwtIssuanceServiceTest {
         enableFeature();
         when(runningBuild.getBuildId()).thenReturn(42L);
 
-        final var first = service.issueOrGet(runningBuild).orElseThrow();
+        final var first = service.issueAll(runningBuild).get("jwt.token");
         service.evict(42L);
-        final var second = service.issueOrGet(runningBuild).orElseThrow();
+        final var second = service.issueAll(runningBuild).get("jwt.token");
 
         assertThat(second).isNotEqualTo(first);
     }
 
     @Test
     public void returnsEmptyWhenIssuerUrlIsNotHttps() {
-        // The non-HTTPS short-circuit returns before the trigger metadata is read,
-        // so we only stub the feature presence here.
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
-        when(featureDescriptor.getParameters()).thenReturn(Map.of());
+        lenient().when(featureDescriptor.getParameters()).thenReturn(Map.of());
 
         final var keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         final var server = mock(SBuildServer.class);
@@ -118,7 +112,7 @@ public class JwtIssuanceServiceTest {
                 new OidcSettingsManager(tempDir),
                 mock(OidcConnectionsManager.class));
 
-        assertThat(insecureService.issueOrGet(runningBuild)).isEmpty();
+        assertThat(insecureService.issueAll(runningBuild)).isEmpty();
     }
 
     @Test
@@ -133,11 +127,12 @@ public class JwtIssuanceServiceTest {
         when(buildType.getProject()).thenReturn(project);
         when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
                 new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
-                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()), "jwt.token")));
+                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()), "conn.token")));
 
-        final var token = service.issueOrGet(runningBuild).orElseThrow();
-        final var parsed = com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet();
+        final var tokens = service.issueAll(runningBuild);
 
+        assertThat(tokens).containsOnlyKeys("conn.token");
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(tokens.get("conn.token")).getJWTClaimsSet();
         assertThat(parsed.getAudience()).containsExactly("api://from-connection");
     }
 
@@ -152,7 +147,7 @@ public class JwtIssuanceServiceTest {
         when(buildType.getProject()).thenReturn(project);
         when(connectionsManager.resolve(project, "missing")).thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> service.issueOrGet(runningBuild))
+        assertThatThrownBy(() -> service.issueAll(runningBuild))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("connection 'missing' could not be found");
     }
@@ -163,9 +158,57 @@ public class JwtIssuanceServiceTest {
         when(featureDescriptor.getParameters()).thenReturn(Map.of("audience", "api://inline"));
         when(runningBuild.getBuildId()).thenReturn(44L);
 
-        final var token = service.issueOrGet(runningBuild).orElseThrow();
-        final var parsed = com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet();
+        final var tokens = service.issueAll(runningBuild);
 
+        assertThat(tokens).containsOnlyKeys("jwt.token");
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(tokens.get("jwt.token")).getJWTClaimsSet();
         assertThat(parsed.getAudience()).containsExactly("api://inline");
+    }
+
+    @Test
+    public void issuesOneTokenPerFeatureUnderDistinctVariableNames() throws Exception {
+        final var f1 = mock(SBuildFeatureDescriptor.class);
+        final var f2 = mock(SBuildFeatureDescriptor.class);
+        when(f1.getParameters()).thenReturn(Map.of("audience", "api://one"));
+        when(f2.getParameters()).thenReturn(Map.of("audience", "api://two", "token_variable_name", "second.token"));
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(f1, f2));
+        when(runningBuild.getBuildId()).thenReturn(50L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+
+        final var tokens = service.issueAll(runningBuild);
+
+        assertThat(tokens).containsOnlyKeys("jwt.token", "second.token");
+        assertThat(com.nimbusds.jwt.SignedJWT.parse(tokens.get("jwt.token")).getJWTClaimsSet().getAudience())
+                .containsExactly("api://one");
+        assertThat(com.nimbusds.jwt.SignedJWT.parse(tokens.get("second.token")).getJWTClaimsSet().getAudience())
+                .containsExactly("api://two");
+    }
+
+    @Test
+    public void duplicateVariableNamesKeepFirstTokenAndSkipRest() throws Exception {
+        final var f1 = mock(SBuildFeatureDescriptor.class);
+        final var f2 = mock(SBuildFeatureDescriptor.class);
+        when(f1.getParameters()).thenReturn(Map.of("audience", "api://first"));
+        when(f2.getParameters()).thenReturn(Map.of("audience", "api://second")); // both resolve to jwt.token
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(f1, f2));
+        when(runningBuild.getBuildId()).thenReturn(51L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+
+        final var tokens = service.issueAll(runningBuild);
+
+        assertThat(tokens).containsOnlyKeys("jwt.token");
+        assertThat(com.nimbusds.jwt.SignedJWT.parse(tokens.get("jwt.token")).getJWTClaimsSet().getAudience())
+                .containsExactly("api://first");
+    }
+
+    @Test
+    public void variableNamesForReturnsEffectiveNamesWithoutIssuing() {
+        final var f1 = mock(SBuildFeatureDescriptor.class);
+        final var f2 = mock(SBuildFeatureDescriptor.class);
+        when(f1.getParameters()).thenReturn(Map.of());
+        when(f2.getParameters()).thenReturn(Map.of("token_variable_name", "second.token"));
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(f1, f2));
+
+        assertThat(service.variableNamesFor(runningBuild)).containsExactly("jwt.token", "second.token");
     }
 }

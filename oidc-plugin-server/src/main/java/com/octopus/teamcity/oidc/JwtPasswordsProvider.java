@@ -8,20 +8,16 @@ import jetbrains.buildServer.serverSide.parameters.types.PasswordsProvider;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * Tells TeamCity that {@code jwt.token} (and any value resolving to it, like
- * {@code env.ARM_OIDC_TOKEN=%jwt.token%}) must be masked. TC's
+ * Tells TeamCity that the configured token variable(s) must be masked. TC's
  * {@code PasswordsBuildStartContextProcessor} runs before our {@link JwtBuildStartContext},
- * so we cannot rely on {@code jwt.token} already being a build parameter at this point —
- * we ask {@link JwtIssuanceService} to issue (and cache) the JWT here, and
- * {@link JwtBuildStartContext} then binds the same cached value as the shared parameter.
+ * so we cannot rely on the token parameters already being present at this point —
+ * we ask {@link JwtIssuanceService} to issue (and cache) the JWTs here, and
+ * {@link JwtBuildStartContext} then binds the same cached values as shared parameters.
  */
 public class JwtPasswordsProvider implements PasswordsProvider {
-
-    static final String JWT_PARAMETER_NAME = "jwt.token";
 
     private final ExtensionHolder extensionHolder;
     private final JwtIssuanceService issuanceService;
@@ -40,8 +36,8 @@ public class JwtPasswordsProvider implements PasswordsProvider {
     @NotNull
     @Override
     public Collection<Parameter> getPasswordParameters(@NotNull final SBuild build) {
-        return issuanceService.issueOrGet(build)
-                .<Collection<Parameter>>map(jwt -> List.of(new SimpleParameter(JWT_PARAMETER_NAME, jwt)))
-                .orElse(Collections.emptyList());
+        return issuanceService.issueAll(build).entrySet().stream()
+                .<Parameter>map(e -> new SimpleParameter(e.getKey(), e.getValue()))
+                .collect(Collectors.toList());
     }
 }

@@ -7,8 +7,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Optional;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -23,24 +21,22 @@ public class JwtPasswordsProviderTest {
     SBuild build;
 
     @Test
-    public void returnsJwtFromIssuanceServiceAsPasswordParameter() {
+    public void returnsOneMaskedParameterPerFeatureToken() {
         final var issuanceService = mock(JwtIssuanceService.class);
-        when(issuanceService.issueOrGet(build)).thenReturn(Optional.of("a.b.c"));
+        when(issuanceService.issueAll(build)).thenReturn(new java.util.LinkedHashMap<>(java.util.Map.of(
+                "jwt.token", "a.b.c", "second.token", "d.e.f")));
 
         final var provider = new JwtPasswordsProvider(extensionHolder, issuanceService);
 
         assertThat(provider.getPasswordParameters(build))
-                .singleElement()
-                .satisfies(p -> {
-                    assertThat(p.getName()).isEqualTo("jwt.token");
-                    assertThat(p.getValue()).isEqualTo("a.b.c");
-                });
+                .extracting(p -> p.getName() + "=" + p.getValue())
+                .containsExactlyInAnyOrder("jwt.token=a.b.c", "second.token=d.e.f");
     }
 
     @Test
     public void returnsEmptyWhenIssuanceServiceReturnsEmpty() {
         final var issuanceService = mock(JwtIssuanceService.class);
-        when(issuanceService.issueOrGet(build)).thenReturn(Optional.empty());
+        when(issuanceService.issueAll(build)).thenReturn(java.util.Map.of());
 
         final var provider = new JwtPasswordsProvider(extensionHolder, issuanceService);
 
