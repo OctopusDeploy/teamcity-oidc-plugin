@@ -164,15 +164,16 @@ public class JwtBuildFeature extends BuildFeature {
         final var resolved = resolveConnectionFromProjectOrAncestor(connectionId);
         final var variableName = TokenVariableNameResolver.resolve(params, resolved);
         if (resolved.isEmpty()) {
-            return "var:" + variableName + "\nconnection: <unknown id " + connectionId + ">";
+            return "connection: <unknown id " + connectionId + ">\nvar: %" + variableName + "%";
         }
         final var conn = resolved.get();
-        final var sb = new StringBuilder("var:").append(variableName);
-        sb.append("\nconnection: ").append(conn.displayName());
+        final var sb = new StringBuilder("connection: ").append(conn.displayName());
         // Show the sub claim's template form — concrete IDs and runtime values aren't
         // available here, but the template matches what the consumer will see.
-        sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
-        sb.append("\naud:").append(conn.settings().audience());
+        sb.append("\nsub: ").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
+        sb.append("\naud: ").append(conn.settings().audience());
+        // Variable name last, wrapped in % so it reads like the reference admins use.
+        sb.append("\nvar: %").append(variableName).append('%');
         return sb.toString();
     }
 
@@ -180,15 +181,16 @@ public class JwtBuildFeature extends BuildFeature {
     private static String describeInline(@NotNull final java.util.Map<String, String> params) {
         final var audience = params.get("audience");
         final var variableName = TokenVariableNameResolver.resolve(params, Optional.empty());
-        final var sb = new StringBuilder("var:").append(variableName);
         // Show the sub claim's template form — concrete project/build_type IDs and the
         // branch/trigger values aren't available here (no build context), but the template
         // matches what the consumer (e.g. Octopus) will see and helps admins differentiate
         // features with different subject scoping.
-        sb.append("\nsub:").append(subjectTemplate(params.get("subject_dimensions")));
+        final var sb = new StringBuilder("sub: ").append(subjectTemplate(params.get("subject_dimensions")));
         if (audience != null && !audience.isBlank()) {
-            sb.append("\naud:").append(audience);
+            sb.append("\naud: ").append(audience);
         }
+        // Variable name last, wrapped in % so it reads like the reference admins use.
+        sb.append("\nvar: %").append(variableName).append('%');
         return sb.toString();
     }
 

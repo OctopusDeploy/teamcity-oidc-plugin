@@ -264,6 +264,13 @@
     font-family: monospace;
 }
 
+/* Help note under a 30em-wide text field — match the field width so the help
+   text wraps in a column aligned with the input above it. TC's dialog already
+   renders .smallNote as display:block; this only constrains the width. */
+.jwt-field-note {
+    width: 30em;
+}
+
 /* === Build feature edit: subject dimensions list + live preview ===
    Rules use !important because the build-feature edit form is rendered inside
    TC's settings dialog, which has its own .smallNote rules (display:block) that

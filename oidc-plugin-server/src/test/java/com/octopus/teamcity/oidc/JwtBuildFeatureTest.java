@@ -201,14 +201,14 @@ public class JwtBuildFeatureTest {
     public void describeParametersShowsMinimalSubjectTemplateByDefault() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of());
-        assertThat(description).isEqualTo("var:jwt.token\nsub:project:<project_id>:build_type:<build_type_id>");
+        assertThat(description).isEqualTo("sub: project:<project_id>:build_type:<build_type_id>\nvar: %jwt.token%");
     }
 
     @Test
     public void describeParametersIncludesAudienceWhenPresent() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("audience", "api://my-app"));
-        assertThat(description).contains("aud:api://my-app");
+        assertThat(description).contains("aud: api://my-app");
     }
 
     @Test
@@ -222,14 +222,14 @@ public class JwtBuildFeatureTest {
     public void describeParametersIncludesAllConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("subject_dimensions", "branch,trigger_type"));
-        assertThat(description).isEqualTo("var:jwt.token\nsub:project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger_type>");
+        assertThat(description).isEqualTo("sub: project:<project_id>:build_type:<build_type_id>:branch:<branch>:trigger_type:<trigger_type>\nvar: %jwt.token%");
     }
 
     @Test
     public void describeParametersIncludesOnlyConfiguredDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
         final var description = feature.describeParameters(Map.of("subject_dimensions", "branch"));
-        assertThat(description).isEqualTo("var:jwt.token\nsub:project:<project_id>:build_type:<build_type_id>:branch:<branch>");
+        assertThat(description).isEqualTo("sub: project:<project_id>:build_type:<build_type_id>:branch:<branch>\nvar: %jwt.token%");
     }
 
     @Test
@@ -264,8 +264,9 @@ public class JwtBuildFeatureTest {
         final var description = feature.describeParameters(Map.of("connection_id", CONNECTION_ID));
 
         assertThat(description).contains("connection: Octopus production");
-        assertThat(description).contains("aud:api://from-conn");
+        assertThat(description).contains("aud: api://from-conn");
         assertThat(description).contains(":branch:<branch>");
+        assertThat(description).contains("var: %jwt.token%");
     }
 
     @Test
@@ -332,8 +333,8 @@ public class JwtBuildFeatureTest {
     public void describeParametersInlineShowsVariableName() {
         final var feature = newFeature("https://teamcity.example.com");
         assertThat(feature.describeParameters(Map.of("token_variable_name", "octopus.token")))
-                .startsWith("var:octopus.token");
+                .contains("var: %octopus.token%");
         assertThat(feature.describeParameters(Map.of()))
-                .startsWith("var:jwt.token");
+                .contains("var: %jwt.token%");
     }
 }

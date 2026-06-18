@@ -86,7 +86,7 @@
         <th><label for="token_variable_name">Variable name:</label></th>
         <td>
             <props:textProperty name="token_variable_name" value="${propertiesBean.properties['token_variable_name']}" style="width:30em;"/>
-            <span class="smallNote">Build parameter the token is written to. Leave blank to inherit (from the connection if selected, otherwise <code>jwt.token</code>).</span>
+            <span class="smallNote jwt-field-note">Where the token is written. Blank inherits (connection, else <code>jwt.token</code>).</span>
             <span class="error" id="error_token_variable_name"></span>
         </td>
     </tr>
@@ -95,7 +95,7 @@
         <th><label>Issuer (<code>iss</code>):</label></th>
         <td>
             <input type="text" id="jwtIssuerUrl" readonly value="${fn:escapeXml(jwtIssuerUrl)}" style="width:30em;"/>
-            <span class="smallNote">The OIDC issuer URL (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
+            <span class="smallNote jwt-field-note">The OIDC issuer URL (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
         </td>
     </tr>
 
@@ -111,7 +111,7 @@
         <th><label for="audience">Audience (<code>aud</code>):</label></th>
         <td>
             <props:textProperty name="audience" value="${propertiesBean.properties['audience']}" style="width:30em;"/>
-            <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Entra ID).</span>
+            <span class="smallNote jwt-field-note">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Entra ID).</span>
             <span class="error" id="error_audience"></span>
         </td>
     </tr>

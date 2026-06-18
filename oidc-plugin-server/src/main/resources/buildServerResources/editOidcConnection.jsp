@@ -14,7 +14,7 @@
     <th><nobr><label for="displayName">Display name: <l:star/></label></nobr></th>
     <td>
         <props:textProperty name="displayName" value="${propertiesBean.properties['displayName']}" style="width:30em;"/>
-        <span class="smallNote">Label shown in the build feature dropdown and the connections list.</span>
+        <span class="smallNote jwt-field-note">Label shown in the build feature dropdown and the connections list.</span>
         <span class="error" id="error_displayName"></span>
     </td>
 </tr>
@@ -22,7 +22,7 @@
     <th><nobr><label for="token_variable_name">Variable name:</label></nobr></th>
     <td>
         <props:textProperty name="token_variable_name" style="width:30em;"/>
-        <span class="smallNote">Build parameter the token is written to. Leave blank for <code>jwt.token</code>. Build features using this connection can override it.</span>
+        <span class="smallNote jwt-field-note">Where the token is written. Blank = <code>jwt.token</code>; features can override.</span>
     </td>
 </tr>
 <tr>
@@ -37,7 +37,7 @@
     <th><nobr><label for="audience">Audience (<code>aud</code>):</label></nobr></th>
     <td>
         <props:textProperty name="audience" style="width:30em;"/>
-        <span class="smallNote">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Entra ID).</span>
+        <span class="smallNote jwt-field-note">Value for the <code>aud</code> claim. Leave blank to use the TeamCity server URL. Cloud providers often require a specific value here (e.g. <code>api://AzureADTokenExchange</code> for Entra ID).</span>
         <span class="error" id="error_audience"></span>
     </td>
 </tr>
