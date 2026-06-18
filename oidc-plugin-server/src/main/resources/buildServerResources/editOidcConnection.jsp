@@ -19,6 +19,13 @@
     </td>
 </tr>
 <tr>
+    <th><nobr><label for="token_variable_name">Variable name:</label></nobr></th>
+    <td>
+        <props:textProperty name="token_variable_name" style="width:30em;"/>
+        <span class="smallNote">Build parameter the token is written to. Leave blank for <code>jwt.token</code>. Build features using this connection can override it.</span>
+    </td>
+</tr>
+<tr>
     <th><nobr><label for="ttl_minutes">Token lifetime (minutes):</label></nobr></th>
     <td>
         <props:textProperty name="ttl_minutes" style="width:5em;"/>
@@ -94,6 +101,7 @@
             title.text('OIDC Identity Token').show();
         }
         $j('#displayName').attr('placeholder', 'e.g. Octopus production');
+        $j('#token_variable_name').attr('placeholder', 'jwt.token');
     });
 </script>
 
