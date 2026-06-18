@@ -44,6 +44,7 @@
         view.put("ttl", String.valueOf(conn.settings().ttlMinutes()));
         view.put("algorithm", conn.settings().signingAlgorithm());
         view.put("subjectDimensions", String.join(",", conn.settings().subjectDimensions()));
+        view.put("tokenVariableName", conn.tokenVariableName());
         jwtConnections.add(view);
     }
     pageContext.setAttribute("jwtConnections", jwtConnections);
@@ -52,6 +53,7 @@
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
 
 <l:settingsGroup title="">
+    <props:hiddenProperty name="self_feature_id" value="${buildFeatureBean.id}"/>
     <c:if test="${jwtRootUrlNeedsHttps}">
         <tr id="row_root_url">
             <td colspan="2"><span class="error" id="error_root_url">The TeamCity server root URL must use HTTPS for OIDC token issuance. Update it in Administration &#x2192; Global Settings.</span></td>
@@ -78,6 +80,14 @@
                 </c:otherwise>
             </c:choose>
             <span class="error" id="error_connection_id"></span>
+        </td>
+    </tr>
+    <tr>
+        <th><label for="token_variable_name">Variable name:</label></th>
+        <td>
+            <props:textProperty name="token_variable_name" value="${propertiesBean.properties['token_variable_name']}" style="width:30em;"/>
+            <span class="smallNote">Build parameter the token is written to. Leave blank to inherit (from the connection if selected, otherwise <code>jwt.token</code>).</span>
+            <span class="error" id="error_token_variable_name"></span>
         </td>
     </tr>
 
@@ -172,7 +182,8 @@
               data-audience="${fn:escapeXml(c.audience)}"
               data-ttl="${fn:escapeXml(c.ttl)}"
               data-algorithm="${fn:escapeXml(c.algorithm)}"
-              data-subject-dimensions="${fn:escapeXml(c.subjectDimensions)}"></span>
+              data-subject-dimensions="${fn:escapeXml(c.subjectDimensions)}"
+              data-token-variable-name="${fn:escapeXml(c.tokenVariableName)}"></span>
     </c:forEach>
 </div>
 
@@ -317,7 +328,8 @@
                 audience: $e.attr('data-audience'),
                 ttl: $e.attr('data-ttl'),
                 algorithm: $e.attr('data-algorithm'),
-                subjectDimensions: $e.attr('data-subject-dimensions')
+                subjectDimensions: $e.attr('data-subject-dimensions'),
+                tokenVariableName: $e.attr('data-token-variable-name')
             };
         });
 
@@ -396,6 +408,11 @@
         const refreshConnectionUI = () => {
             const selected = $j('#connection_id').val();
             const selectedConnection = selected && connectionData[selected];
+
+            const $varName = $j('#token_variable_name');
+            $varName.attr('placeholder', selectedConnection
+                ? (selectedConnection.tokenVariableName || 'jwt.token')
+                : 'jwt.token');
 
             const $ttl = $j('#ttl_minutes');
             const $aud = $j('#audience');
