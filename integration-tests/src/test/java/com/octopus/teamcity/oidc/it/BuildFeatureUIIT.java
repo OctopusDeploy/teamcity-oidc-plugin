@@ -14,7 +14,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 
 import java.util.function.Consumer;
 
@@ -46,9 +45,6 @@ public class BuildFeatureUIIT {
     static Playwright playwright;
     static Browser browser;
 
-    /** Name of the currently-running test, used to name failure-capture artifacts. */
-    private String currentTestName = "unknown";
-
     @BeforeAll
     static void setUpSuite() throws Exception {
         SharedStack.ensureStarted();
@@ -78,11 +74,6 @@ public class BuildFeatureUIIT {
      * Delete and re-create the build feature before each test so every test starts
      * from a known clean state (default algorithm, TTL, empty claims, empty audience).
      */
-    @BeforeEach
-    void captureTestName(final TestInfo info) {
-        currentTestName = info.getTestMethod().map(java.lang.reflect.Method::getName).orElse("unknown");
-    }
-
     @BeforeEach
     void resetFeature() throws Exception {
         tc.delete("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID + "/features/" + featureId);
@@ -368,15 +359,8 @@ public class BuildFeatureUIIT {
     private void inFeatureEditor(final Consumer<Page> action) {
         try (final var context = newLoggedInContext()) {
             final var page = context.newPage();
-            try {
-                navigateToFeatureEditor(page);
-                action.accept(page);
-            } catch (final RuntimeException | AssertionError e) {
-                // Capture a screenshot + page HTML before the context closes, so UI failures
-                // (e.g. a save rejected by validation, leaving the modal open) are diagnosable.
-                captureFailureArtifacts(page);
-                throw e;
-            }
+            navigateToFeatureEditor(page);
+            action.accept(page);
         }
     }
 
@@ -419,58 +403,25 @@ public class BuildFeatureUIIT {
         // inside the dialog confirms the modal has rendered before tests interact with it.
         page.navigate(baseUrl + "/admin/editBuildFeatures.html?id=buildType:" + BUILD_TYPE_ID);
         page.waitForLoadState();
-        page.locator("text=OIDC Identity Token").first().waitFor();
-        page.locator("td.edit a").first().click();
-        // #subject_dimensions is a hidden input — wait for it to be attached to the DOM
-        // (Playwright's default waitFor requires visible, which a hidden input never becomes).
-        page.locator("#subject_dimensions").waitFor(new Locator.WaitForOptions()
-                .setState(WaitForSelectorState.ATTACHED));
-    }
-
-    /**
-     * On a UI test failure, save a full-page screenshot and the page HTML, publish them as build
-     * artifacts under {@code playwright-failures/}, and attach them to this test via TeamCity's
-     * {@code testMetadata} service message so they show on the test's page (the image renders
-     * inline). See https://www.jetbrains.com/help/teamcity/reporting-test-metadata.html.
-     * Best-effort: never let capture problems mask the original test failure.
-     */
-    private void captureFailureArtifacts(final Page page) {
         try {
-            final var dir = java.nio.file.Paths.get("target/playwright-failures");
-            java.nio.file.Files.createDirectories(dir);
-            final var base = currentTestName + "-" + System.currentTimeMillis();
-            final var png = dir.resolve(base + ".png");
-            final var html = dir.resolve(base + ".html");
-            page.screenshot(new Page.ScreenshotOptions().setPath(png).setFullPage(true));
-            java.nio.file.Files.writeString(html, page.content());
-
-            // Publish the files into the build's artifacts under playwright-failures/ ...
-            final var artifactDir = "playwright-failures";
-            System.out.println("##teamcity[publishArtifacts '"
-                    + png.toAbsolutePath() + " => " + artifactDir + "']");
-            System.out.println("##teamcity[publishArtifacts '"
-                    + html.toAbsolutePath() + " => " + artifactDir + "']");
-
-            // ... then attach them to this test. `value` is a path relative to the build
-            // artifacts directory; `testName` is the fully-qualified name TeamCity imports from
-            // the failsafe report (class.method), required because those tests are reported from
-            // the XML report after the run rather than via live testStarted/testFinished messages.
-            final var testName = tcEscape(getClass().getName() + "." + currentTestName);
-            System.out.println("##teamcity[testMetadata testName='" + testName + "' type='image' value='"
-                    + tcEscape(artifactDir + "/" + png.getFileName()) + "']");
-            System.out.println("##teamcity[testMetadata testName='" + testName + "' type='artifact' value='"
-                    + tcEscape(artifactDir + "/" + html.getFileName()) + "']");
-            System.err.println("UIIT failure artifacts saved: " + png.toAbsolutePath()
-                    + " and " + html.toAbsolutePath() + " (page URL=" + page.url() + ")");
-        } catch (final Exception ignored) {
-            // Capture is diagnostic only — swallow so the real assertion failure surfaces.
+            page.locator("text=OIDC Identity Token").first().waitFor();
+            page.locator("td.edit a").first().click();
+            // #subject_dimensions is a hidden input — wait for it to be attached to the DOM
+            // (Playwright's default waitFor requires visible, which a hidden input never becomes).
+            page.locator("#subject_dimensions").waitFor(new Locator.WaitForOptions()
+                    .setState(WaitForSelectorState.ATTACHED));
+        } catch (final RuntimeException e) {
+            try {
+                page.screenshot(new Page.ScreenshotOptions()
+                        .setPath(java.nio.file.Paths.get("/tmp/uiit-failed-" + System.currentTimeMillis() + ".png"))
+                        .setFullPage(true));
+                java.nio.file.Files.writeString(
+                        java.nio.file.Paths.get("/tmp/uiit-failed-" + System.currentTimeMillis() + ".html"),
+                        page.content());
+                System.err.println("UIIT navigation failed; page URL=" + page.url());
+            } catch (final Exception ignored) {}
+            throw e;
         }
-    }
-
-    /** Escapes a value for a TeamCity service message (see the TeamCity service-message docs). */
-    private static String tcEscape(final String s) {
-        return s.replace("|", "||").replace("'", "|'").replace("\n", "|n")
-                .replace("\r", "|r").replace("[", "|[").replace("]", "|]");
     }
 
     private void saveBuildFeature(final Page page) {
