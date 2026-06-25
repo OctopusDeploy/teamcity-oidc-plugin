@@ -53,7 +53,12 @@
 <jsp:useBean id="buildForm" type="jetbrains.buildServer.controllers.admin.projects.EditableBuildTypeSettingsForm" scope="request"/>
 
 <l:settingsGroup title="">
-    <props:hiddenProperty name="self_feature_id" value="${buildFeatureBean.id}"/>
+    <%-- Carry the id of the feature being edited so the parameters processor can exclude it
+         from the duplicate-variable-name check (otherwise an unchanged feature flags itself).
+         The id comes from the dialog's `featureId` request param (matches
+         SBuildFeatureDescriptor.getId()); it is blank when adding a new feature, which is
+         correct — there is no persisted self to exclude. --%>
+    <props:hiddenProperty name="self_feature_id" value="${param.featureId}"/>
     <c:if test="${jwtRootUrlNeedsHttps}">
         <tr id="row_root_url">
             <td colspan="2"><span class="error" id="error_root_url">The TeamCity server root URL must use HTTPS for OIDC token issuance. Update it in Administration &#x2192; Global Settings.</span></td>
