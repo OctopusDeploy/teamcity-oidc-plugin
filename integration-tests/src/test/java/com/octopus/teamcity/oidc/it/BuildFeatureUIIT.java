@@ -96,8 +96,6 @@ public class BuildFeatureUIIT {
     @Test
     void allDimensionsUncheckedByDefaultInUi() {
         inFeatureEditor(page -> {
-            // TEMP(revert): deliberate failure to confirm testMetadata screenshot capture in CI.
-            assertThat(false).as("TEMP forced failure to verify testMetadata capture in TeamCity").isTrue();
             final var checkboxes = page.locator(".jwt-subject-dimension-cb").all();
             assertThat(checkboxes).as("at least one optional-dimension checkbox should be rendered").isNotEmpty();
             for (final var cb : checkboxes) {
