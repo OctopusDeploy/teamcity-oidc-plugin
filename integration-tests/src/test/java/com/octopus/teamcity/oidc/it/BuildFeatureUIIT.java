@@ -428,9 +428,10 @@ public class BuildFeatureUIIT {
     }
 
     /**
-     * On a UI test failure, save a full-page screenshot and the page HTML under
-     * {@code target/playwright-failures/} and emit a TeamCity {@code publishArtifacts} service
-     * message so they appear on the build's Artifacts tab (TeamCity renders PNGs inline).
+     * On a UI test failure, save a full-page screenshot and the page HTML, publish them as build
+     * artifacts under {@code playwright-failures/}, and attach them to this test via TeamCity's
+     * {@code testMetadata} service message so they show on the test's page (the image renders
+     * inline). See https://www.jetbrains.com/help/teamcity/reporting-test-metadata.html.
      * Best-effort: never let capture problems mask the original test failure.
      */
     private void captureFailureArtifacts(final Page page) {
@@ -442,15 +443,34 @@ public class BuildFeatureUIIT {
             final var html = dir.resolve(base + ".html");
             page.screenshot(new Page.ScreenshotOptions().setPath(png).setFullPage(true));
             java.nio.file.Files.writeString(html, page.content());
+
+            // Publish the files into the build's artifacts under playwright-failures/ ...
+            final var artifactDir = "playwright-failures";
             System.out.println("##teamcity[publishArtifacts '"
-                    + png.toAbsolutePath() + " => playwright-failures']");
+                    + png.toAbsolutePath() + " => " + artifactDir + "']");
             System.out.println("##teamcity[publishArtifacts '"
-                    + html.toAbsolutePath() + " => playwright-failures']");
+                    + html.toAbsolutePath() + " => " + artifactDir + "']");
+
+            // ... then attach them to this test. `value` is a path relative to the build
+            // artifacts directory; `testName` is the fully-qualified name TeamCity imports from
+            // the failsafe report (class.method), required because those tests are reported from
+            // the XML report after the run rather than via live testStarted/testFinished messages.
+            final var testName = tcEscape(getClass().getName() + "." + currentTestName);
+            System.out.println("##teamcity[testMetadata testName='" + testName + "' type='image' value='"
+                    + tcEscape(artifactDir + "/" + png.getFileName()) + "']");
+            System.out.println("##teamcity[testMetadata testName='" + testName + "' type='artifact' value='"
+                    + tcEscape(artifactDir + "/" + html.getFileName()) + "']");
             System.err.println("UIIT failure artifacts saved: " + png.toAbsolutePath()
                     + " and " + html.toAbsolutePath() + " (page URL=" + page.url() + ")");
         } catch (final Exception ignored) {
             // Capture is diagnostic only — swallow so the real assertion failure surfaces.
         }
+    }
+
+    /** Escapes a value for a TeamCity service message (see the TeamCity service-message docs). */
+    private static String tcEscape(final String s) {
+        return s.replace("|", "||").replace("'", "|'").replace("\n", "|n")
+                .replace("\r", "|r").replace("[", "|[").replace("]", "|]");
     }
 
     private void saveBuildFeature(final Page page) {
