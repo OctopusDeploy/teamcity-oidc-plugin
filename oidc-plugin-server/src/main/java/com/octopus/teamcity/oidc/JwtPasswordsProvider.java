@@ -36,7 +36,9 @@ public class JwtPasswordsProvider implements PasswordsProvider {
     @NotNull
     @Override
     public Collection<Parameter> getPasswordParameters(@NotNull final SBuild build) {
-        return issuanceService.issueAll(build).entrySet().stream()
+        return issuanceService
+                .tokensFor(build)
+                .entrySet().stream()
                 .<Parameter>map(e -> new SimpleParameter(e.getKey(), e.getValue()))
                 .collect(Collectors.toList());
     }

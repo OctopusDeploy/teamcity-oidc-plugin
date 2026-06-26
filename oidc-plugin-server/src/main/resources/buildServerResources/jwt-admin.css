@@ -264,13 +264,8 @@
     font-family: monospace;
 }
 
-/* Help note under a 30em-wide text field — match the field's rendered width so
-   the help text wraps in a column aligned with the input above it. The field is
-   30em at the 14px field font (= 420px); the note's own font is smaller, so
-   "30em" on the note would render narrower than the field, hence the px value.
-   !important because TC's bundled CSS sets .smallNote width in a media query that
-   would otherwise win over this single-class selector (same reason the subject
-   dimensions note below uses !important). */
+/* Help note width matched to its 30em@14px field (= 420px in px because the note's
+   font is smaller). !important to beat TC's bundled .smallNote width. */
 .jwt-field-note {
     display: block;
     box-sizing: border-box;

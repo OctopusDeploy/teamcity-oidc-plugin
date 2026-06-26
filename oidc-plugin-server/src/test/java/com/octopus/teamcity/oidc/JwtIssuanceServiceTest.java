@@ -59,7 +59,7 @@ public class JwtIssuanceServiceTest {
     @Test
     public void returnsEmptyWhenBuildHasNoJwtFeature() {
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(Collections.emptyList());
-        assertThat(service.issueAll(runningBuild)).isEmpty();
+        assertThat(service.tokensFor(runningBuild)).isEmpty();
     }
 
     @Test
@@ -67,8 +67,8 @@ public class JwtIssuanceServiceTest {
         enableFeature();
         when(runningBuild.getBuildId()).thenReturn(42L);
 
-        final var first = service.issueAll(runningBuild);
-        final var second = service.issueAll(runningBuild);
+        final var first = service.tokensFor(runningBuild);
+        final var second = service.tokensFor(runningBuild);
 
         assertThat(first).containsOnlyKeys("jwt.token");
         assertThat(second).isEqualTo(first); // cached: identical token value
@@ -78,10 +78,10 @@ public class JwtIssuanceServiceTest {
     public void differentBuildsGetDifferentTokens() {
         enableFeature();
         when(runningBuild.getBuildId()).thenReturn(42L);
-        final var firstBuildToken = service.issueAll(runningBuild).get("jwt.token");
+        final var firstBuildToken = service.tokensFor(runningBuild).get("jwt.token");
 
         when(runningBuild.getBuildId()).thenReturn(43L);
-        final var secondBuildToken = service.issueAll(runningBuild).get("jwt.token");
+        final var secondBuildToken = service.tokensFor(runningBuild).get("jwt.token");
 
         assertThat(secondBuildToken).isNotEqualTo(firstBuildToken);
     }
@@ -91,9 +91,9 @@ public class JwtIssuanceServiceTest {
         enableFeature();
         when(runningBuild.getBuildId()).thenReturn(42L);
 
-        final var first = service.issueAll(runningBuild).get("jwt.token");
+        final var first = service.tokensFor(runningBuild).get("jwt.token");
         service.evict(42L);
-        final var second = service.issueAll(runningBuild).get("jwt.token");
+        final var second = service.tokensFor(runningBuild).get("jwt.token");
 
         assertThat(second).isNotEqualTo(first);
     }
@@ -112,7 +112,7 @@ public class JwtIssuanceServiceTest {
                 new OidcSettingsManager(tempDir),
                 mock(OidcConnectionsManager.class));
 
-        assertThat(insecureService.issueAll(runningBuild)).isEmpty();
+        assertThat(insecureService.tokensFor(runningBuild)).isEmpty();
     }
 
     @Test
@@ -129,7 +129,7 @@ public class JwtIssuanceServiceTest {
                 new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
                         new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()), "conn.token")));
 
-        final var tokens = service.issueAll(runningBuild);
+        final var tokens = service.tokensFor(runningBuild);
 
         assertThat(tokens).containsOnlyKeys("conn.token");
         final var parsed = com.nimbusds.jwt.SignedJWT.parse(tokens.get("conn.token")).getJWTClaimsSet();
@@ -147,7 +147,7 @@ public class JwtIssuanceServiceTest {
         when(buildType.getProject()).thenReturn(project);
         when(connectionsManager.resolve(project, "missing")).thenReturn(java.util.Optional.empty());
 
-        assertThatThrownBy(() -> service.issueAll(runningBuild))
+        assertThatThrownBy(() -> service.tokensFor(runningBuild))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("connection 'missing' could not be found");
     }
@@ -158,7 +158,7 @@ public class JwtIssuanceServiceTest {
         when(featureDescriptor.getParameters()).thenReturn(Map.of("audience", "api://inline"));
         when(runningBuild.getBuildId()).thenReturn(44L);
 
-        final var tokens = service.issueAll(runningBuild);
+        final var tokens = service.tokensFor(runningBuild);
 
         assertThat(tokens).containsOnlyKeys("jwt.token");
         final var parsed = com.nimbusds.jwt.SignedJWT.parse(tokens.get("jwt.token")).getJWTClaimsSet();
@@ -175,7 +175,7 @@ public class JwtIssuanceServiceTest {
         when(runningBuild.getBuildId()).thenReturn(50L);
         when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
 
-        final var tokens = service.issueAll(runningBuild);
+        final var tokens = service.tokensFor(runningBuild);
 
         assertThat(tokens).containsOnlyKeys("jwt.token", "second.token");
         assertThat(com.nimbusds.jwt.SignedJWT.parse(tokens.get("jwt.token")).getJWTClaimsSet().getAudience())
@@ -194,7 +194,7 @@ public class JwtIssuanceServiceTest {
         when(runningBuild.getBuildId()).thenReturn(51L);
         when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
 
-        final var tokens = service.issueAll(runningBuild);
+        final var tokens = service.tokensFor(runningBuild);
 
         assertThat(tokens).containsOnlyKeys("jwt.token");
         assertThat(com.nimbusds.jwt.SignedJWT.parse(tokens.get("jwt.token")).getJWTClaimsSet().getAudience())

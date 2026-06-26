@@ -236,10 +236,10 @@ public class JwtBuildFeatureTest {
     public void skipsInlineValidationWhenConnectionIdSet() {
         // ttl_minutes far out of range — would fail inline validation, but is ignored when connection_id is set.
         final var processor = feature.getParametersProcessor(buildType);
-        final var errors = processor.process(Map.of(
+        final var errors = processor.process(new HashMap<>(Map.of(
                 "connection_id", CONNECTION_ID,
                 "ttl_minutes", "9999",
-                "subject_dimensions", "bogus"));
+                "subject_dimensions", "bogus")));
 
         // The connection resolves successfully (stubbed in setUp).
         assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("ttl_minutes", "subject_dimensions");
@@ -250,7 +250,7 @@ public class JwtBuildFeatureTest {
         when(oidcConnectionsManager.resolve(project, "missing"))
                 .thenReturn(java.util.Optional.empty());
 
-        final var errors = feature.getParametersProcessor(buildType).process(Map.of("connection_id", "missing"));
+        final var errors = feature.getParametersProcessor(buildType).process(new HashMap<>(Map.of("connection_id", "missing")));
 
         assertThat(errors).extracting(InvalidProperty::getPropertyName).contains("connection_id");
     }
@@ -301,6 +301,18 @@ public class JwtBuildFeatureTest {
         final var errors = processor.process(new HashMap<>(Map.of(
                 "self_feature_id", "NEW_ID",
                 "token_variable_name", "other.token")));
+
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("token_variable_name");
+    }
+
+    @Test
+    public void allowsSameVariableNameOnADifferentBuildConfiguration() {
+        // Uniqueness is scoped to a single build configuration: a feature on a build type with no
+        // other OIDC feature saves fine even though build configs elsewhere also emit jwt.token.
+        when(buildType.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of());
+
+        final var errors = feature.getParametersProcessor(buildType)
+                .process(new HashMap<>(Map.of("self_feature_id", "NEW_ID")));
 
         assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("token_variable_name");
     }

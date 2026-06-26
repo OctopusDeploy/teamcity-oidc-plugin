@@ -23,7 +23,7 @@ public class JwtPasswordsProviderTest {
     @Test
     public void returnsOneMaskedParameterPerFeatureToken() {
         final var issuanceService = mock(JwtIssuanceService.class);
-        when(issuanceService.issueAll(build)).thenReturn(new java.util.LinkedHashMap<>(java.util.Map.of(
+        when(issuanceService.tokensFor(build)).thenReturn(new java.util.LinkedHashMap<>(java.util.Map.of(
                 "jwt.token", "a.b.c", "second.token", "d.e.f")));
 
         final var provider = new JwtPasswordsProvider(extensionHolder, issuanceService);
@@ -36,7 +36,7 @@ public class JwtPasswordsProviderTest {
     @Test
     public void returnsEmptyWhenIssuanceServiceReturnsEmpty() {
         final var issuanceService = mock(JwtIssuanceService.class);
-        when(issuanceService.issueAll(build)).thenReturn(java.util.Map.of());
+        when(issuanceService.tokensFor(build)).thenReturn(java.util.Map.of());
 
         final var provider = new JwtPasswordsProvider(extensionHolder, issuanceService);
 

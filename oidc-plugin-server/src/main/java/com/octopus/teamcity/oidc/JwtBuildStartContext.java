@@ -31,6 +31,6 @@ public class JwtBuildStartContext implements BuildStartContextProcessor {
     @Override
     public void updateParameters(@NotNull final BuildStartContext buildStartContext) {
         final var build = buildStartContext.getBuild();
-        issuanceService.issueAll(build).forEach(buildStartContext::addSharedParameter);
+        issuanceService.tokensFor(build).forEach(buildStartContext::addSharedParameter);
     }
 }
