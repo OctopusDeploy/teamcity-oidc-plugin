@@ -21,7 +21,7 @@ public class JwtPasswordsProviderTest {
     SBuild build;
 
     @Test
-    public void returnsOneMaskedParameterPerFeatureToken() {
+    public void returnsOnePasswordParameterPerFeatureToken() {
         final var issuanceService = mock(JwtIssuanceService.class);
         when(issuanceService.tokensFor(build)).thenReturn(new java.util.LinkedHashMap<>(java.util.Map.of(
                 "jwt.token", "a.b.c", "second.token", "d.e.f")));

@@ -46,9 +46,10 @@ public class JwtBuildParametersProviderTest {
     public void advertisesEachVariableAsAvailableOnAgent() {
         final var issuanceService = mock(JwtIssuanceService.class);
         when(issuanceService.variableNamesFor(build))
-                .thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("jwt.token")));
+                .thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("jwt.token", "second.token")));
         final var provider = new JwtBuildParametersProvider(extensionHolder, issuanceService);
-        assertThat(provider.getParametersAvailableOnAgent(build)).containsExactly("jwt.token");
+        assertThat(provider.getParametersAvailableOnAgent(build))
+                .containsExactly("jwt.token", "second.token");
     }
 
     @Test

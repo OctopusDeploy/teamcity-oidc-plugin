@@ -110,7 +110,7 @@ public class JwtIssuanceService {
                     : IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
             result.put(variableName, mintToken(build, settings, issuerUrl));
         }
-        return result;
+        return java.util.Collections.unmodifiableMap(result);
     }
 
     private String mintToken(final SBuild build, final IssuanceSettings settings, final String issuerUrl) {
