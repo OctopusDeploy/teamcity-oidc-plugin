@@ -213,7 +213,7 @@ public class JwtBuildFeature extends BuildFeature {
         return Optional.empty();
     }
 
-    private static String subjectTemplate(@Nullable final String subjectDimensionsParam) {
+    static String subjectTemplate(@Nullable final String subjectDimensionsParam) {
         final var raw = subjectDimensionsParam == null ? "" : subjectDimensionsParam.trim();
         final boolean includeBranch;
         final boolean includeTriggerType;

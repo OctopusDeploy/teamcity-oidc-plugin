@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -75,11 +76,13 @@ public class OidcConnectionProvider extends OAuthProvider {
         final var audience = params.getOrDefault("audience", "");
         final var ttl = params.getOrDefault("ttl_minutes", "10");
         final var algorithm = params.getOrDefault("algorithm", "RS256");
-        final var subjectDimensions = params.getOrDefault("subject_dimensions", "");
-        return "aud: " + (audience.isBlank() ? "(issuer URL)" : audience)
-                + ", ttl: " + ttl + "m"
-                + ", alg: " + algorithm
-                + (subjectDimensions.isBlank() ? "" : ", sub dims: " + subjectDimensions);
+        final var variableName = TokenVariableNameResolver.resolve(params, Optional.empty());
+        // Same multi-line layout as the build feature's describeParameters.
+        return "sub: " + JwtBuildFeature.subjectTemplate(params.get("subject_dimensions"))
+                + "\naud: " + (audience.isBlank() ? "(issuer URL)" : audience)
+                + "\nttl: " + ttl + "m"
+                + "\nalg: " + algorithm
+                + "\nvar: %" + variableName + "%";
     }
 
     @Override

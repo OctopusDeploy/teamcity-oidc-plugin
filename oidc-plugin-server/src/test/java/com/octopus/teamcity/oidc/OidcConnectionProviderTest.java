@@ -60,11 +60,15 @@ public class OidcConnectionProviderTest {
                 "audience", "api://example",
                 "ttl_minutes", "20",
                 "algorithm", "ES256",
-                "subject_dimensions", "branch"));
-        assertThat(description).contains("api://example");
-        assertThat(description).contains("20");
-        assertThat(description).contains("ES256");
-        assertThat(description).contains("branch");
+                "subject_dimensions", "branch",
+                "token_variable_name", "octopus.token"));
+        // Same multi-line "label: value" layout as the build feature's describeParameters.
+        assertThat(description).contains("aud: api://example");
+        assertThat(description).contains("ttl: 20m");
+        assertThat(description).contains("alg: ES256");
+        assertThat(description).contains("sub: project:<project_id>:build_type:<build_type_id>:branch:<branch>");
+        assertThat(description).contains("var: %octopus.token%");
+        assertThat(description).contains("\n");
     }
 
     @Test
