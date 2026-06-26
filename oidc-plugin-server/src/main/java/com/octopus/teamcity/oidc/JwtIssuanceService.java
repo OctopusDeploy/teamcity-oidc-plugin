@@ -8,7 +8,10 @@ import org.jetbrains.annotations.NotNull;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -17,7 +20,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Issues a single JWT per build and caches it for the build's lifetime.
+ * Issues one JWT per build feature, keyed by each feature's effective variable name, cached per build.
  *
  * <p>We have a separate service, as the {@code PasswordsBuildStartContextProcessor}
  * runs before our {@link JwtBuildStartContext} does, and queries every {@code PasswordsProvider}
@@ -34,7 +37,7 @@ public class JwtIssuanceService {
     private final OidcSettingsManager oidcSettingsManager;
     private final OidcConnectionsManager connectionsManager;
 
-    private final ConcurrentHashMap<Long, String> tokenByBuildId = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Map<String, String>> tokensByBuildId = new ConcurrentHashMap<>();
 
     public JwtIssuanceService(@NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                               @NotNull final JwtKeyManager keyManager,
@@ -47,61 +50,72 @@ public class JwtIssuanceService {
     }
 
     /**
-     * Returns the JWT for this build, issuing it on first call and serving the cached
-     * value on subsequent calls. Returns {@link Optional#empty()} if the build has no
-     * JWT feature configured, or if the configured issuer URL is not HTTPS.
-     *
-     * @throws RuntimeException if signing fails, or if the build feature references an
-     *         {@code connection_id} that cannot be resolved in the build's project
-     *         hierarchy — both fail the build with a clear message in the build log.
+     * The JWTs for this build, keyed by the build variable each is emitted into — one per OIDC
+     * build feature. Issued once then cached; empty when there is no feature or the issuer URL
+     * is not HTTPS. Throws (failing the build) if signing fails or a referenced connection is
+     * missing.
      */
-    public Optional<String> issueOrGet(@NotNull final SBuild build) {
+    public @NotNull Map<String, String> tokensFor(@NotNull final SBuild build) {
         if (build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE).isEmpty()) {
-            return Optional.empty();
+            return Map.of();
         }
-        return Optional.ofNullable(tokenByBuildId.computeIfAbsent(build.getBuildId(), id -> issue(build)));
+        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
+        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
+            LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
+            return Map.of();
+        }
+        return tokensByBuildId.computeIfAbsent(build.getBuildId(), id -> issueTokens(build, issuerUrl));
+    }
+
+    /**
+     * The variable names all of the build's features emit, without issuing tokens or checking
+     * HTTPS — used to advertise parameter availability (emulation mode, agent-available list).
+     */
+    public @NotNull Set<String> variableNamesFor(@NotNull final SBuild build) {
+        final var project = build.getBuildType() == null ? null : build.getBuildType().getProject();
+        final var names = new LinkedHashSet<String>();
+        for (final var descriptor : build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)) {
+            names.add(TokenVariableNameResolver.resolve(descriptor.getParameters(), connectionsManager, project));
+        }
+        return names;
     }
 
     public void evict(final long buildId) {
-        tokenByBuildId.remove(buildId);
+        tokensByBuildId.remove(buildId);
     }
 
-    private String issue(final SBuild build) {
-        final var descriptor = build
-                .getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)
-                .stream()
-                .findFirst()
-                .orElseThrow();
-        final var params = descriptor.getParameters();
-
-        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
-        LOG.info("JWT plugin: issuing JWT for build " + build.getBuildId()
-                + ", issuerUrl=" + sanitize(issuerUrl));
-
-        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
-            LOG.warning("JWT plugin: skipping JWT — issuer URL is not HTTPS: " + sanitize(issuerUrl));
-            return null;
-        }
-
+    private Map<String, String> issueTokens(final SBuild build, final String issuerUrl) {
         final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
-        final var connectionId = params.get("connection_id");
-        final IssuanceSettings settings;
-        if (connectionId != null && !connectionId.isBlank()) {
-            final var project = build.getBuildType().getProject();
-            final var resolved = connectionsManager.resolve(project, connectionId);
-            if (resolved.isEmpty()) {
+        final var result = new LinkedHashMap<String, String>();
+        for (final var descriptor : build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)) {
+            final var params = descriptor.getParameters();
+            final var connectionId = params.getOrDefault("connection_id", "").trim();
+            final Optional<OidcConnection> connection = connectionId.isBlank() || build.getBuildType() == null
+                    ? Optional.empty()
+                    : connectionsManager.resolve(build.getBuildType().getProject(), connectionId);
+            final var variableName = TokenVariableNameResolver.resolve(params, connection);
+            if (result.containsKey(variableName)) {
+                LOG.warning("JWT plugin: duplicate token variable name '" + sanitize(variableName)
+                        + "' across OIDC build features for build " + build.getBuildId()
+                        + "; keeping the first and skipping the duplicate.");
+                continue;
+            }
+            if (!connectionId.isBlank() && connection.isEmpty()) {
                 throw new RuntimeException("JWT plugin: OIDC Identity Token connection '"
                         + sanitize(connectionId) + "' could not be found in this project or any parent. "
                         + "Edit the build feature and select a valid connection, or remove the connection reference.");
             }
-            settings = resolved.get().settings();
-        } else {
-            settings = IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
+            final var settings = connection.isPresent()
+                    ? connection.get().settings()
+                    : IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
+            result.put(variableName, mintToken(build, settings, issuerUrl));
         }
+        return java.util.Collections.unmodifiableMap(result);
+    }
 
+    private String mintToken(final SBuild build, final IssuanceSettings settings, final String issuerUrl) {
         final var branchName = ClaimsResolver.resolveBranchName(build);
         final var triggerType = ClaimsResolver.resolveTriggerType(build.getTriggeredBy());
-
         final var subject = composeSubject(build, settings.subjectDimensions(), branchName, triggerType);
 
         final var now = Instant.now();

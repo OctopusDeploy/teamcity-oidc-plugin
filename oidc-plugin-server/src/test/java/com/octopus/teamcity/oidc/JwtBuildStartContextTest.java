@@ -61,7 +61,7 @@ public class JwtBuildStartContextTest {
     private void enableBuildFeature(final Map<String, String> params) {
         when(buildStartContext.getBuild()).thenReturn(runningBuild);
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(jwtBuildFeatureBuildFeatureDescriptor));
-        when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(params);
+        lenient().when(jwtBuildFeatureBuildFeatureDescriptor.getParameters()).thenReturn(params);
     }
 
     /** Mocks a TriggeredBy and wires it into the running build. Mockito defaults apply

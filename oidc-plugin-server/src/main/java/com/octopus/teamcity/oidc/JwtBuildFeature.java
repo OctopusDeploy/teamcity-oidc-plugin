@@ -153,38 +153,44 @@ public class JwtBuildFeature extends BuildFeature {
     public String describeParameters(@NotNull final java.util.Map<String, String> params) {
         final var connectionId = params.getOrDefault("connection_id", "").trim();
         if (!connectionId.isEmpty() && staticOidcConnectionsManager != null && staticBuildServer != null) {
-            return describeConnection(connectionId);
+            return describeConnection(connectionId, params);
         }
         return describeInline(params);
     }
 
     @NotNull
-    private static String describeConnection(@NotNull final String connectionId) {
+    private static String describeConnection(@NotNull final String connectionId,
+                                             @NotNull final java.util.Map<String, String> params) {
         final var resolved = resolveConnectionFromProjectOrAncestor(connectionId);
+        final var variableName = TokenVariableNameResolver.resolve(params, resolved);
         if (resolved.isEmpty()) {
-            return "connection: <unknown id " + connectionId + ">";
+            return "connection: <unknown id " + connectionId + ">\nvar: %" + variableName + "%";
         }
         final var conn = resolved.get();
         final var sb = new StringBuilder("connection: ").append(conn.displayName());
         // Show the sub claim's template form — concrete IDs and runtime values aren't
         // available here, but the template matches what the consumer will see.
-        sb.append("\nsub:").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
-        sb.append("\naud:").append(conn.settings().audience());
+        sb.append("\nsub: ").append(subjectTemplate(String.join(",", conn.settings().subjectDimensions())));
+        sb.append("\naud: ").append(conn.settings().audience());
+        // Variable name last, wrapped in % so it reads like the reference admins use.
+        sb.append("\nvar: %").append(variableName).append('%');
         return sb.toString();
     }
 
     @NotNull
     private static String describeInline(@NotNull final java.util.Map<String, String> params) {
         final var audience = params.get("audience");
-        final var sb = new StringBuilder();
+        final var variableName = TokenVariableNameResolver.resolve(params, Optional.empty());
         // Show the sub claim's template form — concrete project/build_type IDs and the
         // branch/trigger values aren't available here (no build context), but the template
         // matches what the consumer (e.g. Octopus) will see and helps admins differentiate
         // features with different subject scoping.
-        sb.append("sub:").append(subjectTemplate(params.get("subject_dimensions")));
+        final var sb = new StringBuilder("sub: ").append(subjectTemplate(params.get("subject_dimensions")));
         if (audience != null && !audience.isBlank()) {
-            sb.append("\naud:").append(audience);
+            sb.append("\naud: ").append(audience);
         }
+        // Variable name last, wrapped in % so it reads like the reference admins use.
+        sb.append("\nvar: %").append(variableName).append('%');
         return sb.toString();
     }
 
@@ -207,7 +213,7 @@ public class JwtBuildFeature extends BuildFeature {
         return Optional.empty();
     }
 
-    private static String subjectTemplate(@Nullable final String subjectDimensionsParam) {
+    static String subjectTemplate(@Nullable final String subjectDimensionsParam) {
         final var raw = subjectDimensionsParam == null ? "" : subjectDimensionsParam.trim();
         final boolean includeBranch;
         final boolean includeTriggerType;
@@ -237,59 +243,111 @@ public class JwtBuildFeature extends BuildFeature {
 
     @Override
     public boolean isMultipleFeaturesPerBuildTypeAllowed() {
-        return false;
+        return true;
     }
 
     @Override
     public PropertiesProcessor getParametersProcessor(@NotNull final BuildTypeIdentity buildTypeOrTemplate) {
+        final var buildType = buildTypeOrTemplate instanceof final SBuildType bt ? bt : null;
         return params -> {
             final Collection<InvalidProperty> errors = new ArrayList<>();
-            if (!OidcUrlUtils.isHttpsUrl(issuerUrlProvider.getIssuerUrl())) {
-                errors.add(new InvalidProperty("root_url",
-                        "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
-                                "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
-            }
-            final var connectionId = params.getOrDefault("connection_id", "").trim();
-            if (!connectionId.isEmpty()) {
-                // When a connection is selected, skip inline TTL/subject validation and instead
-                // verify the connection still exists in the project hierarchy.
-                if (buildTypeOrTemplate instanceof final jetbrains.buildServer.serverSide.SBuildType bt) {
-                    final var resolved = oidcConnectionsManager.resolve(bt.getProject(), connectionId);
-                    if (resolved.isEmpty()) {
-                        errors.add(new InvalidProperty("connection_id",
-                                "Selected connection no longer exists in this project. "
-                                        + "Pick another connection or clear the field to configure inline settings."));
-                    }
-                }
-                return errors;
-            }
-            // Inline validation: TTL and subject_dimensions.
-            final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
-            final var ttl = params.getOrDefault("ttl_minutes", "10");
-            try {
-                final var ttlValue = Integer.parseInt(ttl);
-                if (ttlValue < OidcSettings.MIN_TOKEN_LIFETIME_MINUTES || ttlValue > maxTtl) {
-                    errors.add(new InvalidProperty("ttl_minutes",
-                            "Token lifetime must be between " + OidcSettings.MIN_TOKEN_LIFETIME_MINUTES
-                            + " and " + maxTtl + " minutes."));
-                }
-            } catch (final NumberFormatException e) {
-                errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));
-            }
-            final var subjectDimensions = params.getOrDefault("subject_dimensions", "");
-            if (!subjectDimensions.isBlank()) {
-                final var unknown = Arrays.stream(subjectDimensions.split("\\s*,\\s*"))
-                        .filter(s -> !s.isBlank())
-                        .filter(s -> !ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(s))
-                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-                if (!unknown.isEmpty()) {
-                    errors.add(new InvalidProperty("subject_dimensions",
-                            "Unknown subject dimension(s): " + String.join(", ", unknown)
-                                    + ". Allowed values: " + String.join(", ", ALL_OPTIONAL_SUBJECT_DIMENSIONS)
-                                    + ", or leave blank for no optional dimensions."));
-                }
+            validateVariableNameIsUnique(buildType, params, errors);
+            validateIssuerIsHttps(errors);
+            if (usesConnection(params)) {
+                validateConnectionExists(buildType, params, errors);
+            } else {
+                validateTokenLifetime(params, errors);
+                validateSubjectDimensions(params, errors);
             }
             return errors;
         };
+    }
+
+    private static boolean usesConnection(@NotNull final java.util.Map<String, String> params) {
+        return !params.getOrDefault("connection_id", "").trim().isEmpty();
+    }
+
+    private void validateIssuerIsHttps(@NotNull final Collection<InvalidProperty> errors) {
+        if (!OidcUrlUtils.isHttpsUrl(issuerUrlProvider.getIssuerUrl())) {
+            errors.add(new InvalidProperty("root_url",
+                    "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
+                            "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
+        }
+    }
+
+    /** When a connection is selected it supplies the settings, so just verify it still resolves. */
+    private void validateConnectionExists(@Nullable final SBuildType bt,
+                                          @NotNull final java.util.Map<String, String> params,
+                                          @NotNull final Collection<InvalidProperty> errors) {
+        if (bt == null) {
+            return;
+        }
+        final var connectionId = params.getOrDefault("connection_id", "").trim();
+        if (oidcConnectionsManager.resolve(bt.getProject(), connectionId).isEmpty()) {
+            errors.add(new InvalidProperty("connection_id",
+                    "Selected connection no longer exists in this project. "
+                            + "Pick another connection or clear the field to configure inline settings."));
+        }
+    }
+
+    /** Rejects saving if another feature on this build config already emits the same variable. */
+    private void validateVariableNameIsUnique(@Nullable final SBuildType bt,
+                                              @NotNull final java.util.Map<String, String> params,
+                                              @NotNull final Collection<InvalidProperty> errors) {
+        if (bt == null) {
+            return;
+        }
+        // self_feature_id (rendered by the edit JSP) is the id of the feature being edited; remove
+        // it so it isn't persisted, and skip the matching sibling so a feature isn't flagged
+        // against its own still-persisted copy.
+        final var selfFeatureId = params.remove("self_feature_id");
+        final var candidateName = TokenVariableNameResolver.resolve(params, oidcConnectionsManager, bt.getProject());
+        for (final var sibling : bt.getBuildFeaturesOfType(FEATURE_TYPE)) {
+            if (sibling.getId().equals(selfFeatureId)) {
+                continue;
+            }
+            if (TokenVariableNameResolver.resolve(sibling.getParameters(), oidcConnectionsManager, bt.getProject()).equals(candidateName)) {
+                errors.add(new InvalidProperty("token_variable_name",
+                        "Another OIDC build feature on this build configuration already emits the "
+                                + "variable '" + candidateName + "'. Set a different variable name."));
+                return;
+            }
+        }
+    }
+
+    /** Validates the inline token lifetime used when no connection is selected. */
+    private void validateTokenLifetime(@NotNull final java.util.Map<String, String> params,
+                                       @NotNull final Collection<InvalidProperty> errors) {
+        final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
+        final var ttl = params.getOrDefault("ttl_minutes", "10");
+        try {
+            final var ttlValue = Integer.parseInt(ttl);
+            if (ttlValue < OidcSettings.MIN_TOKEN_LIFETIME_MINUTES || ttlValue > maxTtl) {
+                errors.add(new InvalidProperty("ttl_minutes",
+                        "Token lifetime must be between " + OidcSettings.MIN_TOKEN_LIFETIME_MINUTES
+                        + " and " + maxTtl + " minutes."));
+            }
+        } catch (final NumberFormatException e) {
+            errors.add(new InvalidProperty("ttl_minutes", "Token lifetime must be a valid integer."));
+        }
+    }
+
+    /** Validates the inline subject dimensions used when no connection is selected. */
+    private void validateSubjectDimensions(@NotNull final java.util.Map<String, String> params,
+                                           @NotNull final Collection<InvalidProperty> errors) {
+        final var subjectDimensions = params.getOrDefault("subject_dimensions", "");
+        if (subjectDimensions.isBlank()) {
+            return;
+        }
+        final var unknown = Arrays.stream(subjectDimensions.split("\\s*,\\s*"))
+                .filter(s -> !s.isBlank())
+                .filter(s -> !ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(s))
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (!unknown.isEmpty()) {
+            errors.add(new InvalidProperty("subject_dimensions",
+                    "Unknown subject dimension(s): " + String.join(", ", unknown)
+                            + ". Allowed values: " + String.join(", ", ALL_OPTIONAL_SUBJECT_DIMENSIONS)
+                            + ", or leave blank for no optional dimensions."));
+        }
     }
 }

@@ -264,6 +264,15 @@
     font-family: monospace;
 }
 
+/* Help note width matched to its 30em@14px field (= 420px in px because the note's
+   font is smaller). !important to beat TC's bundled .smallNote width. */
+.jwt-field-note {
+    display: block;
+    box-sizing: border-box;
+    width: 420px !important;
+    max-width: 100%;
+}
+
 /* === Build feature edit: subject dimensions list + live preview ===
    Rules use !important because the build-feature edit form is rendered inside
    TC's settings dialog, which has its own .smallNote rules (display:block) that

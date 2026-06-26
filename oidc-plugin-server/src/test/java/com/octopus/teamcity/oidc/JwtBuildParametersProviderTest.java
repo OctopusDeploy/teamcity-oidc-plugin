@@ -2,15 +2,13 @@ package com.octopus.teamcity.oidc;
 
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.SBuild;
-import jetbrains.buildServer.serverSide.SBuildFeatureDescriptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -18,41 +16,47 @@ public class JwtBuildParametersProviderTest {
 
     @Mock ExtensionHolder extensionHolder;
     @Mock SBuild build;
-    @Mock SBuildFeatureDescriptor featureDescriptor;
 
     @Test
     public void returnsEmptyMapInRealBuildMode() {
-        final var provider = new JwtBuildParametersProvider(extensionHolder);
+        final var provider = new JwtBuildParametersProvider(extensionHolder, mock(JwtIssuanceService.class));
         assertThat(provider.getParameters(build, false)).isEmpty();
     }
 
     @Test
-    public void returnsEmptyMapInEmulationModeWhenFeatureAbsent() {
-        when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of());
-        final var provider = new JwtBuildParametersProvider(extensionHolder);
+    public void returnsEmptyMapInEmulationModeWhenNoVariables() {
+        final var issuanceService = mock(JwtIssuanceService.class);
+        when(issuanceService.variableNamesFor(build)).thenReturn(java.util.Set.of());
+        final var provider = new JwtBuildParametersProvider(extensionHolder, issuanceService);
         assertThat(provider.getParameters(build, true)).isEmpty();
     }
 
     @Test
-    public void returnsPlaceholderInEmulationModeWhenFeaturePresent() {
-        when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of(featureDescriptor));
-        final var provider = new JwtBuildParametersProvider(extensionHolder);
+    public void returnsPlaceholderPerVariableInEmulationMode() {
+        final var issuanceService = mock(JwtIssuanceService.class);
+        when(issuanceService.variableNamesFor(build))
+                .thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("jwt.token", "second.token")));
+        final var provider = new JwtBuildParametersProvider(extensionHolder, issuanceService);
         assertThat(provider.getParameters(build, true))
-                .containsEntry(JwtPasswordsProvider.JWT_PARAMETER_NAME, "");
+                .containsOnly(org.assertj.core.api.Assertions.entry("jwt.token", ""),
+                              org.assertj.core.api.Assertions.entry("second.token", ""));
     }
 
     @Test
-    public void advertisesParameterAsAvailableOnAgentWhenFeaturePresent() {
-        when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of(featureDescriptor));
-        final var provider = new JwtBuildParametersProvider(extensionHolder);
+    public void advertisesEachVariableAsAvailableOnAgent() {
+        final var issuanceService = mock(JwtIssuanceService.class);
+        when(issuanceService.variableNamesFor(build))
+                .thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("jwt.token", "second.token")));
+        final var provider = new JwtBuildParametersProvider(extensionHolder, issuanceService);
         assertThat(provider.getParametersAvailableOnAgent(build))
-                .containsExactly(JwtPasswordsProvider.JWT_PARAMETER_NAME);
+                .containsExactly("jwt.token", "second.token");
     }
 
     @Test
-    public void doesNotAdvertiseParameterOnAgentWhenFeatureAbsent() {
-        when(build.getBuildFeaturesOfType(JwtBuildFeature.FEATURE_TYPE)).thenReturn(List.of());
-        final var provider = new JwtBuildParametersProvider(extensionHolder);
+    public void doesNotAdvertiseAnyVariableWhenNoFeatures() {
+        final var issuanceService = mock(JwtIssuanceService.class);
+        when(issuanceService.variableNamesFor(build)).thenReturn(java.util.Set.of());
+        final var provider = new JwtBuildParametersProvider(extensionHolder, issuanceService);
         assertThat(provider.getParametersAvailableOnAgent(build)).isEmpty();
     }
 }

@@ -9,3 +9,5 @@ target/
 .DS_Store
 /.superpowers
 .worktrees/
+/.claude
+/docs/superpowers

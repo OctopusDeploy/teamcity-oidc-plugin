@@ -217,8 +217,11 @@ public class JwtIssuanceAndVerificationTest {
                 keyManager,
                 new OidcSettingsManager(tempDir),
                 mock(OidcConnectionsManager.class));
-        return service.issueOrGet(runningBuild)
-                .orElseThrow(() -> new AssertionError("issueOrGet returned empty"));
+        return service
+                .tokensFor(runningBuild)
+                .values().stream()
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("tokensFor returned no token"));
     }
 
     private JWKSet getJwks() {
