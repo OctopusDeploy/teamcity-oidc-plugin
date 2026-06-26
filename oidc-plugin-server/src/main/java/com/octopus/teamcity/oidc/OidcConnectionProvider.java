@@ -77,7 +77,6 @@ public class OidcConnectionProvider extends OAuthProvider {
         final var ttl = params.getOrDefault("ttl_minutes", "10");
         final var algorithm = params.getOrDefault("algorithm", "RS256");
         final var variableName = TokenVariableNameResolver.resolve(params, Optional.empty());
-        // Same multi-line layout as the build feature's describeParameters.
         return "sub: " + JwtBuildFeature.subjectTemplate(params.get("subject_dimensions"))
                 + "\naud: " + (audience.isBlank() ? "(issuer URL)" : audience)
                 + "\nttl: " + ttl + "m"
