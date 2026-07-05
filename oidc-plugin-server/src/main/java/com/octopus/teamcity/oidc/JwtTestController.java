@@ -12,6 +12,7 @@ import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.SBuildType;
+import jetbrains.buildServer.serverSide.TeamCityNodes;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.CSRFFilter;
@@ -50,22 +51,35 @@ public class JwtTestController extends BaseController {
         InetAddress[] resolve(String host) throws UnknownHostException;
     }
 
+    /**
+     * Reports whether the current TeamCity node is the main node. Only the main node may open
+     * outbound connections — secondary nodes install a {@code SecondaryNodeSecurityManager} that
+     * blocks them. Injectable so tests can simulate a secondary node.
+     */
+    @FunctionalInterface
+    interface NodeRoleCheck {
+        boolean isMainNode();
+    }
+
     private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final HttpClient httpClient;
     private final CSRFFilter csrfFilter;
     private final AddressResolver addressResolver;
+    private final NodeRoleCheck nodeRoleCheck;
 
     @Autowired
     public JwtTestController(@NotNull final WebControllerManager controllerManager,
                              @NotNull final JwtKeyManager keyManager,
                              @NotNull final SBuildServer buildServer,
                              @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
-                             @NotNull final ExtensionHolder extensionHolder) {
+                             @NotNull final ExtensionHolder extensionHolder,
+                             @NotNull final TeamCityNodes nodes) {
         this(controllerManager, keyManager, buildServer, issuerUrlProvider,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
-                new CSRFFilter(extensionHolder), InetAddress::getAllByName);
+                new CSRFFilter(extensionHolder), InetAddress::getAllByName,
+                () -> nodes.getCurrentNode().isMainNode());
     }
 
     JwtTestController(@NotNull final WebControllerManager controllerManager,
@@ -84,12 +98,25 @@ public class JwtTestController extends BaseController {
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter,
                       @NotNull final AddressResolver addressResolver) {
+        this(controllerManager, keyManager, buildServer, issuerUrlProvider, httpClient, csrfFilter, addressResolver,
+                /* isMainNode= */ () -> true);
+    }
+
+    JwtTestController(@NotNull final WebControllerManager controllerManager,
+                      @NotNull final JwtKeyManager keyManager,
+                      @NotNull final SBuildServer buildServer,
+                      @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
+                      @NotNull final HttpClient httpClient,
+                      @NotNull final CSRFFilter csrfFilter,
+                      @NotNull final AddressResolver addressResolver,
+                      @NotNull final NodeRoleCheck nodeRoleCheck) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
         this.issuerUrlProvider = issuerUrlProvider;
         this.httpClient = httpClient;
         this.csrfFilter = csrfFilter;
         this.addressResolver = addressResolver;
+        this.nodeRoleCheck = nodeRoleCheck;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: JwtTestController registered at " + PATH);
     }
@@ -225,6 +252,7 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepDiscovery() throws Exception {
+        checkOutboundAllowed();
         final var rootUrl = issuerUrlProvider.getIssuerUrl();
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Issuer URL is not HTTPS — OIDC endpoints won't be reachable");
@@ -243,6 +271,7 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepJwks(final HttpServletRequest request) throws Exception {
+        checkOutboundAllowed();
         final var rootUrl = issuerUrlProvider.getIssuerUrl();
         if (!OidcUrlUtils.isHttpsUrl(rootUrl)) {
             throw new TestStepException("Issuer URL is not HTTPS — OIDC endpoints won't be reachable");
@@ -281,6 +310,7 @@ public class JwtTestController extends BaseController {
     }
 
     private String stepExchange(final HttpServletRequest request) throws Exception {
+        checkOutboundAllowed();
         var serviceUrl = request.getParameter("serviceUrl");
         final var audience = request.getParameter("audience");
         if (serviceUrl == null || serviceUrl.isBlank()) {
@@ -386,6 +416,27 @@ public class JwtTestController extends BaseController {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * Message shown when the current node cannot make outbound connections. TeamCity secondary
+     * nodes install a security manager that blocks outbound sockets, so the network test steps
+     * only work on the main node.
+     */
+    static final String SECONDARY_NODE_MESSAGE =
+            "This TeamCity node cannot make the outbound connections required for Test Connection "
+                    + "— it is a secondary node, which blocks them. Run Test Connection from the main node.";
+
+    /**
+     * Fails fast if the current node cannot open outbound connections. Called at the start of every
+     * step that reaches out over the network ({@link #stepDiscovery}, {@link #stepJwks},
+     * {@link #stepExchange}) so the user gets an actionable message instead of the generic internal
+     * error that a {@link SecurityException} deep in the HTTP client would otherwise produce.
+     */
+    private void checkOutboundAllowed() throws TestStepException {
+        if (!nodeRoleCheck.isMainNode()) {
+            throw new TestStepException(SECONDARY_NODE_MESSAGE);
+        }
+    }
+
     private HttpResponse<String> httpGet(final String url) throws Exception {
         final var req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -394,6 +445,11 @@ public class JwtTestController extends BaseController {
                 .build();
         try {
             return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        } catch (final SecurityException e) {
+            // A secondary node's SecurityManager blocks the outbound connect (typically at DNS
+            // resolution). checkOutboundAllowed() should catch this earlier, but guard here too so
+            // a node restriction never surfaces as the opaque "internal error" message.
+            throw new TestStepException(SECONDARY_NODE_MESSAGE);
         } catch (final IOException e) {
             throw new TestStepException("Could not reach " + url + " — "
                     + e.getClass().getSimpleName() + ": " + e.getMessage());

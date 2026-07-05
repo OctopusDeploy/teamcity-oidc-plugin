@@ -350,6 +350,70 @@ public class JwtTestControllerTest {
                 .isEqualTo("https://tc.example.com/.well-known/jwks.json");
     }
 
+    // ---- secondary-node handling ----
+
+    // A secondary TeamCity node blocks outbound connections (via SecondaryNodeSecurityManager),
+    // so the outbound test steps must fail fast with a clear message rather than an opaque error.
+    private JwtTestController secondaryNodeController() {
+        return new JwtTestController(controllerManager, keyManager, buildServer,
+                providerFor("https://tc.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER,
+                /* isMainNode= */ () -> false);
+    }
+
+    @Test
+    void discoveryStepFailsFastOnSecondaryNode() throws Exception {
+        controller = secondaryNodeController();
+
+        final var result = callStep(Map.of("step", "discovery"));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void jwksStepFailsFastOnSecondaryNode() throws Exception {
+        controller = secondaryNodeController();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session); // local signing works on any node
+
+        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void exchangeStepFailsFastOnSecondaryNode() throws Exception {
+        controller = secondaryNodeController();
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+
+        final var result = callStep(Map.of(
+            "step", "exchange", "tokenRef", tokenRef,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ), session);
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void discoveryStepReportsNodeRestrictionInsteadOfInternalErrorWhenSecurityExceptionThrown() throws Exception {
+        // Defensive net: even if the node check says main, a SecurityException from the
+        // security manager must produce a clear message, not the generic "internal error".
+        doThrow(new SecurityException("Connection to \"tc.example.com\" is prohibited by TeamCity node restrictions"))
+            .when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of("step", "discovery"));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+        assertThat(result.getAsString("message")).doesNotContain("internal error");
+    }
+
     // ---- step=jwks ----
 
     @Test
