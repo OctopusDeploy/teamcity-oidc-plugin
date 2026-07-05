@@ -51,11 +51,7 @@ public class JwtTestController extends BaseController {
         InetAddress[] resolve(String host) throws UnknownHostException;
     }
 
-    /**
-     * Reports whether the current TeamCity node is the main node. Only the main node may open
-     * outbound connections — secondary nodes install a {@code SecondaryNodeSecurityManager} that
-     * blocks them. Injectable so tests can simulate a secondary node.
-     */
+    /** True if the current node may open outbound connections (i.e. is the main node); injectable so tests can simulate a secondary node. */
     @FunctionalInterface
     interface NodeRoleCheck {
         boolean isMainNode();
@@ -416,21 +412,12 @@ public class JwtTestController extends BaseController {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    /**
-     * Message shown when the current node cannot make outbound connections. TeamCity secondary
-     * nodes install a security manager that blocks outbound sockets, so the network test steps
-     * only work on the main node.
-     */
     static final String SECONDARY_NODE_MESSAGE =
             "This TeamCity node cannot make the outbound connections required for Test Connection "
                     + "— it is a secondary node, which blocks them. Run Test Connection from the main node.";
 
-    /**
-     * Fails fast if the current node cannot open outbound connections. Called at the start of every
-     * step that reaches out over the network ({@link #stepDiscovery}, {@link #stepJwks},
-     * {@link #stepExchange}) so the user gets an actionable message instead of the generic internal
-     * error that a {@link SecurityException} deep in the HTTP client would otherwise produce.
-     */
+    // Secondary nodes block outbound connections, so fail the network steps fast with an
+    // actionable message rather than the generic internal error a SecurityException would produce.
     private void checkOutboundAllowed() throws TestStepException {
         if (!nodeRoleCheck.isMainNode()) {
             throw new TestStepException(SECONDARY_NODE_MESSAGE);
@@ -446,9 +433,7 @@ public class JwtTestController extends BaseController {
         try {
             return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         } catch (final SecurityException e) {
-            // A secondary node's SecurityManager blocks the outbound connect (typically at DNS
-            // resolution). checkOutboundAllowed() should catch this earlier, but guard here too so
-            // a node restriction never surfaces as the opaque "internal error" message.
+            // Defensive net for a secondary-node restriction that slips past checkOutboundAllowed().
             throw new TestStepException(SECONDARY_NODE_MESSAGE);
         } catch (final IOException e) {
             throw new TestStepException("Could not reach " + url + " — "

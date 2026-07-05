@@ -352,8 +352,6 @@ public class JwtTestControllerTest {
 
     // ---- secondary-node handling ----
 
-    // A secondary TeamCity node blocks outbound connections (via SecondaryNodeSecurityManager),
-    // so the outbound test steps must fail fast with a clear message rather than an opaque error.
     private JwtTestController secondaryNodeController() {
         return new JwtTestController(controllerManager, keyManager, buildServer,
                 providerFor("https://tc.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER,
@@ -402,8 +400,6 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepReportsNodeRestrictionInsteadOfInternalErrorWhenSecurityExceptionThrown() throws Exception {
-        // Defensive net: even if the node check says main, a SecurityException from the
-        // security manager must produce a clear message, not the generic "internal error".
         doThrow(new SecurityException("Connection to \"tc.example.com\" is prohibited by TeamCity node restrictions"))
             .when(httpClient).send(any(), any());
 
