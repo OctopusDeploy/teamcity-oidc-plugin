@@ -6,6 +6,8 @@ import jetbrains.buildServer.serverSide.ProjectManager;
 import jetbrains.buildServer.serverSide.SBuildType;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import jetbrains.buildServer.serverSide.TeamCityNode;
+import jetbrains.buildServer.serverSide.TeamCityNodes;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.CSRFFilter;
@@ -47,6 +49,7 @@ public class JwtTestControllerTest {
     @Mock ServerPaths serverPaths;
     @Mock CSRFFilter csrfFilter;
     @Mock HttpClient httpClient;
+    @Mock TeamCityNodes nodes;
 
     @TempDir File tempDir;
 
@@ -74,7 +77,7 @@ public class JwtTestControllerTest {
         keyManager = TestJwtKeyManagerFactory.create(serverPaths);
         // Default: CSRF check passes. lenient() because some tests use GET (CSRF never reached).
         lenient().when(csrfFilter.validateRequest(any(), any())).thenReturn(true);
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
     }
 
     // ---- lifecycle ----
@@ -273,7 +276,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepFailsWhenRootUrlIsNotHttps() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         final var result = callStep(Map.of(
             "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10", "audience", "aud"
         ));
@@ -286,7 +289,7 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepFailsWhenRootUrlIsNotHttps() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         final var result = callStep(Map.of("step", "discovery"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("not HTTPS");
@@ -323,7 +326,7 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryUrlStripsQueryStringFromRootUrl() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com?v=1"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com?v=1"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         doReturn(mockResponse(200, "{}")).when(httpClient).send(any(), any());
 
         callStep(Map.of("step", "discovery"));
@@ -336,7 +339,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwksUrlStripsQueryStringFromRootUrl() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com?v=1"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com?v=1"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         final var session = createMockSession();
         final var tokenRef = issueTokenRef(session);
         // Empty JWKS: parse succeeds, key lookup fails after send() — we only care the URL was right.
@@ -351,40 +354,37 @@ public class JwtTestControllerTest {
     }
 
     // ---- secondary-node handling ----
+    //
+    // A secondary node's SecurityManager blocks outbound connections, throwing a SecurityException.
+    // Each outbound site must turn that into a clear message rather than the generic internal error.
 
-    private JwtTestController secondaryNodeController() {
-        return new JwtTestController(controllerManager, keyManager, buildServer,
-                providerFor("https://tc.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER,
-                /* isMainNode= */ () -> false);
+    private static SecurityException nodeRestriction() {
+        return new SecurityException("Connection is prohibited by TeamCity node restrictions");
+    }
+
+    private void currentNodeIsSecondary(final boolean secondary) {
+        final var node = mock(TeamCityNode.class);
+        when(node.isSecondaryNode()).thenReturn(secondary);
+        when(nodes.getCurrentNode()).thenReturn(node);
     }
 
     @Test
-    void discoveryStepFailsFastOnSecondaryNode() throws Exception {
-        controller = secondaryNodeController();
+    void discoveryStepReportsOutboundBlockedInsteadOfInternalError() throws Exception {
+        currentNodeIsSecondary(true);
+        doThrow(nodeRestriction()).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of("step", "discovery"));
 
         assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node");
-        verify(httpClient, never()).send(any(), any());
+        assertThat(result.getAsString("message")).contains("main node").doesNotContain("internal error");
     }
 
     @Test
-    void jwksStepFailsFastOnSecondaryNode() throws Exception {
-        controller = secondaryNodeController();
-        final var session = createMockSession();
-        final var tokenRef = issueTokenRef(session); // local signing works on any node
-
-        final var result = callStep(Map.of("step", "jwks", "tokenRef", tokenRef), session);
-
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node");
-        verify(httpClient, never()).send(any(), any());
-    }
-
-    @Test
-    void exchangeStepFailsFastOnSecondaryNode() throws Exception {
-        controller = secondaryNodeController();
+    void exchangeStepReportsOutboundBlockedAtDnsResolution() throws Exception {
+        currentNodeIsSecondary(true);
+        final JwtTestController.AddressResolver blocked = host -> { throw nodeRestriction(); };
+        controller = new JwtTestController(controllerManager, keyManager, buildServer,
+                providerFor("https://tc.example.com"), httpClient, csrfFilter, blocked, nodes);
         final var session = createMockSession();
         final var tokenRef = issueTokenRef(session);
 
@@ -399,22 +399,38 @@ public class JwtTestControllerTest {
     }
 
     @Test
-    void discoveryStepReportsNodeRestrictionInsteadOfInternalErrorWhenSecurityExceptionThrown() throws Exception {
-        doThrow(new SecurityException("Connection to \"tc.example.com\" is prohibited by TeamCity node restrictions"))
-            .when(httpClient).send(any(), any());
+    void exchangeStepReportsOutboundBlockedAtTokenEndpoint() throws Exception {
+        currentNodeIsSecondary(true);
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        doReturn(discovery).doThrow(nodeRestriction()).when(httpClient).send(any(), any());
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+
+        final var result = callStep(Map.of(
+            "step", "exchange", "tokenRef", tokenRef,
+            "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ), session);
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+    }
+
+    @Test
+    void outboundBlockedMessageOmitsSecondaryWhenNodeIsMain() throws Exception {
+        currentNodeIsSecondary(false);
+        doThrow(nodeRestriction()).when(httpClient).send(any(), any());
 
         final var result = callStep(Map.of("step", "discovery"));
 
         assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node");
-        assertThat(result.getAsString("message")).doesNotContain("internal error");
+        assertThat(result.getAsString("message")).contains("main node").doesNotContain("secondary node");
     }
 
     // ---- step=jwks ----
 
     @Test
     void jwksStepFailsWhenRootUrlIsNotHttps() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("http://teamcity.example.com"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         final var result = callStep(Map.of("step", "jwks"));
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("not HTTPS");
@@ -585,7 +601,7 @@ public class JwtTestControllerTest {
 
     @Test
     void jwtStepNormalizesIssuerWhenRootUrlHasTrailingSlash() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com/"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com/"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         mockBuildType("MyBuildType");
         final var session = createMockSession();
         final var result = callStep(Map.of(
@@ -600,7 +616,7 @@ public class JwtTestControllerTest {
 
     @Test
     void discoveryStepSucceedsWhenRootUrlHasTrailingSlashButIssuerIsNormalized() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com/"), httpClient, csrfFilter, PUBLIC_RESOLVER);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com/"), httpClient, csrfFilter, PUBLIC_RESOLVER, nodes);
         doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}"))
             .when(httpClient).send(any(), any());
 
@@ -677,7 +693,7 @@ public class JwtTestControllerTest {
     @Test
     void exchangeStepBlocksLoopbackAddress() throws Exception {
         // Private address check happens before session lookup
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, nodes);
         final var result = callStep(Map.of(
             "step", "exchange",
             "serviceUrl", "https://127.0.0.1", "audience", "aud"
@@ -688,7 +704,7 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepBlocksRfc1918Address() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, nodes);
         final var result = callStep(Map.of(
             "step", "exchange",
             "serviceUrl", "https://192.168.1.100", "audience", "aud"
@@ -699,7 +715,7 @@ public class JwtTestControllerTest {
 
     @Test
     void exchangeStepBlocksLinkLocalAddress() throws Exception {
-        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
+        controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, nodes);
         final var result = callStep(Map.of(
             "step", "exchange",
             "serviceUrl", "https://169.254.169.254", "audience", "aud"
@@ -712,7 +728,7 @@ public class JwtTestControllerTest {
     void exchangeStepAllowsPrivateAddressWhenSystemPropertySet() throws Exception {
         System.setProperty(JwtTestController.ALLOW_PRIVATE_EXCHANGE_PROPERTY, "true");
         try {
-            controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter);
+            controller = new JwtTestController(controllerManager, keyManager, buildServer, providerFor("https://tc.example.com"), httpClient, csrfFilter, nodes);
             // Private-address check is bypassed; HTTPS is still required.
             // Call fails later because no tokenRef was supplied — not due to the address check.
             final var result = callStep(Map.of(
