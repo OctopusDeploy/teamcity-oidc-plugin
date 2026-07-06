@@ -12,7 +12,7 @@ import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.SBuildType;
-import jetbrains.buildServer.serverSide.TeamCityNodes;
+import jetbrains.buildServer.serverSide.impl.SecondaryNodeSecurityManager;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.CSRFFilter;
@@ -57,18 +57,25 @@ public class JwtTestController extends BaseController {
     private final HttpClient httpClient;
     private final CSRFFilter csrfFilter;
     private final AddressResolver addressResolver;
-    private final TeamCityNodes nodes;
 
     @Autowired
     public JwtTestController(@NotNull final WebControllerManager controllerManager,
                              @NotNull final JwtKeyManager keyManager,
                              @NotNull final SBuildServer buildServer,
                              @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
-                             @NotNull final ExtensionHolder extensionHolder,
-                             @NotNull final TeamCityNodes nodes) {
+                             @NotNull final ExtensionHolder extensionHolder) {
         this(controllerManager, keyManager, buildServer, issuerUrlProvider,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
-                new CSRFFilter(extensionHolder), InetAddress::getAllByName, nodes);
+                new CSRFFilter(extensionHolder), InetAddress::getAllByName);
+    }
+
+    JwtTestController(@NotNull final WebControllerManager controllerManager,
+                      @NotNull final JwtKeyManager keyManager,
+                      @NotNull final SBuildServer buildServer,
+                      @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
+                      @NotNull final HttpClient httpClient,
+                      @NotNull final CSRFFilter csrfFilter) {
+        this(controllerManager, keyManager, buildServer, issuerUrlProvider, httpClient, csrfFilter, InetAddress::getAllByName);
     }
 
     JwtTestController(@NotNull final WebControllerManager controllerManager,
@@ -77,25 +84,13 @@ public class JwtTestController extends BaseController {
                       @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter,
-                      @NotNull final TeamCityNodes nodes) {
-        this(controllerManager, keyManager, buildServer, issuerUrlProvider, httpClient, csrfFilter, InetAddress::getAllByName, nodes);
-    }
-
-    JwtTestController(@NotNull final WebControllerManager controllerManager,
-                      @NotNull final JwtKeyManager keyManager,
-                      @NotNull final SBuildServer buildServer,
-                      @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
-                      @NotNull final HttpClient httpClient,
-                      @NotNull final CSRFFilter csrfFilter,
-                      @NotNull final AddressResolver addressResolver,
-                      @NotNull final TeamCityNodes nodes) {
+                      @NotNull final AddressResolver addressResolver) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
         this.issuerUrlProvider = issuerUrlProvider;
         this.httpClient = httpClient;
         this.csrfFilter = csrfFilter;
         this.addressResolver = addressResolver;
-        this.nodes = nodes;
         controllerManager.registerController(PATH, this);
         LOG.info("JWT plugin: JwtTestController registered at " + PATH);
     }
@@ -332,12 +327,8 @@ public class JwtTestController extends BaseController {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
-        final HttpResponse<String> exchangeResp;
-        try {
-            exchangeResp = httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString());
-        } catch (final SecurityException e) {
-            throw outboundBlocked();
-        }
+        final var exchangeResp = SecondaryNodeSecurityManager.runSafeNetworkOperation(
+                () -> httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString()));
         final var status = exchangeResp.statusCode();
         if (status < 200 || status >= 300) {
             final var bodySnippet = exchangeResp.body().length() > 200
@@ -370,9 +361,7 @@ public class JwtTestController extends BaseController {
         final var host = URI.create(url).getHost();
         final InetAddress[] addresses;
         try {
-            addresses = addressResolver.resolve(host);
-        } catch (final SecurityException e) {
-            throw outboundBlocked();
+            addresses = SecondaryNodeSecurityManager.runSafeNetworkOperation(() -> addressResolver.resolve(host));
         } catch (final UnknownHostException e) {
             throw new TestStepException("Could not resolve host: " + host);
         }
@@ -399,13 +388,6 @@ public class JwtTestController extends BaseController {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    // A secondary node's SecurityManager blocks outbound connections, surfacing as a SecurityException
-    private TestStepException outboundBlocked() {
-        final var where = nodes.getCurrentNode().isSecondaryNode() ? "this secondary node" : "this node";
-        return new TestStepException("Outbound connections are blocked on " + where
-                + ". Test Connection must run on the TeamCity main node.");
-    }
-
     private HttpResponse<String> httpGet(final String url) throws Exception {
         final var req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -413,9 +395,10 @@ public class JwtTestController extends BaseController {
                 .GET()
                 .build();
         try {
-            return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-        } catch (final SecurityException e) {
-            throw outboundBlocked();
+            // runSafeNetworkOperation lifts the outbound-connection block a secondary node's
+            // SecurityManager imposes; on the main node (and in tests) it just runs the operation.
+            return SecondaryNodeSecurityManager.runSafeNetworkOperation(
+                    () -> httpClient.send(req, HttpResponse.BodyHandlers.ofString()));
         } catch (final IOException e) {
             throw new TestStepException("Could not reach " + url + " — "
                     + e.getClass().getSimpleName() + ": " + e.getMessage());
