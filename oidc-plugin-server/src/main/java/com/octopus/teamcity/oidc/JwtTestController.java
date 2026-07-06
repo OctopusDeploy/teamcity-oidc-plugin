@@ -400,7 +400,6 @@ public class JwtTestController extends BaseController {
     }
 
     // A secondary node's SecurityManager blocks outbound connections, surfacing as a SecurityException
-    // (typically at DNS resolution). Turn it into an actionable message rather than the generic error.
     private TestStepException outboundBlocked() {
         final var where = nodes.getCurrentNode().isSecondaryNode() ? "this secondary node" : "this node";
         return new TestStepException("Outbound connections are blocked on " + where

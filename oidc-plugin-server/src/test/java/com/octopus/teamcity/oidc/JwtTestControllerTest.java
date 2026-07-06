@@ -135,6 +135,73 @@ public class JwtTestControllerTest {
         verify(resp, never()).getWriter();
     }
 
+    // ---- secondary-node handling ----
+
+    private void currentNodeIsSecondary(final boolean secondary) {
+        final var node = mock(TeamCityNode.class);
+        when(node.isSecondaryNode()).thenReturn(secondary);
+        when(nodes.getCurrentNode()).thenReturn(node);
+    }
+
+    @Test
+    void discoveryStepReportsOutboundBlockedInsteadOfInternalError() throws Exception {
+        currentNodeIsSecondary(true);
+        doThrow(new SecurityException("Connection is prohibited by TeamCity node restrictions")).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of("step", "discovery"));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node").doesNotContain("internal error");
+    }
+
+    @Test
+    void exchangeStepReportsOutboundBlockedAtDnsResolution() throws Exception {
+        currentNodeIsSecondary(true);
+        final JwtTestController.AddressResolver blocked = host -> {
+            throw new SecurityException("Connection is prohibited by TeamCity node restrictions"); };
+        controller = new JwtTestController(controllerManager, keyManager, buildServer,
+                providerFor("https://tc.example.com"), httpClient, csrfFilter, blocked, nodes);
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+
+        final var result = callStep(Map.of(
+                "step", "exchange", "tokenRef", tokenRef,
+                "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ), session);
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
+    void exchangeStepReportsOutboundBlockedAtTokenEndpoint() throws Exception {
+        currentNodeIsSecondary(true);
+        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+        doReturn(discovery).doThrow(new SecurityException("Connection is prohibited by TeamCity node restrictions")).when(httpClient).send(any(), any());
+        final var session = createMockSession();
+        final var tokenRef = issueTokenRef(session);
+
+        final var result = callStep(Map.of(
+                "step", "exchange", "tokenRef", tokenRef,
+                "serviceUrl", "https://svc.example.com", "audience", "aud"
+        ), session);
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node");
+    }
+
+    @Test
+    void outboundBlockedMessageOmitsSecondaryWhenNodeIsMain() throws Exception {
+        currentNodeIsSecondary(false);
+        doThrow(new SecurityException("Connection is prohibited by TeamCity node restrictions")).when(httpClient).send(any(), any());
+
+        final var result = callStep(Map.of("step", "discovery"));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("main node").doesNotContain("secondary node");
+    }
+
     // ---- step=jwt ----
 
     private void mockBuildType(final String externalId) {
@@ -351,79 +418,6 @@ public class JwtTestControllerTest {
         verify(httpClient).send(captor.capture(), any());
         assertThat(captor.getValue().uri().toString())
                 .isEqualTo("https://tc.example.com/.well-known/jwks.json");
-    }
-
-    // ---- secondary-node handling ----
-    //
-    // A secondary node's SecurityManager blocks outbound connections, throwing a SecurityException.
-    // Each outbound site must turn that into a clear message rather than the generic internal error.
-
-    private static SecurityException nodeRestriction() {
-        return new SecurityException("Connection is prohibited by TeamCity node restrictions");
-    }
-
-    private void currentNodeIsSecondary(final boolean secondary) {
-        final var node = mock(TeamCityNode.class);
-        when(node.isSecondaryNode()).thenReturn(secondary);
-        when(nodes.getCurrentNode()).thenReturn(node);
-    }
-
-    @Test
-    void discoveryStepReportsOutboundBlockedInsteadOfInternalError() throws Exception {
-        currentNodeIsSecondary(true);
-        doThrow(nodeRestriction()).when(httpClient).send(any(), any());
-
-        final var result = callStep(Map.of("step", "discovery"));
-
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node").doesNotContain("internal error");
-    }
-
-    @Test
-    void exchangeStepReportsOutboundBlockedAtDnsResolution() throws Exception {
-        currentNodeIsSecondary(true);
-        final JwtTestController.AddressResolver blocked = host -> { throw nodeRestriction(); };
-        controller = new JwtTestController(controllerManager, keyManager, buildServer,
-                providerFor("https://tc.example.com"), httpClient, csrfFilter, blocked, nodes);
-        final var session = createMockSession();
-        final var tokenRef = issueTokenRef(session);
-
-        final var result = callStep(Map.of(
-            "step", "exchange", "tokenRef", tokenRef,
-            "serviceUrl", "https://svc.example.com", "audience", "aud"
-        ), session);
-
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node");
-        verify(httpClient, never()).send(any(), any());
-    }
-
-    @Test
-    void exchangeStepReportsOutboundBlockedAtTokenEndpoint() throws Exception {
-        currentNodeIsSecondary(true);
-        final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
-        doReturn(discovery).doThrow(nodeRestriction()).when(httpClient).send(any(), any());
-        final var session = createMockSession();
-        final var tokenRef = issueTokenRef(session);
-
-        final var result = callStep(Map.of(
-            "step", "exchange", "tokenRef", tokenRef,
-            "serviceUrl", "https://svc.example.com", "audience", "aud"
-        ), session);
-
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node");
-    }
-
-    @Test
-    void outboundBlockedMessageOmitsSecondaryWhenNodeIsMain() throws Exception {
-        currentNodeIsSecondary(false);
-        doThrow(nodeRestriction()).when(httpClient).send(any(), any());
-
-        final var result = callStep(Map.of("step", "discovery"));
-
-        assertThat((Boolean) result.get("ok")).isFalse();
-        assertThat(result.getAsString("message")).contains("main node").doesNotContain("secondary node");
     }
 
     // ---- step=jwks ----
