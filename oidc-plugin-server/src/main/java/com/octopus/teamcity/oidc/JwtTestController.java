@@ -12,6 +12,7 @@ import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.SBuildType;
+import jetbrains.buildServer.serverSide.impl.SecondaryNodeSecurityManager;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.CSRFFilter;
@@ -326,7 +327,8 @@ public class JwtTestController extends BaseController {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(formBody))
                 .build();
-        final var exchangeResp = httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString());
+        final var exchangeResp = SecondaryNodeSecurityManager.runSafeNetworkOperation(
+                () -> httpClient.send(exchangeReq, HttpResponse.BodyHandlers.ofString()));
         final var status = exchangeResp.statusCode();
         if (status < 200 || status >= 300) {
             final var bodySnippet = exchangeResp.body().length() > 200
@@ -359,7 +361,7 @@ public class JwtTestController extends BaseController {
         final var host = URI.create(url).getHost();
         final InetAddress[] addresses;
         try {
-            addresses = addressResolver.resolve(host);
+            addresses = SecondaryNodeSecurityManager.runSafeNetworkOperation(() -> addressResolver.resolve(host));
         } catch (final UnknownHostException e) {
             throw new TestStepException("Could not resolve host: " + host);
         }
@@ -393,7 +395,10 @@ public class JwtTestController extends BaseController {
                 .GET()
                 .build();
         try {
-            return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            // runSafeNetworkOperation lifts the outbound-connection block a secondary node's
+            // SecurityManager imposes; on the main node (and in tests) it just runs the operation.
+            return SecondaryNodeSecurityManager.runSafeNetworkOperation(
+                    () -> httpClient.send(req, HttpResponse.BodyHandlers.ofString()));
         } catch (final IOException e) {
             throw new TestStepException("Could not reach " + url + " — "
                     + e.getClass().getSimpleName() + ": " + e.getMessage());

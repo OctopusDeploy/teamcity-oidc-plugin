@@ -6,7 +6,9 @@ import jetbrains.buildServer.serverSide.ProjectManager;
 import jetbrains.buildServer.serverSide.SBuildType;
 import jetbrains.buildServer.serverSide.ServerPaths;
 import jetbrains.buildServer.serverSide.SBuildServer;
+import jetbrains.buildServer.serverSide.impl.SecondaryNodeSecurityManager;
 import jetbrains.buildServer.serverSide.auth.Permission;
+import jetbrains.buildServer.util.FuncThrow;
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.web.CSRFFilter;
 import jetbrains.buildServer.web.openapi.WebControllerManager;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.servlet.http.HttpServletRequest;
@@ -130,6 +133,52 @@ public class JwtTestControllerTest {
         verify(resp, never()).setStatus(anyInt());
         verify(resp, never()).setContentType(anyString());
         verify(resp, never()).getWriter();
+    }
+
+    // ---- secondary-node outbound handling ----
+    //
+    // Outbound calls run inside SecondaryNodeSecurityManager.runSafeNetworkOperation so they work on
+    // a secondary node, whose SecurityManager would otherwise block them. With no security manager
+    // installed the wrapper is a transparent pass-through, so these tests verify each outbound site
+    // routes through it — the actual restriction lift is only observable in a real HA cluster.
+
+    private MockedStatic<SecondaryNodeSecurityManager> stubSafeNetwork() {
+        final var sm = mockStatic(SecondaryNodeSecurityManager.class);
+        sm.when(() -> SecondaryNodeSecurityManager.runSafeNetworkOperation(any(FuncThrow.class)))
+                .thenAnswer(i -> ((FuncThrow<?, ?>) i.getArgument(0)).apply());
+        return sm;
+    }
+
+    @Test
+    void discoveryRunsHttpCallViaSafeNetworkOperation() throws Exception {
+        try (final var sm = stubSafeNetwork()) {
+            doReturn(mockResponse(200, "{\"issuer\":\"https://tc.example.com\"}")).when(httpClient).send(any(), any());
+
+            final var result = callStep(Map.of("step", "discovery"));
+
+            assertThat((Boolean) result.get("ok")).isTrue();
+            sm.verify(() -> SecondaryNodeSecurityManager.runSafeNetworkOperation(any(FuncThrow.class)));
+        }
+    }
+
+    @Test
+    void exchangeRunsEveryOutboundCallViaSafeNetworkOperation() throws Exception {
+        try (final var sm = stubSafeNetwork()) {
+            final var session = createMockSession();
+            final var tokenRef = issueTokenRef(session);
+            final var discovery = mockResponse(200, "{\"token_endpoint\":\"https://svc.example.com/token\"}");
+            final var exchange = mockResponse(200, "{\"access_token\":\"ok\",\"token_type\":\"Bearer\"}");
+            doReturn(discovery).doReturn(exchange).when(httpClient).send(any(), any());
+
+            final var result = callStep(Map.of(
+                    "step", "exchange", "tokenRef", tokenRef,
+                    "serviceUrl", "https://svc.example.com", "audience", "aud"
+            ), session);
+
+            assertThat((Boolean) result.get("ok")).isTrue();
+            // DNS resolution, service discovery GET, and the token-exchange POST.
+            sm.verify(() -> SecondaryNodeSecurityManager.runSafeNetworkOperation(any(FuncThrow.class)), times(3));
+        }
     }
 
     // ---- step=jwt ----
