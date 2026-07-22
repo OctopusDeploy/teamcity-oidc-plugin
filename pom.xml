@@ -14,7 +14,7 @@
     </scm>
     <properties>
         <revision>1.0-SNAPSHOT</revision>
-        <teamcity-version>2026.1.3</teamcity-version>
+        <teamcity-version>2026.2-dsl7</teamcity-version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
