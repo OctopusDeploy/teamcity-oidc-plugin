@@ -349,4 +349,34 @@ public class JwtBuildFeatureTest {
         assertThat(feature.describeParameters(Map.of()))
                 .contains("var: %jwt.token%");
     }
+
+    @Test
+    public void availableConnectionsForTemplateResolvesViaTemplateProject() {
+        final var connection = new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus prod",
+                new IssuanceSettings("api://audience", 10, "RS256", Set.of()), "jwt.token");
+        final var template = mock(jetbrains.buildServer.serverSide.BuildTypeTemplate.class);
+        when(template.getProject()).thenReturn(project);
+        when(projectManager.findBuildTypeTemplateByExternalId("MyTemplate")).thenReturn(template);
+        when(oidcConnectionsManager.listAvailable(project)).thenReturn(List.of(connection));
+
+        assertThat(JwtBuildFeature.availableConnectionsFor("template:MyTemplate"))
+                .containsExactly(connection);
+    }
+
+    @Test
+    public void sampleClaimsForTemplateExposesProjectButNoBuildValues() {
+        final var template = mock(jetbrains.buildServer.serverSide.BuildTypeTemplate.class);
+        when(template.getProject()).thenReturn(project);
+        when(project.getProjectId()).thenReturn("project_internal");
+        when(project.getExternalId()).thenReturn("ProjectExternal");
+        when(projectManager.findBuildTypeTemplateByExternalId("MyTemplate")).thenReturn(template);
+
+        final var samples = JwtBuildFeature.sampleClaimsFor("template:MyTemplate");
+
+        assertThat(samples.projectInternalId()).isEqualTo("project_internal");
+        assertThat(samples.projectExternalId()).isEqualTo("ProjectExternal");
+        assertThat(samples.branch()).isEmpty();
+        assertThat(samples.triggerType()).isEmpty();
+        assertThat(samples.buildTypeInternalId()).isEmpty();
+    }
 }

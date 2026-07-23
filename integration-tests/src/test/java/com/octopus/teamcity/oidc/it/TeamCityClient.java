@@ -242,6 +242,13 @@ final class TeamCityClient {
                 """.formatted(buildTypeId, name, projectId));
     }
 
+    /** Creates a build configuration template in the given project. */
+    void createBuildTypeTemplate(final String templateId, final String name, final String projectId) throws Exception {
+        post("/httpAuth/app/rest/projects/" + projectId + "/templates", """
+                {"id":"%s","name":"%s","project":{"id":"%s"}}
+                """.formatted(templateId, name, projectId));
+    }
+
     /**
      * Creates an OIDC Identity Token connection as a projectFeature on the given parent project.
      *

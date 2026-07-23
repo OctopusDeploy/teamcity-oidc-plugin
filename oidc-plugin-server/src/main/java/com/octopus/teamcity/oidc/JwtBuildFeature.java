@@ -98,6 +98,17 @@ public class JwtBuildFeature extends BuildFeature {
         if (server == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
             return SampleClaims.empty();
         }
+        // On a template, the dialog passes id as "template:<externalId>". Templates apply
+        // to many build configurations, so there is no single build history or build type
+        // id — expose the owning project and leave the build-specific values blank.
+        if (buildTypeIdParam.startsWith("template:")) {
+            final var externalId = buildTypeIdParam.substring("template:".length());
+            final var template = server.getProjectManager().findBuildTypeTemplateByExternalId(externalId);
+            if (template == null) return SampleClaims.empty();
+            final var project = template.getProject();
+            return new SampleClaims("", "", !template.getVcsRoots().isEmpty(),
+                    project.getProjectId(), project.getExternalId(), "");
+        }
         // The build feature edit dialog passes id as "buildType:<externalId>".
         // Strip the prefix when present so findBuildTypeByExternalId resolves it.
         final var externalId = buildTypeIdParam.startsWith("buildType:")
@@ -126,14 +137,30 @@ public class JwtBuildFeature extends BuildFeature {
         if (server == null || manager == null || buildTypeIdParam == null || buildTypeIdParam.isBlank()) {
             return java.util.List.of();
         }
-        // The build feature edit dialog passes id as "buildType:<externalId>".
-        // Strip the prefix when present so findBuildTypeByExternalId resolves it.
+        final var project = resolveEditedProject(server, buildTypeIdParam);
+        if (project == null) return java.util.List.of();
+        return manager.listAvailable(project);
+    }
+
+    /**
+     * Resolves the project owning the build configuration or template currently being
+     * edited. The build feature edit dialog passes id as "buildType:<externalId>" for a
+     * build configuration and "template:<externalId>" for a template.
+     */
+    @Nullable
+    private static SProject resolveEditedProject(@NotNull final SBuildServer server,
+                                                 @NotNull final String buildTypeIdParam) {
+        final var projectManager = server.getProjectManager();
+        if (buildTypeIdParam.startsWith("template:")) {
+            final var externalId = buildTypeIdParam.substring("template:".length());
+            final var template = projectManager.findBuildTypeTemplateByExternalId(externalId);
+            return template == null ? null : template.getProject();
+        }
         final var externalId = buildTypeIdParam.startsWith("buildType:")
                 ? buildTypeIdParam.substring("buildType:".length())
                 : buildTypeIdParam;
-        final var buildType = server.getProjectManager().findBuildTypeByExternalId(externalId);
-        if (buildType == null) return java.util.List.of();
-        return manager.listAvailable(buildType.getProject());
+        final var buildType = projectManager.findBuildTypeByExternalId(externalId);
+        return buildType == null ? null : buildType.getProject();
     }
 
     @NotNull

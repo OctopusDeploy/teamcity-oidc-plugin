@@ -295,8 +295,10 @@
         // last finished build when available, falling back to <name> placeholders
         // so the shape of the composed sub is always visible.
         const previewData = $j('#jwtSubjectPreviewData');
-        const projectId = previewData.attr('data-project-id');
-        const buildTypeId = previewData.attr('data-build-type-id');
+        // On a template there is no concrete project/build type, so fall back to the
+        // <project_id>/<build_type_id> placeholders to keep the composed sub's shape visible.
+        const projectId = previewData.attr('data-project-id') || '<project_id>';
+        const buildTypeId = previewData.attr('data-build-type-id') || '<build_type_id>';
         const sampleBranch = previewData.attr('data-sample-branch') || '<branch>';
         const sampleTriggerType = previewData.attr('data-sample-trigger-type') || '<trigger_type>';
 
