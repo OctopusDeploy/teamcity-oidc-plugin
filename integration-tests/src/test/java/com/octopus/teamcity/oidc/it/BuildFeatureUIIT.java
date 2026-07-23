@@ -14,6 +14,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 
 import java.util.function.Consumer;
 
@@ -45,6 +46,9 @@ public class BuildFeatureUIIT {
 
     static Playwright playwright;
     static Browser browser;
+
+    /** Name of the currently-running test, used to name failure-capture artifacts. */
+    private String currentTestName = "unknown";
 
     @BeforeAll
     static void setUpSuite() throws Exception {
@@ -80,6 +84,11 @@ public class BuildFeatureUIIT {
      * from a known clean state (default algorithm, TTL, empty claims, empty audience).
      */
     @BeforeEach
+    void captureTestName(final TestInfo info) {
+        currentTestName = info.getTestMethod().map(java.lang.reflect.Method::getName).orElse("unknown");
+    }
+
+    @BeforeEach
     void resetFeature() throws Exception {
         tc.delete("/httpAuth/app/rest/buildTypes/" + BUILD_TYPE_ID + "/features/" + featureId);
         featureId = addBuildFeature();
@@ -92,6 +101,8 @@ public class BuildFeatureUIIT {
     @Test
     void allDimensionsUncheckedByDefaultInUi() {
         inFeatureEditor(page -> {
+            // TEMP(revert): deliberate failure to confirm screenshot publishing in CI.
+            assertThat(false).as("TEMP forced failure to verify CI screenshot publishing").isTrue();
             final var checkboxes = page.locator(".jwt-subject-dimension-cb").all();
             assertThat(checkboxes).as("at least one optional-dimension checkbox should be rendered").isNotEmpty();
             for (final var cb : checkboxes) {
@@ -397,8 +408,15 @@ public class BuildFeatureUIIT {
     private void inFeatureEditor(final Consumer<Page> action) {
         try (final var context = newLoggedInContext()) {
             final var page = context.newPage();
-            navigateToFeatureEditor(page);
-            action.accept(page);
+            try {
+                navigateToFeatureEditor(page);
+                action.accept(page);
+            } catch (final RuntimeException | AssertionError e) {
+                // Capture a screenshot + page HTML before the context closes, so UI failures
+                // (e.g. a save rejected by validation, leaving the modal open) are diagnosable.
+                captureFailureArtifacts(page);
+                throw e;
+            }
         }
     }
 
@@ -449,24 +467,44 @@ public class BuildFeatureUIIT {
         // inside the dialog confirms the modal has rendered before tests interact with it.
         page.navigate(baseUrl + "/admin/editBuildFeatures.html?id=" + editId);
         page.waitForLoadState();
+        page.locator("text=OIDC Identity Token").first().waitFor();
+        page.locator("td.edit a").first().click();
+        // #subject_dimensions is a hidden input — wait for it to be attached to the DOM
+        // (Playwright's default waitFor requires visible, which a hidden input never becomes).
+        page.locator("#subject_dimensions").waitFor(new Locator.WaitForOptions()
+                .setState(WaitForSelectorState.ATTACHED));
+    }
+
+    /**
+     * On a UI test failure, save a full-page screenshot and the page HTML and publish them as
+     * build artifacts under {@code playwright-failures/} so they can be opened from the failed
+     * build (the PNG renders inline on the Artifacts tab). Best-effort: never let capture
+     * problems mask the original test failure.
+     * <p>
+     * The {@code publishArtifacts} source path is relative to the build checkout directory
+     * ({@code integration-tests/...}), NOT the absolute path inside the docker-compose
+     * container the tests run in — the TeamCity agent doing the publishing only sees the
+     * checkout. {@code integration-tests/target} is shared with the agent (it reads the
+     * failsafe reports from there), so the files are present when artifacts are collected.
+     */
+    private void captureFailureArtifacts(final Page page) {
         try {
-            page.locator("text=OIDC Identity Token").first().waitFor();
-            page.locator("td.edit a").first().click();
-            // #subject_dimensions is a hidden input — wait for it to be attached to the DOM
-            // (Playwright's default waitFor requires visible, which a hidden input never becomes).
-            page.locator("#subject_dimensions").waitFor(new Locator.WaitForOptions()
-                    .setState(WaitForSelectorState.ATTACHED));
-        } catch (final RuntimeException e) {
-            try {
-                page.screenshot(new Page.ScreenshotOptions()
-                        .setPath(java.nio.file.Paths.get("/tmp/uiit-failed-" + System.currentTimeMillis() + ".png"))
-                        .setFullPage(true));
-                java.nio.file.Files.writeString(
-                        java.nio.file.Paths.get("/tmp/uiit-failed-" + System.currentTimeMillis() + ".html"),
-                        page.content());
-                System.err.println("UIIT navigation failed; page URL=" + page.url());
-            } catch (final Exception ignored) {}
-            throw e;
+            final var dir = java.nio.file.Paths.get("target/playwright-failures");
+            java.nio.file.Files.createDirectories(dir);
+            final var base = currentTestName + "-" + System.currentTimeMillis();
+            final var png = dir.resolve(base + ".png");
+            final var html = dir.resolve(base + ".html");
+            page.screenshot(new Page.ScreenshotOptions().setPath(png).setFullPage(true));
+            java.nio.file.Files.writeString(html, page.content());
+            final var checkoutRelative = "integration-tests/target/playwright-failures";
+            System.out.println("##teamcity[publishArtifacts '"
+                    + checkoutRelative + "/" + png.getFileName() + " => playwright-failures']");
+            System.out.println("##teamcity[publishArtifacts '"
+                    + checkoutRelative + "/" + html.getFileName() + " => playwright-failures']");
+            System.err.println("UIIT failure artifacts saved: " + png.toAbsolutePath()
+                    + " and " + html.toAbsolutePath() + " (page URL=" + page.url() + ")");
+        } catch (final Exception ignored) {
+            // Capture is diagnostic only — swallow so the real assertion failure surfaces.
         }
     }
 
