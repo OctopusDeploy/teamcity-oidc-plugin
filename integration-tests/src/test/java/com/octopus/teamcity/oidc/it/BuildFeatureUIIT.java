@@ -354,9 +354,8 @@ public class BuildFeatureUIIT {
 
     @Test
     void templateResolvesConnectionsAndIssuesRepresentativeTestToken() throws Exception {
-        // A connection at _Root is visible to the template's project. Before the fix, the
-        // template editor could not resolve its owning project, so the dropdown showed
-        // "No connections configured" and the Connections link had an empty projectId.
+        // A connection at _Root is visible to the template's project, so the template
+        // editor should list it.
         tc.createOidcConnection("_Root", "Template Test Conn",
                 "api://template-test", 15, "RS256", "");
 
@@ -364,24 +363,22 @@ public class BuildFeatureUIIT {
             final var page = context.newPage();
             navigateToTemplateFeatureEditor(page);
 
-            // Regression: the connection dropdown renders and lists the connection.
+            // The connection dropdown renders and lists the connection.
             PlaywrightAssertions.assertThat(page.locator("#connection_id")).isVisible();
             assertThat(page.locator("#connection_id option").allInnerTexts()
                     .stream().map(String::trim).toList())
                     .as("template editor should list connections from the template's project")
                     .contains("Template Test Conn");
 
-            // Regression: the Connections link carries the template's project external id
-            // rather than an empty projectId.
+            // The Connections link carries the template's project external id.
             assertThat(page.locator("#row_connection_id a").first().getAttribute("href"))
                     .as("Connections link should point at the template's project")
                     .contains("projectId=" + PROJECT_ID);
 
             // Test Connection issues a representative token for the template (sub uses a
-            // <build_type_id> placeholder) rather than failing to resolve a build type.
-            // Issuance is a local signing operation; the discovery/JWKS steps that follow
-            // make outbound HTTPS calls the fake root URL can't satisfy in this harness, so
-            // this only asserts on the issuance row.
+            // <build_type_id> placeholder). Issuance is a local signing operation; the
+            // discovery/JWKS steps that follow make outbound HTTPS calls the fake root URL
+            // can't satisfy in this harness, so this only asserts on the issuance row.
             page.locator("input[value='Test Connection']").click();
             page.locator("#jwtRow0").filter(new Locator.FilterOptions()
                     .setHasText("Representative JWT issued for template")).waitFor();
