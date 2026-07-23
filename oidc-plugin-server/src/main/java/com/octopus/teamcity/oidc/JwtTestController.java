@@ -180,25 +180,14 @@ public class JwtTestController extends BaseController {
         if (buildTypeId == null || buildTypeId.isBlank()) {
             throw new TestStepException("Missing required parameter: buildTypeId");
         }
-        // TC passes the id param as "buildType:<externalId>" — strip the prefix if present
-        final var externalId = buildTypeId.startsWith("buildType:")
-                ? buildTypeId.substring("buildType:".length())
-                : buildTypeId;
-        final var buildType = buildServer.getProjectManager().findBuildTypeByExternalId(externalId);
-        if (buildType == null) {
-            throw new TestStepException("Build type not found: " + buildTypeId);
-        }
-        // Mitigation 4: user must have project-level EDIT_PROJECT for the build type's project,
-        // preventing a server-settings admin from issuing test JWTs for projects they can't edit.
-        if (!user.isPermissionGrantedForProject(buildType.getProjectId(), Permission.EDIT_PROJECT)) {
-            throw new TestStepException("Access denied for project: " + buildType.getProjectId());
-        }
-        final var subject = "project:" + buildType.getProjectId() + ":build_type:" + buildType.getInternalId();
+        // The subject the token is scoped to, plus a label distinguishing a build
+        // configuration's concrete token from a template's representative one.
+        final var resolved = resolveSubject(buildTypeId, user);
 
         final var now = new Date();
         final var claims = new JWTClaimsSet.Builder()
                 .jwtID(UUID.randomUUID().toString())
-                .subject(subject)
+                .subject(resolved.subject())
                 .issuer(rootUrl)
                 .audience(List.of(audience))
                 .issueTime(now)
@@ -221,8 +210,60 @@ public class JwtTestController extends BaseController {
         // on the same node. If a node switch somehow occurred mid-flow, the user would see
         // "No active test token — please click 'Test Connection' again" and could retry.
         request.getSession().setAttribute(SESSION_TOKEN_PREFIX + tokenRef, serialized);
-        final var message = "JWT issued (sub: " + subject + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
+        final var message = resolved.label() + " (sub: " + resolved.subject()
+                + ", alg: " + algorithm + ", ttl: " + ttl + "m)";
         return new String[]{message, tokenRef};
+    }
+
+    /** The subject a test token is scoped to, and the label describing how it was derived. */
+    private record ResolvedSubject(@NotNull String subject, @NotNull String label) {
+    }
+
+    /**
+     * Resolves the {@code sub} claim for a test token from the edit dialog's id parameter. A build
+     * configuration ("buildType:&lt;externalId&gt;", or a bare external id) yields a concrete
+     * subject. A template ("template:&lt;externalId&gt;") has no concrete build type, so the subject
+     * uses a {@code <build_type_id>} placeholder — the token is still signed so the discovery and
+     * JWKS steps can exercise the server's OIDC endpoints.
+     */
+    private ResolvedSubject resolveSubject(@NotNull final String buildTypeId, @NotNull final SUser user)
+            throws TestStepException {
+        final var projectManager = buildServer.getProjectManager();
+        if (buildTypeId.startsWith("template:")) {
+            final var externalId = buildTypeId.substring("template:".length());
+            final var template = projectManager.findBuildTypeTemplateByExternalId(externalId);
+            if (template == null) {
+                throw new TestStepException("Template not found: " + buildTypeId);
+            }
+            final var projectId = template.getProject().getProjectId();
+            requireEditProject(user, projectId);
+            return new ResolvedSubject(
+                    "project:" + projectId + ":build_type:<build_type_id>",
+                    "Representative JWT issued for template");
+        }
+        // TC passes the id param as "buildType:<externalId>" — strip the prefix if present.
+        final var externalId = buildTypeId.startsWith("buildType:")
+                ? buildTypeId.substring("buildType:".length())
+                : buildTypeId;
+        final var buildType = projectManager.findBuildTypeByExternalId(externalId);
+        if (buildType == null) {
+            throw new TestStepException("Build type not found: " + buildTypeId);
+        }
+        requireEditProject(user, buildType.getProjectId());
+        return new ResolvedSubject(
+                "project:" + buildType.getProjectId() + ":build_type:" + buildType.getInternalId(),
+                "JWT issued");
+    }
+
+    /**
+     * Mitigation 4: the user must have project-level EDIT_PROJECT for the token's project,
+     * preventing a server-settings admin from issuing test JWTs for projects they can't edit.
+     */
+    private void requireEditProject(@NotNull final SUser user, @NotNull final String projectId)
+            throws TestStepException {
+        if (!user.isPermissionGrantedForProject(projectId, Permission.EDIT_PROJECT)) {
+            throw new TestStepException("Access denied for project: " + projectId);
+        }
     }
 
     private String stepDiscovery() throws Exception {

@@ -195,6 +195,15 @@ public class JwtTestControllerTest {
         when(projectManager.findBuildTypeByExternalId(externalId)).thenReturn(buildType);
     }
 
+    private void mockTemplate(final String externalId, final String projectId) {
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        when(project.getProjectId()).thenReturn(projectId);
+        final var template = mock(jetbrains.buildServer.serverSide.BuildTypeTemplate.class);
+        when(template.getProject()).thenReturn(project);
+        when(buildServer.getProjectManager()).thenReturn(projectManager);
+        when(projectManager.findBuildTypeTemplateByExternalId(externalId)).thenReturn(template);
+    }
+
     @Test
     void jwtStepRS256ReturnsSignedToken() throws Exception {
         mockBuildType("MyBuildType");
@@ -272,6 +281,37 @@ public class JwtTestControllerTest {
 
         assertThat((Boolean) result.get("ok")).isFalse();
         assertThat(result.getAsString("message")).contains("buildTypeId");
+    }
+
+    @Test
+    void jwtStepForTemplateIssuesRepresentativeToken() throws Exception {
+        mockTemplate("MyTemplate", "project1");
+        final var session = createMockSession();
+        final var result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", "template:MyTemplate"
+        ), session);
+
+        // A template has no concrete build type, so the sub uses a <build_type_id> placeholder.
+        // The token is still signed so the discovery and JWKS steps can run.
+        assertThat((Boolean) result.get("ok")).isTrue();
+        assertThat(result.getAsString("message")).contains("Representative");
+        final var jwt = parseSessionToken(session, result.getAsString("tokenRef"));
+        assertThat(jwt.getJWTClaimsSet().getSubject())
+                .isEqualTo("project:project1:build_type:<build_type_id>");
+    }
+
+    @Test
+    void jwtStepFailsWhenTemplateNotFound() throws Exception {
+        when(buildServer.getProjectManager()).thenReturn(projectManager);
+        when(projectManager.findBuildTypeTemplateByExternalId("Unknown")).thenReturn(null);
+        final var result = callStep(Map.of(
+            "step", "jwt", "algorithm", "RS256", "ttl_minutes", "10",
+            "audience", "aud", "buildTypeId", "template:Unknown"
+        ));
+
+        assertThat((Boolean) result.get("ok")).isFalse();
+        assertThat(result.getAsString("message")).contains("Template not found");
     }
 
     @Test
