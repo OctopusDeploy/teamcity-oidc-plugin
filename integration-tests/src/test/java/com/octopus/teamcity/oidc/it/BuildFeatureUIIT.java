@@ -414,6 +414,26 @@ public class BuildFeatureUIIT {
                 .isNull();
     }
 
+    @Test
+    void clearedTtlOnConnectionFeatureInheritsWithPlaceholderOnReopen() throws Exception {
+        final var connectionId = tc.createOidcConnection("_Root", "UI Test Conn TTL Inherit",
+                "api://ttl-inherit", 60, "RS256", "");
+        // addBuildFeature seeds ttl_minutes=10; pointing the feature at the connection makes 10 an override.
+        tc.setFeatureProperty(BUILD_TYPE_ID, featureId, "connection_id", connectionId);
+
+        // Clear the TTL field and save — the override should be dropped from config.
+        editFeature(page -> page.locator("#ttl_minutes").fill(""));
+        assertThat((String) tc.featureProperties(BUILD_TYPE_ID, featureId).get("ttl_minutes"))
+                .as("cleared TTL must not persist as an override")
+                .isNullOrEmpty();
+
+        // Reopen: the field is empty and shows the connection's TTL as its placeholder (inherit), not "10".
+        inFeatureEditor(page -> {
+            assertThat(page.locator("#ttl_minutes").inputValue()).isEmpty();
+            assertThat(page.locator("#ttl_minutes").getAttribute("placeholder")).isEqualTo("60");
+        });
+    }
+
     // -------------------------------------------------------------------------
     // Playwright helpers
     // -------------------------------------------------------------------------
