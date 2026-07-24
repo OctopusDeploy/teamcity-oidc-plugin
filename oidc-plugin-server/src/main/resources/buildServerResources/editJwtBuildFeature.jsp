@@ -425,12 +425,13 @@
             const subjectCheckboxes = $j('.jwt-subject-dimension-cb');
 
             if (selectedConnection) {
-                cacheInline($ttl, $ttl.val());
                 cacheInline($aud, $aud.val());
                 cacheInline($alg, $alg.val());
                 cacheInline($subj, $subj.val());
 
-                $ttl.val(selectedConnection.ttl).prop('readonly', true).addClass('jwt-locked');
+                // TTL is an override, not connection-authoritative: keep it editable and show
+                // the connection's TTL as the placeholder so a blank field reads as "inherit".
+                $ttl.attr('placeholder', selectedConnection.ttl).prop('readonly', false).removeClass('jwt-locked');
                 $aud.val(selectedConnection.audience).prop('readonly', true).addClass('jwt-locked');
                 $alg.val(selectedConnection.algorithm).prop('disabled', true).addClass('jwt-locked');
                 $subj.val(selectedConnection.subjectDimensions || '');
@@ -440,11 +441,11 @@
                     el.disabled = true;
                 });
             } else {
-                restoreInline($ttl);
                 restoreInline($aud);
                 restoreInline($alg);
                 restoreInline($subj);
-                $ttl.prop('readonly', false).removeClass('jwt-locked');
+                // No connection: the default hint is the inline default of 10.
+                $ttl.attr('placeholder', '10').prop('readonly', false).removeClass('jwt-locked');
                 $aud.prop('readonly', false).removeClass('jwt-locked');
                 $alg.prop('disabled', false).removeClass('jwt-locked');
                 const subjectDimensions = $subj.val().split(',').filter(s => s.length > 0);

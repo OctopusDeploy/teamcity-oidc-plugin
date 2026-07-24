@@ -252,7 +252,11 @@ public class BuildFeatureUIIT {
             assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
             assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
                     .isEqualTo(true);
-            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("30");
+            // TTL stays editable and advertises the connection's TTL as its placeholder
+            // (blank = inherit); it is not overwritten or locked.
+            PlaywrightAssertions.assertThat(page.locator("#ttl_minutes")).isEditable();
+            assertThat(page.locator("#ttl_minutes").getAttribute("readonly")).isNull();
+            assertThat(page.locator("#ttl_minutes").getAttribute("placeholder")).isEqualTo("30");
             assertThat(page.locator("#algorithm").inputValue()).isEqualTo("ES256");
             PlaywrightAssertions.assertThat(page.locator("#algorithm")).isDisabled();
 
@@ -281,6 +285,13 @@ public class BuildFeatureUIIT {
                 .as("connection_id should persist to the saved build feature properties")
                 .isEqualTo(connectionId);
 
+        final var savedProps = tc.featureProperties(BUILD_TYPE_ID, featureId);
+        assertThat(savedProps).doesNotContainKeys("audience", "algorithm");
+        assertThat((String) savedProps.get("subject_dimensions")).isNullOrEmpty();
+        assertThat(savedProps.get("ttl_minutes"))
+                .as("a TTL differing from the connection persists as an override")
+                .isEqualTo("10");
+
         // Reopen the editor and verify the dropdown still reflects the saved selection,
         // and that the inline fields are in connection-locked mode populated from the
         // connection's values.
@@ -288,7 +299,9 @@ public class BuildFeatureUIIT {
             assertThat(page.locator("#connection_id").inputValue()).isEqualTo(connectionId);
             assertThat(page.locator("#audience").inputValue()).isEqualTo("api://ui-test-persist");
             assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
-            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("20");
+            assertThat(page.locator("#ttl_minutes").inputValue()).isEqualTo("10");
+            assertThat(page.locator("#ttl_minutes").getAttribute("placeholder")).isEqualTo("20");
+            assertThat(page.locator("#ttl_minutes").getAttribute("readonly")).isNull();
             assertThat(page.locator("#algorithm").inputValue()).isEqualTo("RS256");
             PlaywrightAssertions.assertThat(page.locator("#algorithm")).isDisabled();
         });
@@ -383,6 +396,23 @@ public class BuildFeatureUIIT {
             page.locator("#jwtRow0").filter(new Locator.FilterOptions()
                     .setHasText("Representative JWT issued for template")).waitFor();
         }
+    }
+
+    @Test
+    void connectionSaveStripsInheritedFieldsAndEqualTtl() throws Exception {
+        final var connectionId = tc.createOidcConnection("_Root", "UI Test Conn Strip",
+                "api://ui-test-strip", 10, "RS256", "");
+
+        // Feature starts (from addBuildFeature) with ttl_minutes=10, matching the connection.
+        editFeature(page -> page.selectOption("#connection_id", new SelectOption().setValue(connectionId)));
+
+        final var props = tc.featureProperties(BUILD_TYPE_ID, featureId);
+        assertThat(props.get("connection_id")).isEqualTo(connectionId);
+        assertThat(props).doesNotContainKeys("audience", "algorithm");
+        assertThat((String) props.get("subject_dimensions")).isNullOrEmpty();
+        assertThat(props.get("ttl_minutes"))
+                .as("ttl equal to the connection is stripped so it inherits")
+                .isNull();
     }
 
     // -------------------------------------------------------------------------
