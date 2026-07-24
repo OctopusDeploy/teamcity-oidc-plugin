@@ -105,7 +105,7 @@
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
             <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
-            <span class="smallNote">How long the JWT is valid for.<br/>Default: 10 minutes; max: <c:out value="${maxTokenLifetimeMinutes}"/> minutes (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
+            <span class="smallNote">How long the JWT is valid for.<br/><span id="jwtTtlDefaultNote">Default: 10 minutes</span>; max: <c:out value="${maxTokenLifetimeMinutes}"/> minutes (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
             <span class="error" id="error_ttl_minutes"></span>
         </td>
     </tr>
@@ -431,6 +431,7 @@
 
                 // TTL is an override, not connection-authoritative: editable, with the connection's TTL as the "inherit" placeholder.
                 $ttl.attr('placeholder', selectedConnection.ttl).prop('readonly', false).removeClass('jwt-locked');
+                $j('#jwtTtlDefaultNote').text("Blank inherits the connection's value (" + selectedConnection.ttl + " minutes)");
                 $aud.val(selectedConnection.audience).prop('readonly', true).addClass('jwt-locked');
                 $alg.val(selectedConnection.algorithm).prop('disabled', true).addClass('jwt-locked');
                 $subj.val(selectedConnection.subjectDimensions || '');
@@ -444,6 +445,7 @@
                 restoreInline($alg);
                 restoreInline($subj);
                 $ttl.attr('placeholder', '10').prop('readonly', false).removeClass('jwt-locked');
+                $j('#jwtTtlDefaultNote').text('Default: 10 minutes');
                 $aud.prop('readonly', false).removeClass('jwt-locked');
                 $alg.prop('disabled', false).removeClass('jwt-locked');
                 const subjectDimensions = $subj.val().split(',').filter(s => s.length > 0);
