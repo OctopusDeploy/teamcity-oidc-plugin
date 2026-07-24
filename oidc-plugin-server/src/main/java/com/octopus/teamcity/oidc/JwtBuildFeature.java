@@ -4,7 +4,6 @@ import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.springframework.lang.NonNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -296,9 +295,9 @@ public class JwtBuildFeature extends BuildFeature {
         }
     }
 
-    @NonNull
+    @NotNull
     private Optional<OidcConnection> validateConnection(
-            @NonNull final BuildTypeIdentity buildTypeOrTemplate,
+            @NotNull final BuildTypeIdentity buildTypeOrTemplate,
             final Map<String, String> params,
             final SBuildType buildType,
             final Collection<InvalidProperty> errors) {
