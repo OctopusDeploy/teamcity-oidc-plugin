@@ -281,7 +281,18 @@ public class JwtBuildFeature extends BuildFeature {
             validateVariableNameIsUnique(buildType, params, errors);
             validateIssuerIsHttps(errors);
             if (usesConnection(params)) {
-                validateConnectionExists(buildType, params, errors);
+                final var connection = buildType == null
+                        ? Optional.<OidcConnection>empty()
+                        : oidcConnectionsManager.resolve(buildType.getProject(),
+                                params.getOrDefault("connection_id", "").trim());
+                if (buildType != null && connection.isEmpty()) {
+                    errors.add(new InvalidProperty("connection_id",
+                            "Selected connection no longer exists in this project. "
+                                    + "Pick another connection or clear the field to configure inline settings."));
+                }
+                if (errors.isEmpty() && connection.isPresent()) {
+                    ConnectionInlineFieldCleaner.stripInheritedFields(params, connection.get());
+                }
             } else {
                 validateTokenLifetime(params, errors);
                 validateSubjectDimensions(params, errors);
@@ -299,21 +310,6 @@ public class JwtBuildFeature extends BuildFeature {
             errors.add(new InvalidProperty("root_url",
                     "The OIDC issuer URL must use HTTPS for OIDC token issuance. " +
                             "Update the root URL in Administration → Global Settings, or set an override in the OIDC / JWT admin page."));
-        }
-    }
-
-    /** When a connection is selected it supplies the settings, so just verify it still resolves. */
-    private void validateConnectionExists(@Nullable final SBuildType bt,
-                                          @NotNull final java.util.Map<String, String> params,
-                                          @NotNull final Collection<InvalidProperty> errors) {
-        if (bt == null) {
-            return;
-        }
-        final var connectionId = params.getOrDefault("connection_id", "").trim();
-        if (oidcConnectionsManager.resolve(bt.getProject(), connectionId).isEmpty()) {
-            errors.add(new InvalidProperty("connection_id",
-                    "Selected connection no longer exists in this project. "
-                            + "Pick another connection or clear the field to configure inline settings."));
         }
     }
 

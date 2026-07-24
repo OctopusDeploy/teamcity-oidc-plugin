@@ -364,6 +364,58 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
+    public void stripsAuthoritativeFieldsWhenConnectionResolves() {
+        final var processor = feature.getParametersProcessor(buildType);
+        final var params = new HashMap<>(Map.of(
+                "connection_id", CONNECTION_ID,
+                "audience", "api://feature",
+                "algorithm", "ES256",
+                "subject_dimensions", "branch",
+                "token_variable_name", "keep.me"));
+        processor.process(params);
+
+        assertThat(params).doesNotContainKeys("audience", "algorithm", "subject_dimensions");
+        assertThat(params).containsEntry("connection_id", CONNECTION_ID);
+        assertThat(params).containsEntry("token_variable_name", "keep.me");
+    }
+
+    @Test
+    public void stripsTtlEqualToConnectionButKeepsAnOverride() {
+        // setUp()'s connection has TTL 10.
+        final var equal = new HashMap<>(Map.of("connection_id", CONNECTION_ID, "ttl_minutes", "10"));
+        feature.getParametersProcessor(buildType).process(equal);
+        assertThat(equal).doesNotContainKey("ttl_minutes");
+
+        final var override = new HashMap<>(Map.of("connection_id", CONNECTION_ID, "ttl_minutes", "5"));
+        feature.getParametersProcessor(buildType).process(override);
+        assertThat(override).containsEntry("ttl_minutes", "5");
+    }
+
+    @Test
+    public void doesNotStripInlineFieldsWhenNoConnection() {
+        final var params = new HashMap<>(Map.of(
+                "audience", "api://inline",
+                "algorithm", "ES256",
+                "ttl_minutes", "30",
+                "subject_dimensions", "branch"));
+        feature.getParametersProcessor(buildType).process(params);
+
+        assertThat(params).containsEntry("audience", "api://inline");
+        assertThat(params).containsEntry("algorithm", "ES256");
+        assertThat(params).containsEntry("ttl_minutes", "30");
+        assertThat(params).containsEntry("subject_dimensions", "branch");
+    }
+
+    @Test
+    public void doesNotStripWhenConnectionUnresolvable() {
+        when(oidcConnectionsManager.resolve(project, "missing")).thenReturn(java.util.Optional.empty());
+        final var params = new HashMap<>(Map.of("connection_id", "missing", "audience", "api://x"));
+        feature.getParametersProcessor(buildType).process(params);
+        // Save is blocked by the connection_id error; nothing is stripped.
+        assertThat(params).containsEntry("audience", "api://x");
+    }
+
+    @Test
     public void sampleClaimsForTemplateExposesProjectButNoBuildValues() {
         final var template = mock(jetbrains.buildServer.serverSide.BuildTypeTemplate.class);
         when(template.getProject()).thenReturn(project);
