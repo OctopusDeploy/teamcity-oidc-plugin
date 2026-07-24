@@ -4,12 +4,9 @@ import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.web.openapi.PluginDescriptor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.lang.NonNull;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class JwtBuildFeature extends BuildFeature {
@@ -281,25 +278,41 @@ public class JwtBuildFeature extends BuildFeature {
             validateVariableNameIsUnique(buildType, params, errors);
             validateIssuerIsHttps(errors);
             if (usesConnection(params)) {
-                // Resolve via the identity's project so stripping also runs for templates.
-                // Connection-exists stays build-config-only: a template's own project may not
-                // resolve a connection that only its consuming build types can.
-                final var connection = oidcConnectionsManager.resolve(buildTypeOrTemplate.getProject(),
-                        params.getOrDefault("connection_id", "").trim());
-                if (buildType != null && connection.isEmpty()) {
-                    errors.add(new InvalidProperty("connection_id",
-                            "Selected connection no longer exists in this project. "
-                                    + "Pick another connection or clear the field to configure inline settings."));
-                }
-                if (errors.isEmpty() && connection.isPresent()) {
-                    ConnectionInlineFieldCleaner.stripInheritedFields(params, connection.get());
-                }
+                final var connection = validateConnection(buildTypeOrTemplate, params, buildType, errors);
+                removeFieldsThatInheritFromConnection(params, errors, connection);
             } else {
                 validateTokenLifetime(params, errors);
                 validateSubjectDimensions(params, errors);
             }
             return errors;
         };
+    }
+
+    private static void removeFieldsThatInheritFromConnection(
+            final Map<String, String> params, final Collection<InvalidProperty> errors,
+            final Optional<OidcConnection> connection) {
+        if (errors.isEmpty() && connection.isPresent()) {
+            ConnectionInlineFieldCleaner.stripInheritedFields(params, connection.get());
+        }
+    }
+
+    @NonNull
+    private Optional<OidcConnection> validateConnection(
+            @NonNull final BuildTypeIdentity buildTypeOrTemplate,
+            final Map<String, String> params,
+            final SBuildType buildType,
+            final Collection<InvalidProperty> errors) {
+        // Resolve via the identity's project so stripping also runs for templates.
+        // Connection-exists stays build-config-only: a template's own project may not
+        // resolve a connection that only its consuming build types can.
+        final var connection = oidcConnectionsManager.resolve(buildTypeOrTemplate.getProject(),
+                params.getOrDefault("connection_id", "").trim());
+        if (buildType != null && connection.isEmpty()) {
+            errors.add(new InvalidProperty("connection_id",
+                    "Selected connection no longer exists in this project. "
+                            + "Pick another connection or clear the field to configure inline settings."));
+        }
+        return connection;
     }
 
     private static boolean usesConnection(@NotNull final java.util.Map<String, String> params) {
