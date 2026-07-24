@@ -105,12 +105,38 @@ public class JwtIssuanceService {
                         + sanitize(connectionId) + "' could not be found in this project or any parent. "
                         + "Edit the build feature and select a valid connection, or remove the connection reference.");
             }
-            final var settings = connection.isPresent()
-                    ? connection.get().settings()
-                    : IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
+            final IssuanceSettings settings;
+            if (connection.isPresent()) {
+                settings = applyTtlOverride(connection.get().settings(), params, maxTtl);
+            } else {
+                settings = IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
+            }
             result.put(variableName, mintToken(build, settings, issuerUrl));
         }
         return java.util.Collections.unmodifiableMap(result);
+    }
+
+    /**
+     * Applies a feature-level {@code ttl_minutes} override over a connection's settings.
+     * A present, non-blank, parseable value (clamped to [MIN, serverMax]) overrides the
+     * connection's TTL; blank, absent, or malformed values inherit the connection's TTL.
+     * The connection remains authoritative for audience, algorithm, and subject dimensions.
+     */
+    private IssuanceSettings applyTtlOverride(final IssuanceSettings connectionSettings,
+                                              final Map<String, String> params,
+                                              final int maxTtl) {
+        final var raw = params.getOrDefault("ttl_minutes", "").trim();
+        if (raw.isBlank()) {
+            return connectionSettings;
+        }
+        try {
+            final var override = Math.clamp(Integer.parseInt(raw), OidcSettings.MIN_TOKEN_LIFETIME_MINUTES, maxTtl);
+            return connectionSettings.withTtlMinutes(override);
+        } catch (final NumberFormatException e) {
+            LOG.warning("JWT plugin: ignoring malformed feature ttl_minutes '" + sanitize(raw)
+                    + "' — inheriting the connection's TTL.");
+            return connectionSettings;
+        }
     }
 
     private String mintToken(final SBuild build, final IssuanceSettings settings, final String issuerUrl) {

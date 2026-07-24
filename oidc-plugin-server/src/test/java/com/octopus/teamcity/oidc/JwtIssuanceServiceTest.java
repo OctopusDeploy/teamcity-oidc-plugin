@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -210,5 +211,71 @@ public class JwtIssuanceServiceTest {
         when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(f1, f2));
 
         assertThat(service.variableNamesFor(runningBuild)).containsExactly("jwt.token", "second.token");
+    }
+
+    @Test
+    public void featureTtlOverridesConnectionTtl() throws Exception {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", CONNECTION_ID, "ttl_minutes", "5"));
+        when(runningBuild.getBuildId()).thenReturn(60L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
+                new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
+                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()), "conn.token")));
+
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(
+                service.tokensFor(runningBuild).get("conn.token")).getJWTClaimsSet();
+
+        // TTL comes from the feature (5), audience still from the connection.
+        assertThat(Duration.between(parsed.getIssueTime().toInstant(), parsed.getExpirationTime().toInstant()).toMinutes())
+                .isEqualTo(5);
+        assertThat(parsed.getAudience()).containsExactly("api://from-connection");
+    }
+
+    @Test
+    public void blankFeatureTtlInheritsConnectionTtl() throws Exception {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", CONNECTION_ID, "ttl_minutes", "  "));
+        when(runningBuild.getBuildId()).thenReturn(61L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
+                new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
+                        new IssuanceSettings("api://from-connection", 15, "RS256", java.util.Set.of()), "conn.token")));
+
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(
+                service.tokensFor(runningBuild).get("conn.token")).getJWTClaimsSet();
+
+        assertThat(Duration.between(parsed.getIssueTime().toInstant(), parsed.getExpirationTime().toInstant()).toMinutes())
+                .isEqualTo(15);
+    }
+
+    @Test
+    public void audienceAndAlgorithmAlwaysComeFromConnectionEvenIfFeatureSetsThem() throws Exception {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of(
+                "connection_id", CONNECTION_ID, "audience", "api://from-feature", "algorithm", "RS256"));
+        when(runningBuild.getBuildId()).thenReturn(62L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
+                new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
+                        new IssuanceSettings("api://from-connection", 15, "ES256", java.util.Set.of()), "conn.token")));
+
+        final var signed = com.nimbusds.jwt.SignedJWT.parse(service.tokensFor(runningBuild).get("conn.token"));
+
+        // audience ignores the feature's value; algorithm header is the connection's ES256.
+        assertThat(signed.getJWTClaimsSet().getAudience()).containsExactly("api://from-connection");
+        assertThat(signed.getHeader().getAlgorithm().getName()).isEqualTo("ES256");
     }
 }
