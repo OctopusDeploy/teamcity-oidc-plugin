@@ -431,7 +431,7 @@
 
                 // TTL is an override, not connection-authoritative: editable, with the connection's TTL as the "inherit" placeholder.
                 $ttl.attr('placeholder', selectedConnection.ttl).prop('readonly', false).removeClass('jwt-locked');
-                $j('#jwtTtlDefaultNote').text("Blank inherits the connection's value (" + selectedConnection.ttl + " minutes)");
+                $j('#jwtTtlDefaultNote').text("Blank inherits the connection's value");
                 $aud.val(selectedConnection.audience).prop('readonly', true).addClass('jwt-locked');
                 $alg.val(selectedConnection.algorithm).prop('disabled', true).addClass('jwt-locked');
                 $subj.val(selectedConnection.subjectDimensions || '');
