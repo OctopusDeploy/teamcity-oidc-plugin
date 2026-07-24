@@ -145,6 +145,16 @@ public class JwtBuildFeatureTest {
     }
 
     @Test
+    public void validationAcceptsBlankTtl() {
+        // A blank TTL means "inherit the default"; issuance falls back to the default TTL, so save
+        // must not reject it (e.g. after clearing the field to inherit a connection's TTL).
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        assertThat(processor.process(Map.of("ttl_minutes", ""))).isEmpty();
+        assertThat(processor.process(Map.of("ttl_minutes", "   "))).isEmpty();
+    }
+
+    @Test
     public void validationAcceptsBlankSubjectDimensions() {
         final var feature = newFeature("https://teamcity.example.com");
         final var processor = feature.getParametersProcessor(buildTypeOrTemplate);

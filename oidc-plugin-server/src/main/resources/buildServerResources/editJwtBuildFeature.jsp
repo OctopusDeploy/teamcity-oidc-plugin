@@ -104,7 +104,7 @@
     <tr>
         <th><label for="ttl_minutes">Token lifetime (minutes):</label></th>
         <td>
-            <props:textProperty name="ttl_minutes" value="${empty propertiesBean.properties['ttl_minutes'] ? '10' : propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
+            <props:textProperty name="ttl_minutes" value="${propertiesBean.properties['ttl_minutes']}" style="width:5em;"/>
             <span class="smallNote jwt-field-note">How long the JWT is valid for.<br/><span id="jwtTtlDefaultNote">Default: 10 minutes</span>; max: <c:out value="${maxTokenLifetimeMinutes}"/> minutes (<c:choose><c:when test="${currentUserCanConfigureMax}"><a href="${pageContext.request.contextPath}/admin/admin.html?item=jwtPlugin">configurable</a></c:when><c:otherwise>configurable by admins</c:otherwise></c:choose>).</span>
             <span class="error" id="error_ttl_minutes"></span>
         </td>

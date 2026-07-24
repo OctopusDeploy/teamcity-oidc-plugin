@@ -355,7 +355,11 @@ public class JwtBuildFeature extends BuildFeature {
     private void validateTokenLifetime(@NotNull final java.util.Map<String, String> params,
                                        @NotNull final Collection<InvalidProperty> errors) {
         final var maxTtl = oidcSettingsManager.load().maxTokenLifetimeMinutes();
-        final var ttl = params.getOrDefault("ttl_minutes", "10");
+        final var ttl = params.getOrDefault("ttl_minutes", "").trim();
+        if (ttl.isEmpty()) {
+            // Blank means "use the default"; issuance falls back to the default TTL.
+            return;
+        }
         try {
             final var ttlValue = Integer.parseInt(ttl);
             if (ttlValue < OidcSettings.MIN_TOKEN_LIFETIME_MINUTES || ttlValue > maxTtl) {
