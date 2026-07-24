@@ -98,4 +98,17 @@ public class IssuanceSettingsTest {
                 .anyMatch(r -> r.getMessage().contains("unrecognised subject dimensions")
                         && r.getMessage().contains("bogus"));
     }
+
+    @Test
+    public void withTtlMinutesReplacesOnlyTheTtl() {
+        final var base = new IssuanceSettings("api://aud", 15, "ES256", java.util.Set.of("branch"));
+        final var updated = base.withTtlMinutes(45);
+
+        assertThat(updated.ttlMinutes()).isEqualTo(45);
+        assertThat(updated.audience()).isEqualTo("api://aud");
+        assertThat(updated.signingAlgorithm()).isEqualTo("ES256");
+        assertThat(updated.subjectDimensions()).containsExactly("branch");
+        // original is untouched (record is immutable)
+        assertThat(base.ttlMinutes()).isEqualTo(15);
+    }
 }

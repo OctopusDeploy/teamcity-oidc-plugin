@@ -41,6 +41,12 @@ public record IssuanceSettings(@NotNull String audience,
         return new IssuanceSettings(audience, ttlMinutes, algorithm, subjectDimensions);
     }
 
+    /** A copy with {@code ttlMinutes} replaced; used to apply a feature-level TTL override
+     *  over a connection's settings. */
+    public @NotNull IssuanceSettings withTtlMinutes(final int ttlMinutes) {
+        return new IssuanceSettings(audience, ttlMinutes, signingAlgorithm, subjectDimensions);
+    }
+
     private static int parseTtl(final String raw, final int maxTtlMinutes) {
         try {
             return Math.clamp(Integer.parseInt(raw), OidcSettings.MIN_TOKEN_LIFETIME_MINUTES, maxTtlMinutes);
