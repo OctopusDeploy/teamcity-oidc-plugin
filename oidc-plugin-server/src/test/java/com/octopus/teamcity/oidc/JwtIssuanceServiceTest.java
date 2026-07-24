@@ -278,4 +278,46 @@ public class JwtIssuanceServiceTest {
         assertThat(signed.getJWTClaimsSet().getAudience()).containsExactly("api://from-connection");
         assertThat(signed.getHeader().getAlgorithm().getName()).isEqualTo("ES256");
     }
+
+    @Test
+    public void malformedFeatureTtlInheritsConnectionTtl() throws Exception {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", CONNECTION_ID, "ttl_minutes", "abc"));
+        when(runningBuild.getBuildId()).thenReturn(63L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
+                new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
+                        new IssuanceSettings("api://from-connection", 15, "RS256", java.util.Set.of()), "conn.token")));
+
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(
+                service.tokensFor(runningBuild).get("conn.token")).getJWTClaimsSet();
+
+        assertThat(Duration.between(parsed.getIssueTime().toInstant(), parsed.getExpirationTime().toInstant()).toMinutes())
+                .isEqualTo(15);
+    }
+
+    @Test
+    public void outOfRangeFeatureTtlIsClampedToServerMax() throws Exception {
+        when(runningBuild.getBuildFeaturesOfType("oidc-plugin")).thenReturn(List.of(featureDescriptor));
+        when(featureDescriptor.getParameters()).thenReturn(Map.of("connection_id", CONNECTION_ID, "ttl_minutes", "9999"));
+        when(runningBuild.getBuildId()).thenReturn(64L);
+        when(runningBuild.getTriggeredBy()).thenReturn(mock(TriggeredBy.class));
+        final var project = mock(jetbrains.buildServer.serverSide.SProject.class);
+        final var buildType = mock(jetbrains.buildServer.serverSide.SBuildType.class);
+        when(runningBuild.getBuildType()).thenReturn(buildType);
+        when(buildType.getProject()).thenReturn(project);
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(java.util.Optional.of(
+                new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Test",
+                        new IssuanceSettings("api://from-connection", 15, "RS256", java.util.Set.of()), "conn.token")));
+
+        final var parsed = com.nimbusds.jwt.SignedJWT.parse(
+                service.tokensFor(runningBuild).get("conn.token")).getJWTClaimsSet();
+
+        assertThat(Duration.between(parsed.getIssueTime().toInstant(), parsed.getExpirationTime().toInstant()).toMinutes())
+                .isEqualTo(OidcSettings.DEFAULT_MAX_TOKEN_LIFETIME_MINUTES);
+    }
 }
