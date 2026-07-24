@@ -431,4 +431,24 @@ public class JwtBuildFeatureTest {
         assertThat(samples.triggerType()).isEmpty();
         assertThat(samples.buildTypeInternalId()).isEmpty();
     }
+
+    @Test
+    public void stripsAuthoritativeFieldsForTemplateFeatures() {
+        // A template identity has buildType == null, but stripping must still run so the
+        // template's saved params don't carry connection-authoritative fields.
+        final var template = mock(jetbrains.buildServer.serverSide.BuildTypeTemplate.class);
+        when(template.getProject()).thenReturn(project);
+
+        final var params = new HashMap<>(Map.of(
+                "connection_id", CONNECTION_ID,
+                "audience", "api://feature",
+                "algorithm", "ES256",
+                "subject_dimensions", "branch",
+                "token_variable_name", "keep.me"));
+        feature.getParametersProcessor(template).process(params);
+
+        assertThat(params).doesNotContainKeys("audience", "algorithm", "subject_dimensions");
+        assertThat(params).containsEntry("connection_id", CONNECTION_ID);
+        assertThat(params).containsEntry("token_variable_name", "keep.me");
+    }
 }
