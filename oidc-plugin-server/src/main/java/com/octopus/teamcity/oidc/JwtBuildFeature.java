@@ -281,10 +281,9 @@ public class JwtBuildFeature extends BuildFeature {
             validateVariableNameIsUnique(buildType, params, errors);
             validateIssuerIsHttps(errors);
             if (usesConnection(params)) {
-                // Resolve via the identity's project so the strip runs for templates too, not just
-                // concrete build configurations. Connection-exists is enforced only for concrete
-                // build configurations: a template's own project may not resolve a connection that
-                // only its consuming build types can.
+                // Resolve via the identity's project so stripping also runs for templates.
+                // Connection-exists stays build-config-only: a template's own project may not
+                // resolve a connection that only its consuming build types can.
                 final var connection = oidcConnectionsManager.resolve(buildTypeOrTemplate.getProject(),
                         params.getOrDefault("connection_id", "").trim());
                 if (buildType != null && connection.isEmpty()) {

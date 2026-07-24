@@ -252,8 +252,7 @@ public class BuildFeatureUIIT {
             assertThat(page.locator("#audience").getAttribute("readonly")).isNotNull();
             assertThat(page.locator("#audience").evaluate("el => el.classList.contains('jwt-locked')"))
                     .isEqualTo(true);
-            // TTL stays editable and advertises the connection's TTL as its placeholder
-            // (blank = inherit); it is not overwritten or locked.
+            // TTL stays editable, not locked, with the connection's TTL as the placeholder.
             PlaywrightAssertions.assertThat(page.locator("#ttl_minutes")).isEditable();
             assertThat(page.locator("#ttl_minutes").getAttribute("readonly")).isNull();
             assertThat(page.locator("#ttl_minutes").getAttribute("placeholder")).isEqualTo("30");

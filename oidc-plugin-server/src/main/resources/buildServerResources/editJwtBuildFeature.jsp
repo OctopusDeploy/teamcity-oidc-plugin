@@ -429,8 +429,7 @@
                 cacheInline($alg, $alg.val());
                 cacheInline($subj, $subj.val());
 
-                // TTL is an override, not connection-authoritative: keep it editable and show
-                // the connection's TTL as the placeholder so a blank field reads as "inherit".
+                // TTL is an override, not connection-authoritative: editable, with the connection's TTL as the "inherit" placeholder.
                 $ttl.attr('placeholder', selectedConnection.ttl).prop('readonly', false).removeClass('jwt-locked');
                 $aud.val(selectedConnection.audience).prop('readonly', true).addClass('jwt-locked');
                 $alg.val(selectedConnection.algorithm).prop('disabled', true).addClass('jwt-locked');
@@ -444,7 +443,6 @@
                 restoreInline($aud);
                 restoreInline($alg);
                 restoreInline($subj);
-                // No connection: the default hint is the inline default of 10.
                 $ttl.attr('placeholder', '10').prop('readonly', false).removeClass('jwt-locked');
                 $aud.prop('readonly', false).removeClass('jwt-locked');
                 $alg.prop('disabled', false).removeClass('jwt-locked');

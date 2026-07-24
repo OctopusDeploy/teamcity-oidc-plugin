@@ -54,8 +54,7 @@ public class ConnectionInlineFieldCleanerTest {
 
     @Test
     public void keepsMalformedTtl() {
-        // Non-blank and unparseable: leave it so it is not silently dropped; the runtime
-        // inherits the connection's TTL for malformed values.
+        // Non-blank unparseable value is kept, not dropped.
         final var params = new HashMap<>(Map.of("connection_id", "conn-id", "ttl_minutes", "abc"));
         ConnectionInlineFieldCleaner.stripInheritedFields(params, connectionWithTtl(60));
         assertThat(params).containsEntry("ttl_minutes", "abc");

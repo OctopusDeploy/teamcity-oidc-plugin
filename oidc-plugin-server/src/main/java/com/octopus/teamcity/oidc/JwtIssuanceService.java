@@ -117,10 +117,9 @@ public class JwtIssuanceService {
     }
 
     /**
-     * Applies a feature-level {@code ttl_minutes} override over a connection's settings.
-     * A present, non-blank, parseable value (clamped to [MIN, serverMax]) overrides the
-     * connection's TTL; blank, absent, or malformed values inherit the connection's TTL.
-     * The connection remains authoritative for audience, algorithm, and subject dimensions.
+     * Feature {@code ttl_minutes} overrides the connection's TTL when present and parseable
+     * (clamped to [MIN, serverMax]); blank, absent, or malformed inherit it. Audience,
+     * algorithm, and subject dimensions stay from the connection.
      */
     private IssuanceSettings applyTtlOverride(final IssuanceSettings connectionSettings,
                                               final Map<String, String> params,
