@@ -461,4 +461,16 @@ public class JwtBuildFeatureTest {
         assertThat(params).containsEntry("connection_id", CONNECTION_ID);
         assertThat(params).containsEntry("token_variable_name", "keep.me");
     }
+
+    @Test
+    public void validationRejectsConnectionDimensionOnInlineFeature() {
+        final var feature = newFeature("https://teamcity.example.com");
+        final var processor = feature.getParametersProcessor(buildTypeOrTemplate);
+        final var errors = processor.process(Map.of("subject_dimensions", "connection"));
+
+        assertThat(errors)
+                .singleElement()
+                .extracting(InvalidProperty::getPropertyName)
+                .isEqualTo("subject_dimensions");
+    }
 }

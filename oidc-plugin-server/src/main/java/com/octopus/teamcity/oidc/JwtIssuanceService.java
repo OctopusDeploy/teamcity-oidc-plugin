@@ -111,7 +111,7 @@ public class JwtIssuanceService {
             } else {
                 settings = IssuanceSettings.fromBuildFeatureParams(params, issuerUrl, maxTtl);
             }
-            result.put(variableName, mintToken(build, settings, issuerUrl));
+            result.put(variableName, mintToken(build, settings, issuerUrl, connection));
         }
         return java.util.Collections.unmodifiableMap(result);
     }
@@ -138,10 +138,13 @@ public class JwtIssuanceService {
         }
     }
 
-    private String mintToken(final SBuild build, final IssuanceSettings settings, final String issuerUrl) {
+    private String mintToken(final SBuild build,
+                             final IssuanceSettings settings,
+                             final String issuerUrl,
+                             final Optional<OidcConnection> connection) {
         final var branchName = ClaimsResolver.resolveBranchName(build);
         final var triggerType = ClaimsResolver.resolveTriggerType(build.getTriggeredBy());
-        final var subject = composeSubject(build, settings.subjectDimensions(), branchName, triggerType);
+        final var subject = composeSubject(build, settings.subjectDimensions(), branchName, triggerType, connection);
 
         final var now = Instant.now();
         final var claimsBuilder = new JWTClaimsSet.Builder()
@@ -185,11 +188,15 @@ public class JwtIssuanceService {
      * {@code build_type} (using the rename-stable internal IDs); appends {@code branch} and
      * {@code trigger_type} only when configured via the build feature, mirroring the
      * Octopus Deploy convention where trust policies match on {@code sub} with wildcards.
+     * {@code connection} comes last so {@code *:connection_project:...} matches every build using
+     * the connection. It pairs the connection id with its owning project's internal id because
+     * another project's settings can reuse the connection id, but not the internal id.
      */
     private String composeSubject(final SBuild build,
                                   final Set<String> dimensions,
                                   final String branchName,
-                                  final String triggerType) {
+                                  final String triggerType,
+                                  final Optional<OidcConnection> connection) {
         final var sb = new StringBuilder("project:")
                 .append(build.getProjectId())
                 .append(":build_type:")
@@ -199,6 +206,12 @@ public class JwtIssuanceService {
         }
         if (dimensions.contains("trigger_type")) {
             sb.append(":trigger_type:").append(triggerType);
+        }
+        if (dimensions.contains("connection") && connection.isPresent()) {
+            sb.append(":connection_project:")
+                    .append(connection.get().projectId())
+                    .append(":connection:")
+                    .append(connection.get().id());
         }
         return sb.toString();
     }

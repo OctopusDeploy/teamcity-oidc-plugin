@@ -60,15 +60,18 @@ Reference the token in build steps as `%jwt.token%`. It is injected as a masked 
 The `sub` claim is composed as a colon-separated key:value string in the style used by GitHub Actions and recommended by Octopus Deploy:
 
 ```
-project:<project_internal_id>:build_type:<build_type_internal_id>[:branch:<branch>][:trigger_type:<trigger>]
+project:<project_internal_id>:build_type:<build_type_internal_id>[:branch:<branch>][:trigger_type:<trigger>][:connection_project:<connection_project_internal_id>:connection:<connection_id>]
 ```
 
 The `project` and `build_type` segments are always present and use TeamCity's **internal** IDs (e.g. `project7`, `bt42`) because those are immutable across renames. The `branch` and `trigger_type` segments are appended only when the corresponding **Subject scoping** checkbox is enabled in the build feature.
+
+The `connection` dimension is available on OIDC Identity Token connections only. It appends the connection's id and the internal id of the project that owns it, so one trust policy covers every build using the connection, including builds in sub-projects created later. The owning project's internal id is included because another project could define a connection with the same id, but cannot take that project's internal id.
 
 Examples:
 
 - `project:project7:build_type:bt42` — minimal sub, no optional dimensions
 - `project:project7:build_type:bt42:branch:refs/heads/main:trigger_type:user` — full sub
+- `project:project7:build_type:bt42:connection_project:project3:connection:PROJECT_EXT_12` — connection dimension; trust it with `*:connection_project:project3:connection:PROJECT_EXT_12`
 
 Consumers like Octopus Deploy match `sub` with wildcards (`*` and `?`), so `project:project7:build_type:bt42:branch:refs/heads/main:*` is a typical trust policy expression.
 

@@ -111,4 +111,12 @@ public class IssuanceSettingsTest {
         // original is untouched (record is immutable)
         assertThat(base.ttlMinutes()).isEqualTo(15);
     }
+
+    @Test
+    public void parsesConnectionDimension() {
+        final var settings = IssuanceSettings.fromBuildFeatureParams(
+                Map.of("subject_dimensions", "branch,connection"), "https://teamcity.example.com", 720);
+
+        assertThat(settings.subjectDimensions()).containsExactlyInAnyOrder("branch", "connection");
+    }
 }

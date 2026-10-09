@@ -133,4 +133,19 @@ public class OidcConnectionProviderTest {
         p.put("subject_dimensions", "branch,trigger_type");
         return p;
     }
+
+    @Test
+    public void propertiesProcessorAcceptsConnectionDimension() {
+        final var params = validParams();
+        params.put("subject_dimensions", "branch,trigger_type,connection");
+        final var errors = provider.getPropertiesProcessor().process(params);
+        assertThat(errors).extracting(InvalidProperty::getPropertyName).doesNotContain("subject_dimensions");
+    }
+
+    @Test
+    public void describeConnectionShowsConnectionDimensionLast() {
+        final var description = provider.describeConnection(Map.of("subject_dimensions", "connection,branch"));
+        assertThat(description).contains("sub: project:<project_id>:build_type:<build_type_id>:branch:<branch>"
+                + ":connection_project:<connection_project_id>:connection:<connection_id>\n");
+    }
 }
