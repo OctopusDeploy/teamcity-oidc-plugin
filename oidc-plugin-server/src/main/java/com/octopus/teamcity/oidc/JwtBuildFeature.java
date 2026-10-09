@@ -21,6 +21,8 @@ public class JwtBuildFeature extends BuildFeature {
      * </ul>
      */
     public static final Set<String> ALL_OPTIONAL_SUBJECT_DIMENSIONS = Set.of("branch", "trigger_type");
+    /** {@code connection} needs a connection to describe, so only connections may enable it. */
+    public static final Set<String> CONNECTION_SUBJECT_DIMENSIONS = Set.of("branch", "trigger_type", "connection");
 
     private static volatile OidcIssuerUrlProvider staticIssuerUrlProvider;
     private static volatile SBuildServer staticBuildServer;
@@ -240,16 +242,19 @@ public class JwtBuildFeature extends BuildFeature {
         final var raw = subjectDimensionsParam == null ? "" : subjectDimensionsParam.trim();
         final boolean includeBranch;
         final boolean includeTriggerType;
+        final boolean includeConnection;
         if (raw.isEmpty()) {
-            includeBranch = includeTriggerType = false;
+            includeBranch = includeTriggerType = includeConnection = false;
         } else {
             final var dims = java.util.Arrays.asList(raw.split("\\s*,\\s*"));
             includeBranch = dims.contains("branch");
             includeTriggerType = dims.contains("trigger_type");
+            includeConnection = dims.contains("connection");
         }
         final var sb = new StringBuilder("project:<project_id>:build_type:<build_type_id>");
         if (includeBranch) sb.append(":branch:<branch>");
         if (includeTriggerType) sb.append(":trigger_type:<trigger_type>");
+        if (includeConnection) sb.append(":connection_project:<connection_project_id>:connection:<connection_id>");
         return sb.toString();
     }
 

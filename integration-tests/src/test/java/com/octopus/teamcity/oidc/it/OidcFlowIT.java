@@ -636,7 +636,7 @@ public class OidcFlowIT {
     void connectionInheritedFromParentProjectIsUsed() throws Exception {
         // Create an OIDC connection at _Root so it is accessible to all sub-projects
         final var connectionId = tc.createOidcConnection(
-                "_Root", "IT Connection", "api://it-connection-audience", 30, "ES256", "branch");
+                "_Root", "IT Connection", "api://it-connection-audience", 30, "ES256", "branch,connection");
         log("Created OIDC connection: " + connectionId);
 
         tc.createProject("OidcConnIT", "_Root");
@@ -670,9 +670,10 @@ public class OidcFlowIT {
                 .isBetween(29L * 60, 30L * 60);
 
         org.assertj.core.api.Assertions.assertThat(claims.getSubject())
-                .as("sub must be project:<id>:build_type:<id>:branch:<branch> with every segment "
-                        + "populated (subject_dimensions=branch on the connection requires a non-empty branch)")
-                .matches("project:[^:]+:build_type:[^:]+:branch:.+");
+                .as("sub must be project:<id>:build_type:<id>:branch:<branch>:connection_project:_Root:connection:<id>"
+                        + " with every segment populated (subject_dimensions=branch,connection on the connection)")
+                .matches("project:[^:]+:build_type:[^:]+:branch:.+")
+                .endsWith(":connection_project:_Root:connection:" + connectionId);
 
         log("JWT claims verified: aud=" + claims.getAudience()
                 + " ttl=" + ttlSeconds + "s sub=" + claims.getSubject());

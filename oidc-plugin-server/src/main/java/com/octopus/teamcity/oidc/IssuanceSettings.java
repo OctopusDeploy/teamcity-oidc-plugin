@@ -61,14 +61,14 @@ public record IssuanceSettings(@NotNull String audience,
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.toUnmodifiableSet());
         final var unknown = requested.stream()
-                .filter(s -> !JwtBuildFeature.ALL_OPTIONAL_SUBJECT_DIMENSIONS.contains(s))
+                .filter(s -> !JwtBuildFeature.CONNECTION_SUBJECT_DIMENSIONS.contains(s))
                 .map(IssuanceSettings::sanitize)
                 .collect(Collectors.toUnmodifiableSet());
         if (!unknown.isEmpty()) {
             LOG.warning("JWT plugin: ignoring unrecognised subject dimensions: " + unknown);
         }
         return requested.stream()
-                .filter(JwtBuildFeature.ALL_OPTIONAL_SUBJECT_DIMENSIONS::contains)
+                .filter(JwtBuildFeature.CONNECTION_SUBJECT_DIMENSIONS::contains)
                 .collect(Collectors.toUnmodifiableSet());
     }
 
