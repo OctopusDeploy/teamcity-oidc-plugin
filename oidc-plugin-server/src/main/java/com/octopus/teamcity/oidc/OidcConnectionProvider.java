@@ -120,12 +120,12 @@ public class OidcConnectionProvider extends OAuthProvider {
         if (!subjectDimensions.isBlank()) {
             final var unknown = Arrays.stream(subjectDimensions.split("\\s*,\\s*"))
                     .filter(s -> !s.isBlank())
-                    .filter(s -> !JwtBuildFeature.CONNECTION_SUBJECT_DIMENSIONS.contains(s))
+                    .filter(s -> !JwtBuildFeature.SUBJECT_DIMENSIONS_ALLOWED_ON_CONNECTIONS.contains(s))
                     .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
             if (!unknown.isEmpty()) {
                 errors.add(new InvalidProperty("subject_dimensions",
                         "Unknown subject dimension(s): " + String.join(", ", unknown)
-                                + ". Allowed: " + String.join(", ", JwtBuildFeature.CONNECTION_SUBJECT_DIMENSIONS)));
+                                + ". Allowed: " + String.join(", ", JwtBuildFeature.SUBJECT_DIMENSIONS_ALLOWED_ON_CONNECTIONS)));
             }
         }
 

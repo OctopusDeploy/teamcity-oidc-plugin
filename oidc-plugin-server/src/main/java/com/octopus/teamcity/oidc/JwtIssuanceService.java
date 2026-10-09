@@ -208,8 +208,10 @@ public class JwtIssuanceService {
             sb.append(":trigger_type:").append(triggerType);
         }
         if (dimensions.contains("connection") && connection.isPresent()) {
-            sb.append(":connection_project:").append(connection.get().projectId())
-                    .append(":connection:").append(connection.get().id());
+            sb.append(":connection_project:")
+                    .append(connection.get().projectId())
+                    .append(":connection:")
+                    .append(connection.get().id());
         }
         return sb.toString();
     }
