@@ -244,10 +244,11 @@ public class JwtBuildFeature extends BuildFeature {
             includeTriggerType = dims.contains("trigger_type");
             includeConnection = dims.contains("connection");
         }
-        final var sb = new StringBuilder("project:<project_id>:build_type:<build_type_id>");
+        final var sb = new StringBuilder();
+        if (includeConnection) sb.append("connection_project:<connection_project_id>:connection:<connection_id>:");
+        sb.append("project:<project_id>:build_type:<build_type_id>");
         if (includeBranch) sb.append(":branch:<branch>");
         if (includeTriggerType) sb.append(":trigger_type:<trigger_type>");
-        if (includeConnection) sb.append(":connection_project:<connection_project_id>:connection:<connection_id>");
         return sb.toString();
     }
 

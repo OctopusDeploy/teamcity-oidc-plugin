@@ -670,10 +670,10 @@ public class OidcFlowIT {
                 .isBetween(29L * 60, 30L * 60);
 
         org.assertj.core.api.Assertions.assertThat(claims.getSubject())
-                .as("sub must be project:<id>:build_type:<id>:branch:<branch>:connection_project:_Root:connection:<id>"
+                .as("sub must be connection_project:_Root:connection:<id>:project:<id>:build_type:<id>:branch:<branch>"
                         + " with every segment populated (subject_dimensions=branch,connection on the connection)")
-                .matches("project:[^:]+:build_type:[^:]+:branch:.+")
-                .endsWith(":connection_project:_Root:connection:" + connectionId);
+                .startsWith("connection_project:_Root:connection:" + connectionId + ":")
+                .matches("connection_project:[^:]+:connection:[^:]+:project:[^:]+:build_type:[^:]+:branch:.+");
 
         log("JWT claims verified: aud=" + claims.getAudience()
                 + " ttl=" + ttlSeconds + "s sub=" + claims.getSubject());

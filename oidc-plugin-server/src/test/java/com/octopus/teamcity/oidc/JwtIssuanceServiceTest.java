@@ -337,25 +337,25 @@ public class JwtIssuanceServiceTest {
     }
 
     @Test
-    public void connectionDimensionAppendsOwningProjectAndConnectionId() throws Exception {
+    public void connectionDimensionPrependsOwningProjectAndConnectionId() throws Exception {
         enableConnectionFeature(java.util.Set.of("connection"));
 
         final var token = service.tokensFor(runningBuild).get("conn.token");
 
         assertThat(com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet().getSubject())
-                .isEqualTo("project:project812:build_type:bt9031:connection_project:" + CONNECTION_PROJECT_ID
-                        + ":connection:" + CONNECTION_ID);
+                .isEqualTo("connection_project:" + CONNECTION_PROJECT_ID + ":connection:" + CONNECTION_ID
+                        + ":project:project812:build_type:bt9031");
     }
 
     @Test
-    public void connectionDimensionComesAfterOtherDimensions() throws Exception {
+    public void connectionDimensionComesBeforeOtherDimensions() throws Exception {
         enableConnectionFeature(java.util.Set.of("connection", "trigger_type"));
 
         final var token = service.tokensFor(runningBuild).get("conn.token");
 
         assertThat(com.nimbusds.jwt.SignedJWT.parse(token).getJWTClaimsSet().getSubject())
-                .startsWith("project:project812:build_type:bt9031:trigger_type:")
-                .endsWith(":connection_project:" + CONNECTION_PROJECT_ID + ":connection:" + CONNECTION_ID);
+                .startsWith("connection_project:" + CONNECTION_PROJECT_ID + ":connection:" + CONNECTION_ID
+                        + ":project:project812:build_type:bt9031:trigger_type:");
     }
 
     @Test

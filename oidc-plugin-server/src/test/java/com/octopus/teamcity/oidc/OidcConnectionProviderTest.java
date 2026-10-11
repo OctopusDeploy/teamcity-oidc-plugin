@@ -143,9 +143,9 @@ public class OidcConnectionProviderTest {
     }
 
     @Test
-    public void describeConnectionShowsConnectionDimensionLast() {
+    public void describeConnectionShowsConnectionDimensionFirst() {
         final var description = provider.describeConnection(Map.of("subject_dimensions", "connection,branch"));
-        assertThat(description).contains("sub: project:<project_id>:build_type:<build_type_id>:branch:<branch>"
-                + ":connection_project:<connection_project_id>:connection:<connection_id>\n");
+        assertThat(description).contains("sub: connection_project:<connection_project_id>:connection:<connection_id>"
+                + ":project:<project_id>:build_type:<build_type_id>:branch:<branch>\n");
     }
 }

@@ -24,7 +24,7 @@ project:project7:build_type:bt42:branch:*:trigger_type:user
 To trust every build that uses a given OIDC Identity Token connection, enable the **connection** subject dimension on the connection and set the subject to:
 
 ```
-*:connection_project:project3:connection:PROJECT_EXT_12
+connection_project:project3:connection:PROJECT_EXT_12:*
 ```
 
 This keeps working as sub-projects and build configurations are added under the connection's project, without new identities.
