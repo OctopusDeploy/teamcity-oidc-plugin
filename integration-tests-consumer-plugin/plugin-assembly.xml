@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<assembly>
+  <id>plugin-assembly</id>
+  <includeBaseDirectory>false</includeBaseDirectory>
+  <formats>
+    <format>zip</format>
+  </formats>
+  <files>
+    <file>
+      <source>teamcity-plugin.xml</source>
+      <outputDirectory>/</outputDirectory>
+    </file>
+    <file>
+      <source>target/${project.build.finalName}.jar</source>
+      <outputDirectory>server</outputDirectory>
+    </file>
+  </files>
+</assembly>

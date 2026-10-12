@@ -399,6 +399,50 @@ public class OidcFlowIT {
     }
 
     @Test
+    void editTimeTokenRequestedByAnotherPluginIsAcceptedByOctopus() throws Exception {
+        final var connectionId = tc.createOidcConnection(
+                PROJECT_EXTERNAL_ID, "Edit-time IT Connection", octopusExternalId, 10, "RS256", "");
+        log("Requesting an edit-time token through the consumer plugin (connection " + connectionId + ")...");
+        final var response = requestEditTimeToken(connectionId, BUILD_CONFIG_EXTERNAL_ID);
+
+        org.assertj.core.api.Assertions.assertThat(response.get("ok"))
+                .as("edit-time token request must succeed: " + response)
+                .isEqualTo("true");
+        org.assertj.core.api.Assertions.assertThat(response.get("providerType")).isEqualTo("oidc-identity-token");
+        // The subject a build of OidcTest_Build gets, so the identity attached in setup() accepts it.
+        org.assertj.core.api.Assertions.assertThat(response.get("subject"))
+                .isEqualTo("project:" + projectInternalId + ":build_type:" + buildTypeInternalId);
+
+        log("Exchanging the edit-time token with Octopus...");
+        final var accessToken = exchangeJwtWithOctopus((String) response.get("id_token"));
+        org.assertj.core.api.Assertions.assertThat(accessToken)
+                .as("Octopus must return a non-blank access_token for the edit-time token")
+                .isNotBlank();
+    }
+
+    @Test
+    void editTimeTokenRefusalReachesTheCallingPlugin() throws Exception {
+        final var connectionId = tc.createOidcConnection(
+                PROJECT_EXTERNAL_ID, "Edit-time IT Refusal Connection", octopusExternalId, 10, "RS256", "");
+
+        final var response = requestEditTimeToken(connectionId, "NoSuchBuild");
+
+        org.assertj.core.api.Assertions.assertThat(response.get("ok")).as(response.toString()).isEqualTo("false");
+        org.assertj.core.api.Assertions.assertThat(response.get("error")).isEqualTo(
+                "Build configuration 'NoSuchBuild' was not found, or you do not have permission to edit its project.");
+    }
+
+    /** Asks the test-only consumer plugin to request a token, as the super user, the way another plugin would. */
+    private static net.minidev.json.JSONObject requestEditTimeToken(final String connectionId,
+                                                                    final String buildTypeId) throws Exception {
+        final var utf8 = java.nio.charset.StandardCharsets.UTF_8;
+        return tc.adminFormPost("/oidcTestConsumer/token.html",
+                "projectId=" + java.net.URLEncoder.encode(PROJECT_EXTERNAL_ID, utf8)
+                        + "&connectionId=" + java.net.URLEncoder.encode(connectionId, utf8)
+                        + "&buildTypeId=" + java.net.URLEncoder.encode(buildTypeId, utf8));
+    }
+
+    @Test
     void jwtTokenIsMaskedInBuildLogAndResultingProperties() throws Exception {
         tc.waitForAgentIdle();
         log("Triggering build for masking assertions...");
