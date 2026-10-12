@@ -128,15 +128,39 @@ class OidcConnectionCredentialsFactoryTest {
     }
 
     private void connectionWithDimensions(final Set<String> dimensions) {
-        lenient().when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(Optional.of(
+        connectionWithDimensions(project, "RS256", dimensions);
+    }
+
+    private void connectionWithDimensions(final SProject resolvingProject, final String algorithm,
+                                          final Set<String> dimensions) {
+        lenient().when(connectionsManager.resolve(resolvingProject, CONNECTION_ID)).thenReturn(Optional.of(
                 new OidcConnection(CONNECTION_ID, CONNECTION_PROJECT_ID, "Octopus",
-                        new IssuanceSettings("api://octopus", 30, "RS256", dimensions), "jwt.token")));
+                        new IssuanceSettings("api://octopus", 30, algorithm, dimensions), "jwt.token")));
+    }
+
+    /** A build configuration in a second project, on which the caller has Edit Project. */
+    private SProject otherProjectWithBuildType(final String buildTypeExternalId) {
+        final var otherProject = mock(SProject.class);
+        final var otherBuildType = mock(SBuildType.class);
+        lenient().when(otherProject.getProjectId()).thenReturn("project9");
+        lenient().when(otherProject.getExternalId()).thenReturn("Secrets");
+        lenient().when(otherBuildType.getProject()).thenReturn(otherProject);
+        lenient().when(otherBuildType.getInternalId()).thenReturn("bt99");
+        lenient().when(otherBuildType.getExternalId()).thenReturn(buildTypeExternalId);
+        lenient().when(projectManager.findBuildTypeByExternalId(buildTypeExternalId)).thenReturn(otherBuildType);
+        lenient().when(authorityHolder.isPermissionGrantedForProject("project9", Permission.EDIT_PROJECT)).thenReturn(true);
+        return otherProject;
     }
 
     private void requestFor(@Nullable final String buildTypeId) {
         lenient().when(descriptor.getParameters()).thenReturn(buildTypeId == null
                 ? Map.of()
                 : Map.of(OidcConnectionCredentialsFactory.BUILD_TYPE_ID_PARAM, buildTypeId));
+    }
+
+    private static String notFoundOrNoPermission(final String buildTypeId) {
+        return "Build configuration '" + buildTypeId
+                + "' was not found, or you do not have permission to edit its project.";
     }
 
     private static JWTClaimsSet claimsOf(final ConnectionCredentials credentials) throws Exception {
@@ -252,24 +276,59 @@ class OidcConnectionCredentialsFactoryTest {
 
         assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
                 .isInstanceOf(ConnectionCredentialsException.class)
-                .hasMessageContaining("permission to edit project 'Deployments'");
+                .hasMessage(notFoundOrNoPermission(BUILD_TYPE_EXTERNAL_ID));
     }
 
     @Test
-    void refusedWhenUserCannotEditTheBuildConfigurationsProject() {
+    void refusedWhenTheBuildConfigurationIsInAnotherProject() {
         connectionWithDimensions(Set.of());
-        final var otherProject = mock(SProject.class);
-        final var otherBuildType = mock(SBuildType.class);
-        when(otherProject.getProjectId()).thenReturn("project9");
-        when(otherProject.getExternalId()).thenReturn("Secrets");
-        when(otherBuildType.getProject()).thenReturn(otherProject);
-        when(projectManager.findBuildTypeByExternalId("Secrets_Deploy")).thenReturn(otherBuildType);
+        otherProjectWithBuildType("Secrets_Deploy");
         when(authorityHolder.isPermissionGrantedForProject("project9", Permission.EDIT_PROJECT)).thenReturn(false);
         requestFor("Secrets_Deploy");
 
         assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
                 .isInstanceOf(ConnectionCredentialsException.class)
-                .hasMessageContaining("permission to edit project 'Secrets'");
+                .hasMessage(notFoundOrNoPermission("Secrets_Deploy"));
+    }
+
+    @Test
+    void connectionIsResolvedFromTheBuildConfigurationsProjectNotThePassedOne() {
+        final var otherProject = otherProjectWithBuildType("Secrets_Deploy");
+        when(connectionsManager.resolve(otherProject, CONNECTION_ID)).thenReturn(Optional.empty());
+        requestFor("Secrets_Deploy");
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessageContaining("OIDC connection 'octopus-oidc' is not available to project 'Secrets'");
+    }
+
+    @Test
+    void tokenForABuildConfigurationInAnotherProjectUsesThatProjectsIds() throws Exception {
+        final var otherProject = otherProjectWithBuildType("Secrets_Deploy");
+        connectionWithDimensions(otherProject, "RS256", Set.of("connection", "trigger_type"));
+        requestFor("Secrets_Deploy");
+
+        final var claims = claimsOf(factory.requestCredentials(project, descriptor));
+
+        assertThat(claims.getSubject()).isEqualTo(
+                "connection_project:project3:connection:octopus-oidc:project:project9:build_type:bt99:trigger_type:user");
+        assertThat(claims.getStringClaim("project_internal_id")).isEqualTo("project9");
+        assertThat(claims.getStringClaim("project_external_id")).isEqualTo("Secrets");
+        assertThat(claims.getStringClaim("build_type_internal_id")).isEqualTo("bt99");
+    }
+
+    @Test
+    void unsupportedStoredAlgorithmIsRefusedAndLogged() {
+        connectionWithDimensions(project, "XX999", Set.of());
+        requestFor(BUILD_TYPE_EXTERNAL_ID);
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("Signing the OIDC token failed — check the TeamCity server log for details");
+
+        assertThat(logged).filteredOn(record -> record.getLevel() == Level.SEVERE).isNotEmpty();
+        assertThat(logged).filteredOn(record -> record.getLevel() == Level.WARNING)
+                .anySatisfy(record -> assertThat(record.getMessage()).contains("alice", CONNECTION_ID));
     }
 
     @Test
@@ -313,13 +372,28 @@ class OidcConnectionCredentialsFactoryTest {
     @Test
     void templateIdIsRefusedWithATemplateMessage() {
         requestFor("Deployments_Template");
+        final var template = mock(BuildTypeTemplate.class);
+        when(template.getProjectId()).thenReturn("project7");
         when(projectManager.findBuildTypeByExternalId("Deployments_Template")).thenReturn(null);
-        when(projectManager.findBuildTypeTemplateByExternalId("Deployments_Template"))
-                .thenReturn(mock(BuildTypeTemplate.class));
+        when(projectManager.findBuildTypeTemplateByExternalId("Deployments_Template")).thenReturn(template);
 
         assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
                 .isInstanceOf(ConnectionCredentialsException.class)
                 .hasMessage("'Deployments_Template' is a template; an OIDC token can only be issued for a build configuration.");
+    }
+
+    @Test
+    void templateInAProjectTheCallerCannotEditIsNotIdentified() {
+        requestFor("Secrets_Template");
+        final var template = mock(BuildTypeTemplate.class);
+        when(template.getProjectId()).thenReturn("project9");
+        when(authorityHolder.isPermissionGrantedForProject("project9", Permission.EDIT_PROJECT)).thenReturn(false);
+        when(projectManager.findBuildTypeByExternalId("Secrets_Template")).thenReturn(null);
+        when(projectManager.findBuildTypeTemplateByExternalId("Secrets_Template")).thenReturn(template);
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage(notFoundOrNoPermission("Secrets_Template"));
     }
 
     @Test
@@ -328,7 +402,7 @@ class OidcConnectionCredentialsFactoryTest {
 
         assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
                 .isInstanceOf(ConnectionCredentialsException.class)
-                .hasMessage("Build configuration 'Nope' was not found.");
+                .hasMessage(notFoundOrNoPermission("Nope"));
     }
 
     @Test

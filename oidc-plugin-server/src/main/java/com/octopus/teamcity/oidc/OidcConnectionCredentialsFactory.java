@@ -110,9 +110,11 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
         if (caller.getAssociatedUser() == null) {
             throw new ConnectionCredentialsException("An OIDC token can only be issued to a signed-in user.");
         }
-        final Optional<SBuildType> buildType = findBuildType(connectionDescriptor.getParameters().get(BUILD_TYPE_ID_PARAM));
+        // For a build configuration, findBuildType also checks Edit Project on its project.
+        final Optional<SBuildType> buildType =
+                findBuildType(caller, connectionDescriptor.getParameters().get(BUILD_TYPE_ID_PARAM));
         final SProject scope = buildType.map(SBuildType::getProject).orElse(project);
-        if (!caller.isPermissionGrantedForProject(scope.getProjectId(), Permission.EDIT_PROJECT)) {
+        if (buildType.isEmpty() && !canEditProject(caller, scope.getProjectId())) {
             throw new ConnectionCredentialsException(
                     "You do not have permission to edit project '" + scope.getExternalId() + "'.");
         }
@@ -158,7 +160,7 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
         final SignedJWT signed;
         try {
             signed = keyManager.sign(claims.build(), settings.signingAlgorithm());
-        } catch (final JOSEException e) {
+        } catch (final JOSEException | RuntimeException e) {
             LOG.log(Level.SEVERE, "JWT plugin: signing an edit-time OIDC token failed", e);
             throw new ConnectionCredentialsException(
                     "Signing the OIDC token failed — check the TeamCity server log for details", e);
@@ -172,17 +174,30 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
                 EXPIRES_AT, String.valueOf(expiry.getEpochSecond())));
     }
 
-    private Optional<SBuildType> findBuildType(@Nullable final String rawId) throws ConnectionCredentialsException {
+    /**
+     * A missing build configuration and one the caller cannot edit get the same message, so the
+     * request cannot be used to find out which build configurations or projects exist.
+     */
+    private Optional<SBuildType> findBuildType(@NotNull final AuthorityHolder caller, @Nullable final String rawId)
+            throws ConnectionCredentialsException {
         if (rawId == null || rawId.isBlank()) return Optional.empty();
         final var trimmed = rawId.trim();
         final var externalId = trimmed.startsWith(BUILD_TYPE_PREFIX) ? trimmed.substring(BUILD_TYPE_PREFIX.length()) : trimmed;
         final var buildType = projectManager.findBuildTypeByExternalId(externalId);
-        if (buildType != null) return Optional.of(buildType);
-        if (projectManager.findBuildTypeTemplateByExternalId(externalId) != null) {
+        if (buildType != null && canEditProject(caller, buildType.getProject().getProjectId())) {
+            return Optional.of(buildType);
+        }
+        final var template = buildType == null ? projectManager.findBuildTypeTemplateByExternalId(externalId) : null;
+        if (template != null && canEditProject(caller, template.getProjectId())) {
             throw new ConnectionCredentialsException(
                     "'" + externalId + "' is a template; an OIDC token can only be issued for a build configuration.");
         }
-        throw new ConnectionCredentialsException("Build configuration '" + externalId + "' was not found.");
+        throw new ConnectionCredentialsException("Build configuration '" + externalId
+                + "' was not found, or you do not have permission to edit its project.");
+    }
+
+    private static boolean canEditProject(final AuthorityHolder caller, final String projectId) {
+        return caller.isPermissionGrantedForProject(projectId, Permission.EDIT_PROJECT);
     }
 
     private String callerName() {
