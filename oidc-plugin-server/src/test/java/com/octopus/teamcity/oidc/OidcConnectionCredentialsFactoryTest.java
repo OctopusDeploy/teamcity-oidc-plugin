@@ -402,6 +402,18 @@ class OidcConnectionCredentialsFactoryTest {
     }
 
     @Test
+    void refusalLogLineCannotBeSplitByTheRequest() {
+        requestFor("x\nINFO JWT plugin: issued a forged line\rmore");
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class);
+
+        assertThat(logged).filteredOn(record -> record.getLevel() == Level.WARNING)
+                .isNotEmpty()
+                .allSatisfy(record -> assertThat(record.getMessage()).doesNotContain("\n", "\r"));
+    }
+
+    @Test
     void projectScopedTokenIsRefusedWithoutEditProjectOnThePassedProject() {
         connectionWithDimensions(Set.of("connection"));
         requestFor(null);

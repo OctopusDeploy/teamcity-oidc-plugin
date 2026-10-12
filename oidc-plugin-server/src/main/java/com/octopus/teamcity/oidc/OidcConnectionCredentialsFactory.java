@@ -98,7 +98,7 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
             return issue(project, connectionDescriptor);
         } catch (final ConnectionCredentialsException e) {
             LOG.warning("JWT plugin: refused an OIDC token for connection '" + sanitize(connectionDescriptor.getId())
-                    + "' requested by " + callerName() + ": " + e.getMessage());
+                    + "' requested by " + callerName() + ": " + sanitize(e.getMessage()));
             throw e;
         }
     }
