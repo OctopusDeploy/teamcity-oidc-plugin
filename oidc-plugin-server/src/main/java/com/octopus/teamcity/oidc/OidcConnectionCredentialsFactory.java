@@ -2,6 +2,7 @@ package com.octopus.teamcity.oidc;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.serverSide.ProjectManager;
 import jetbrains.buildServer.serverSide.SBuildType;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -44,6 +46,8 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
     public static final String EXPIRES_AT = "expires_at";
 
     static final int TTL_MINUTES = 1;
+    /** TeamCity's own pages identify a build configuration as {@code buildType:<externalId>}. */
+    private static final String BUILD_TYPE_PREFIX = "buildType:";
     /** A person, not a trigger, is the actor, as for a manually run build. */
     private static final String TRIGGER_TYPE = "user";
     private static final Logger LOG = Logger.getLogger(OidcConnectionCredentialsFactory.class.getName());
@@ -90,6 +94,18 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
     public @NotNull ConnectionCredentials requestCredentials(@NotNull final SProject project,
                                                             @NotNull final ConnectionDescriptor connectionDescriptor)
             throws ConnectionCredentialsException {
+        try {
+            return issue(project, connectionDescriptor);
+        } catch (final ConnectionCredentialsException e) {
+            LOG.warning("JWT plugin: refused an OIDC token for connection '" + sanitize(connectionDescriptor.getId())
+                    + "' requested by " + callerName() + ": " + e.getMessage());
+            throw e;
+        }
+    }
+
+    private @NotNull ConnectionCredentials issue(@NotNull final SProject project,
+                                                 @NotNull final ConnectionDescriptor connectionDescriptor)
+            throws ConnectionCredentialsException {
         final AuthorityHolder caller = securityContext.getAuthorityHolder();
         if (caller.getAssociatedUser() == null) {
             throw new ConnectionCredentialsException("An OIDC token can only be issued to a signed-in user.");
@@ -105,10 +121,19 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
         final OidcConnection connection = connectionsManager.resolve(scope, connectionDescriptor.getId())
                 .orElseThrow(() -> new ConnectionCredentialsException("OIDC connection '" + connectionDescriptor.getId()
                         + "' is not available to project '" + scope.getExternalId() + "'."));
+        // Feature ids are unique only within a project, so a nearer project can reuse the id.
+        if (!connection.projectId().equals(connectionDescriptor.getProjectId())) {
+            throw new ConnectionCredentialsException("OIDC connection '" + connectionDescriptor.getId()
+                    + "' resolves to a different connection from project '" + scope.getExternalId() + "'.");
+        }
         final var settings = connection.settings();
         if (buildType.isEmpty() && !settings.subjectDimensions().contains("connection")) {
             throw new ConnectionCredentialsException(
                     "Enable the connection subject dimension on this OIDC connection to use it outside a build.");
+        }
+        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
+        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
+            throw new ConnectionCredentialsException("The TeamCity issuer URL is not HTTPS, so OIDC tokens cannot be issued.");
         }
 
         final var subject = SubjectComposer.compose(settings.subjectDimensions(), Optional.of(connection),
@@ -119,7 +144,7 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
                 .jwtID(UUID.randomUUID().toString())
                 .subject(subject)
                 .audience(List.of(settings.audience()))
-                .issuer(issuerUrlProvider.getIssuerUrl())
+                .issuer(issuerUrl)
                 .issueTime(Date.from(now))
                 .notBeforeTime(Date.from(now))
                 .expirationTime(Date.from(expiry))
@@ -130,26 +155,43 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
                 .claim("build_type_external_id", bt.getExternalId())
                 .claim("build_type_internal_id", bt.getInternalId()));
 
-        final String token;
+        final SignedJWT signed;
         try {
-            token = keyManager.sign(claims.build(), settings.signingAlgorithm()).serialize();
+            signed = keyManager.sign(claims.build(), settings.signingAlgorithm());
         } catch (final JOSEException e) {
+            LOG.log(Level.SEVERE, "JWT plugin: signing an edit-time OIDC token failed", e);
             throw new ConnectionCredentialsException(
                     "Signing the OIDC token failed — check the TeamCity server log for details", e);
         }
+        LOG.info("JWT plugin: issued an edit-time OIDC token to " + callerName()
+                + " for connection '" + sanitize(connection.id()) + "' (sub=" + sanitize(subject)
+                + ", aud=" + sanitize(settings.audience()) + ", kid=" + signed.getHeader().getKeyID() + ")");
         return new OidcCredentials(Map.of(
-                ID_TOKEN, token,
+                ID_TOKEN, signed.serialize(),
                 SUBJECT, subject,
                 EXPIRES_AT, String.valueOf(expiry.getEpochSecond())));
     }
 
-    private Optional<SBuildType> findBuildType(@Nullable final String externalId) throws ConnectionCredentialsException {
-        if (externalId == null) return Optional.empty();
+    private Optional<SBuildType> findBuildType(@Nullable final String rawId) throws ConnectionCredentialsException {
+        if (rawId == null || rawId.isBlank()) return Optional.empty();
+        final var trimmed = rawId.trim();
+        final var externalId = trimmed.startsWith(BUILD_TYPE_PREFIX) ? trimmed.substring(BUILD_TYPE_PREFIX.length()) : trimmed;
         final var buildType = projectManager.findBuildTypeByExternalId(externalId);
-        if (buildType == null) {
-            throw new ConnectionCredentialsException("Build configuration '" + externalId + "' was not found.");
+        if (buildType != null) return Optional.of(buildType);
+        if (projectManager.findBuildTypeTemplateByExternalId(externalId) != null) {
+            throw new ConnectionCredentialsException(
+                    "'" + externalId + "' is a template; an OIDC token can only be issued for a build configuration.");
         }
-        return Optional.of(buildType);
+        throw new ConnectionCredentialsException("Build configuration '" + externalId + "' was not found.");
+    }
+
+    private String callerName() {
+        final var user = securityContext.getAuthorityHolder().getAssociatedUser();
+        return user == null ? "an unauthenticated caller" : "user '" + sanitize(user.getUsername()) + "'";
+    }
+
+    private static String sanitize(final String value) {
+        return value == null ? "" : value.replaceAll("[\\r\\n\\t]", "_");
     }
 
     private record OidcCredentials(@NotNull Map<String, String> properties) implements ConnectionCredentials {

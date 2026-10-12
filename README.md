@@ -32,7 +32,7 @@ Copy the plugin zip to `<TeamCity data directory>/plugins/` and restart TeamCity
 
 ## Documentation
 
-- [How It Works](docs/how-it-works.md) — JWT issuance lifecycle, OIDC token verification flow, Test Connection
+- [How It Works](docs/how-it-works.md) — JWT issuance lifecycle, OIDC token verification flow, Test Connection, tokens for other plugins
 - [Configuration Reference](docs/configuration.md) — build feature fields, token claims, cloud provider setup guides
 - [Key Management](docs/key-management.md) — key rotation, storage, and encryption at rest
 - [Development](docs/development.md) — building the plugin, plugin architecture

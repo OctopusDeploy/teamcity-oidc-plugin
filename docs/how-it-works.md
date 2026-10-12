@@ -126,3 +126,22 @@ sequenceDiagram
 ```
 
 > **Permissions:** The test endpoint requires `CHANGE_SERVER_SETTINGS` globally, plus `EDIT_PROJECT` for the specific project. On multi-node HA deployments, sticky sessions must be configured at the load balancer — the session holding the JWT is node-local.
+
+## Tokens for other plugins
+
+Another TeamCity plugin can get an OIDC token outside a build — for example, to list a relying party's resources while someone edits a form — without depending on this plugin. It calls TeamCity's `ProjectConnectionCredentialsManager.requestConnectionCredentials(project, connectionId, params)` with the id of an OIDC Identity Token connection.
+
+| Request parameter | Meaning |
+|---|---|
+| `oidc.edit.buildTypeId` | External id of the build configuration the token is for (`buildType:<externalId>` also accepted). Omit it for a project-scoped token. |
+
+Any other parameter is ignored: audience, algorithm and subject dimensions always come from the stored connection.
+
+The returned credentials have provider type `oidc-identity-token` and properties `id_token` (the signed JWT), `subject` and `expires_at` (epoch seconds).
+
+- **Subject.** With a build configuration, the token carries the subject a manually triggered build of it gets: `trigger_type` is `user` and there is no branch. Without one, the subject is `connection_project:<P>:connection:<C>:project:<project id>`, which needs the connection's `connection` subject dimension.
+- **Who can get one.** Only a signed-in user with Edit Project on the build configuration's project (or on the requested project, for a project-scoped token).
+- **Lifetime.** One minute, whatever the connection's TTL. Each call issues a new token; nothing is cached.
+- **Handling.** The token is as powerful as a build's. Callers must use it on the server only — never send it to a browser, log it, or persist it.
+
+Each issued token is logged at INFO (user, connection, subject, audience, key id); each refusal is logged at WARNING.

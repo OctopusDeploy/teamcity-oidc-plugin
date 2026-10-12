@@ -3,6 +3,7 @@ package com.octopus.teamcity.oidc;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jetbrains.buildServer.ExtensionHolder;
+import jetbrains.buildServer.serverSide.BuildTypeTemplate;
 import jetbrains.buildServer.serverSide.ProjectManager;
 import jetbrains.buildServer.serverSide.SBuildFeatureDescriptor;
 import jetbrains.buildServer.serverSide.SBuildServer;
@@ -21,6 +22,7 @@ import jetbrains.buildServer.serverSide.connections.credentials.ConnectionCreden
 import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.users.User;
 import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,10 +34,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,6 +76,32 @@ class OidcConnectionCredentialsFactoryTest {
     private OidcIssuerUrlProvider issuerUrlProvider;
     private OidcConnectionCredentialsFactory factory;
 
+    private final List<LogRecord> logged = new ArrayList<>();
+    private final Handler logCapture = new Handler() {
+        @Override public void publish(final LogRecord record) { logged.add(record); }
+        @Override public void flush() { }
+        @Override public void close() { }
+    };
+
+    private final Logger factoryLogger = Logger.getLogger(OidcConnectionCredentialsFactory.class.getName());
+    private Level originalLevel;
+
+    // The test logging.properties sets the root level to WARNING, so INFO needs enabling here.
+    @BeforeEach
+    void captureLogs() {
+        originalLevel = factoryLogger.getLevel();
+        factoryLogger.setLevel(Level.INFO);
+        factoryLogger.setUseParentHandlers(false);
+        factoryLogger.addHandler(logCapture);
+    }
+
+    @AfterEach
+    void releaseLogs() {
+        factoryLogger.removeHandler(logCapture);
+        factoryLogger.setUseParentHandlers(true);
+        factoryLogger.setLevel(originalLevel);
+    }
+
     @BeforeEach
     void setUp() {
         when(serverPaths.getPluginDataDirectory()).thenReturn(tempDir);
@@ -84,6 +117,7 @@ class OidcConnectionCredentialsFactoryTest {
         lenient().when(user.getUsername()).thenReturn("alice");
         lenient().when(authorityHolder.isPermissionGrantedForProject("project7", Permission.EDIT_PROJECT)).thenReturn(true);
         lenient().when(descriptor.getId()).thenReturn(CONNECTION_ID);
+        lenient().when(descriptor.getProjectId()).thenReturn(CONNECTION_PROJECT_ID);
         lenient().when(project.getProjectId()).thenReturn("project7");
         lenient().when(project.getExternalId()).thenReturn("Deployments");
         lenient().when(buildType.getProject()).thenReturn(project);
@@ -256,5 +290,137 @@ class OidcConnectionCredentialsFactoryTest {
         assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
                 .isInstanceOf(ConnectionCredentialsException.class)
                 .hasMessage("Enable the connection subject dimension on this OIDC connection to use it outside a build.");
+    }
+
+    @Test
+    void acceptsTeamCityPrefixedBuildTypeId() throws Exception {
+        connectionWithDimensions(Set.of());
+        requestFor("buildType:" + BUILD_TYPE_EXTERNAL_ID);
+
+        assertThat(claimsOf(factory.requestCredentials(project, descriptor)).getSubject())
+                .isEqualTo("project:project7:build_type:bt42");
+    }
+
+    @Test
+    void blankBuildTypeIdIsTreatedAsAbsent() throws Exception {
+        connectionWithDimensions(Set.of("connection"));
+        requestFor("   ");
+
+        assertThat(claimsOf(factory.requestCredentials(project, descriptor)).getSubject())
+                .isEqualTo("connection_project:project3:connection:octopus-oidc:project:project7");
+    }
+
+    @Test
+    void templateIdIsRefusedWithATemplateMessage() {
+        requestFor("Deployments_Template");
+        when(projectManager.findBuildTypeByExternalId("Deployments_Template")).thenReturn(null);
+        when(projectManager.findBuildTypeTemplateByExternalId("Deployments_Template"))
+                .thenReturn(mock(BuildTypeTemplate.class));
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("'Deployments_Template' is a template; an OIDC token can only be issued for a build configuration.");
+    }
+
+    @Test
+    void unknownBuildTypeIsReported() {
+        requestFor("Nope");
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("Build configuration 'Nope' was not found.");
+    }
+
+    @Test
+    void requestCannotOverrideStoredSettings() throws Exception {
+        connectionWithDimensions(Set.of());
+        when(descriptor.getParameters()).thenReturn(Map.of(
+                OidcConnectionCredentialsFactory.BUILD_TYPE_ID_PARAM, BUILD_TYPE_EXTERNAL_ID,
+                "audience", "https://attacker.example.com",
+                "algorithm", "ES256",
+                "subject_dimensions", "branch,trigger_type",
+                "ttl_minutes", "60"));
+
+        final var credentials = factory.requestCredentials(project, descriptor);
+
+        final var claims = claimsOf(credentials);
+        assertThat(claims.getAudience()).containsExactly("api://octopus");
+        assertThat(SignedJWT.parse(credentials.getProperties().get(OidcConnectionCredentialsFactory.ID_TOKEN))
+                .getHeader().getAlgorithm().getName()).isEqualTo("RS256");
+        assertThat(claims.getSubject()).isEqualTo("project:project7:build_type:bt42");
+        assertThat(Duration.between(claims.getIssueTime().toInstant(), claims.getExpirationTime().toInstant()))
+                .isEqualTo(Duration.ofMinutes(1));
+    }
+
+    @Test
+    void refusedWhenTheIssuerUrlIsNotHttps() {
+        connectionWithDimensions(Set.of());
+        requestFor(BUILD_TYPE_EXTERNAL_ID);
+        final var insecureServer = mock(SBuildServer.class);
+        when(insecureServer.getRootUrl()).thenReturn("http://teamcity.example.com");
+        final var insecureFactory = new OidcConnectionCredentialsFactory(extensionHolder, connectionsManager, keyManager,
+                new OidcIssuerUrlProvider(insecureServer, new OidcSettingsManager(tempDir)), projectManager, securityContext);
+
+        assertThatThrownBy(() -> insecureFactory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("The TeamCity issuer URL is not HTTPS, so OIDC tokens cannot be issued.");
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void projectlessRequestIsRefused() {
+        assertThatThrownBy(() -> factory.requestCredentials(descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("An OIDC token can only be requested for a project.");
+    }
+
+    @Test
+    void issuanceIsLoggedWithTheSubjectButNotTheToken() throws Exception {
+        connectionWithDimensions(Set.of());
+        requestFor(BUILD_TYPE_EXTERNAL_ID);
+
+        final var credentials = factory.requestCredentials(project, descriptor);
+
+        final var token = credentials.getProperties().get(OidcConnectionCredentialsFactory.ID_TOKEN);
+        assertThat(logged).filteredOn(record -> record.getLevel() == Level.INFO)
+                .anySatisfy(record -> assertThat(record.getMessage())
+                        .contains("alice", CONNECTION_ID, "project:project7:build_type:bt42", "api://octopus"));
+        assertThat(logged).noneSatisfy(record -> assertThat(record.getMessage()).contains(token));
+    }
+
+    @Test
+    void refusalIsLoggedAsAWarning() {
+        connectionWithDimensions(Set.of());
+        requestFor(BUILD_TYPE_EXTERNAL_ID);
+        when(authorityHolder.isPermissionGrantedForProject("project7", Permission.EDIT_PROJECT)).thenReturn(false);
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class);
+
+        assertThat(logged).filteredOn(record -> record.getLevel() == Level.WARNING)
+                .anySatisfy(record -> assertThat(record.getMessage()).contains("alice", CONNECTION_ID, "permission"));
+    }
+
+    @Test
+    void projectScopedTokenIsRefusedWithoutEditProjectOnThePassedProject() {
+        connectionWithDimensions(Set.of("connection"));
+        requestFor(null);
+        when(authorityHolder.isPermissionGrantedForProject("project7", Permission.EDIT_PROJECT)).thenReturn(false);
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessageContaining("permission to edit project 'Deployments'");
+    }
+
+    @Test
+    void refusedWhenTheIdResolvesToADifferentConnection() {
+        requestFor(BUILD_TYPE_EXTERNAL_ID);
+        when(connectionsManager.resolve(project, CONNECTION_ID)).thenReturn(Optional.of(
+                new OidcConnection(CONNECTION_ID, "project5", "Octopus",
+                        new IssuanceSettings("api://octopus", 30, "RS256", Set.of()), "jwt.token")));
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("OIDC connection 'octopus-oidc' resolves to a different connection from project 'Deployments'.");
     }
 }
