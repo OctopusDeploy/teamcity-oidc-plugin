@@ -12,7 +12,7 @@
         for an edit-time token the way another plugin would, so the integration tests can reach
         that path. Never shipped: its zip stays in this module's target directory.
     -->
-    <artifactId>integration-tests-consumer-plugin</artifactId>
+    <artifactId>test-token-requester-plugin</artifactId>
     <packaging>jar</packaging>
     <dependencies>
         <dependency>
@@ -48,7 +48,7 @@
                             <goal>single</goal>
                         </goals>
                         <configuration>
-                            <finalName>OidcTestConsumer</finalName>
+                            <finalName>TestTokenRequester</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
                             <descriptors>
                                 <descriptor>plugin-assembly.xml</descriptor>

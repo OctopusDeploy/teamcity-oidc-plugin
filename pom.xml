@@ -62,7 +62,7 @@
     <modules>
         <module>oidc-plugin-server</module>
         <module>build</module>
-        <module>integration-tests-consumer-plugin</module>
+        <module>test-token-requester-plugin</module>
         <module>integration-tests</module>
     </modules>
 </project>

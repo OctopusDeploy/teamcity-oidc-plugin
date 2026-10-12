@@ -73,7 +73,7 @@ final class SharedStack {
             + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
 
     private static final Path PLUGIN_ZIP = requirePluginZip();
-    private static final Path CONSUMER_PLUGIN_ZIP = requireConsumerPluginZip();
+    private static final Path TEST_TOKEN_REQUESTER_PLUGIN_ZIP = requireTestTokenRequesterPluginZip();
 
     /** Generated at startup — CA and server cert/key for the Caddy TLS proxy. */
     private static final TlsCertificateGenerator.Result TLS;
@@ -149,8 +149,8 @@ final class SharedStack {
                     MountableFile.forHostPath(PLUGIN_ZIP.toString()),
                     "/data/teamcity_server/datadir/plugins/" + PLUGIN_ZIP.getFileName())
             .withCopyFileToContainer(
-                    MountableFile.forHostPath(CONSUMER_PLUGIN_ZIP.toString()),
-                    "/data/teamcity_server/datadir/plugins/" + CONSUMER_PLUGIN_ZIP.getFileName())
+                    MountableFile.forHostPath(TEST_TOKEN_REQUESTER_PLUGIN_ZIP.toString()),
+                    "/data/teamcity_server/datadir/plugins/" + TEST_TOKEN_REQUESTER_PLUGIN_ZIP.getFileName())
             // Replace the JVM truststore with one that includes our test CA, so that
             // JwtTestController's HttpClient can reach Caddy over HTTPS.
             .withCopyFileToContainer(
@@ -339,12 +339,12 @@ final class SharedStack {
     }
 
     /** The test-only plugin that requests edit-time tokens the way another plugin would. */
-    private static Path requireConsumerPluginZip() {
+    private static Path requireTestTokenRequesterPluginZip() {
         final var zip = Path.of(
                 System.getProperty("project.basedir", "."),
-                "../integration-tests-consumer-plugin/target/OidcTestConsumer.zip").normalize();
+                "../test-token-requester-plugin/target/TestTokenRequester.zip").normalize();
         if (!java.nio.file.Files.isRegularFile(zip)) {
-            throw new IllegalStateException("Consumer plugin zip not found: " + zip.toAbsolutePath() +
+            throw new IllegalStateException("Test Token Requester plugin zip not found: " + zip.toAbsolutePath() +
                     "\nRun 'mvn package -DskipTests' from the project root first.");
         }
         return zip;

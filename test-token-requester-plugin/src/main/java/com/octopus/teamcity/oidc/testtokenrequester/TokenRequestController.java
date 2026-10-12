@@ -1,4 +1,4 @@
-package com.octopus.teamcity.oidc.testconsumer;
+package com.octopus.teamcity.oidc.testtokenrequester;
 
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.ProjectManager;
@@ -19,10 +19,10 @@ import java.util.stream.Collectors;
  * Requests an edit-time OIDC token through TeamCity's {@link ProjectConnectionCredentialsManager},
  * as another plugin would, and returns the credentials' properties as JSON.
  *
- * <p>Test-only: returning the token to the HTTP caller is exactly what a real consumer must not do.
+ * <p>Test-only: returning the token to the HTTP caller is exactly what a real caller must not do.
  */
 public class TokenRequestController extends BaseController {
-    static final String PATH = "/oidcTestConsumer/token.html";
+    static final String PATH = "/testTokenRequester/token.html";
     private static final String BUILD_TYPE_ID_PARAM = "oidc.edit.buildTypeId";
 
     private final ProjectManager projectManager;

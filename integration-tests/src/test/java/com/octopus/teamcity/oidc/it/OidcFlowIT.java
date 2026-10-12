@@ -402,7 +402,7 @@ public class OidcFlowIT {
     void editTimeTokenRequestedByAnotherPluginIsAcceptedByOctopus() throws Exception {
         final var connectionId = tc.createOidcConnection(
                 PROJECT_EXTERNAL_ID, "Edit-time IT Connection", octopusExternalId, 10, "RS256", "");
-        log("Requesting an edit-time token through the consumer plugin (connection " + connectionId + ")...");
+        log("Requesting an edit-time token through the Test Token Requester plugin (connection " + connectionId + ")...");
         final var response = requestEditTimeToken(connectionId, BUILD_CONFIG_EXTERNAL_ID);
 
         org.assertj.core.api.Assertions.assertThat(response.get("ok"))
@@ -432,11 +432,11 @@ public class OidcFlowIT {
                 "Build configuration 'NoSuchBuild' was not found, or you do not have permission to edit its project.");
     }
 
-    /** Asks the test-only consumer plugin to request a token, as the super user, the way another plugin would. */
+    /** Asks the Test Token Requester plugin to request a token, as the super user, the way another plugin would. */
     private static net.minidev.json.JSONObject requestEditTimeToken(final String connectionId,
                                                                     final String buildTypeId) throws Exception {
         final var utf8 = java.nio.charset.StandardCharsets.UTF_8;
-        return tc.adminFormPost("/oidcTestConsumer/token.html",
+        return tc.adminFormPost("/testTokenRequester/token.html",
                 "projectId=" + java.net.URLEncoder.encode(PROJECT_EXTERNAL_ID, utf8)
                         + "&connectionId=" + java.net.URLEncoder.encode(connectionId, utf8)
                         + "&buildTypeId=" + java.net.URLEncoder.encode(buildTypeId, utf8));
