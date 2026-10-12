@@ -106,65 +106,26 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
     private @NotNull ConnectionCredentials issue(@NotNull final SProject project,
                                                  @NotNull final ConnectionDescriptor connectionDescriptor)
             throws ConnectionCredentialsException {
-        final AuthorityHolder caller = securityContext.getAuthorityHolder();
-        if (caller.getAssociatedUser() == null) {
-            throw new ConnectionCredentialsException("An OIDC token can only be issued to a signed-in user.");
-        }
+        final AuthorityHolder caller = requireSignedInUser();
         // For a build configuration, findBuildType also checks Edit Project on its project.
         final Optional<SBuildType> buildType =
                 findBuildType(caller, connectionDescriptor.getParameters().get(BUILD_TYPE_ID_PARAM));
         final SProject scope = buildType.map(SBuildType::getProject).orElse(project);
-        if (buildType.isEmpty() && !canEditProject(caller, scope.getProjectId())) {
-            throw new ConnectionCredentialsException(
-                    "You do not have permission to edit project '" + scope.getExternalId() + "'.");
+        if (buildType.isEmpty()) {
+            requireEditProject(caller, scope);
         }
-        // Re-resolved rather than read from the descriptor: TeamCity merges the caller's parameters
-        // over the stored ones, so the descriptor's audience or dimensions could be the caller's.
-        final OidcConnection connection = connectionsManager.resolve(scope, connectionDescriptor.getId())
-                .orElseThrow(() -> new ConnectionCredentialsException("OIDC connection '" + connectionDescriptor.getId()
-                        + "' is not available to project '" + scope.getExternalId() + "'."));
-        // Feature ids are unique only within a project, so a nearer project can reuse the id.
-        if (!connection.projectId().equals(connectionDescriptor.getProjectId())) {
-            throw new ConnectionCredentialsException("OIDC connection '" + connectionDescriptor.getId()
-                    + "' resolves to a different connection from project '" + scope.getExternalId() + "'.");
-        }
+        final OidcConnection connection = resolveConnection(scope, connectionDescriptor);
         final var settings = connection.settings();
-        if (buildType.isEmpty() && !settings.subjectDimensions().contains("connection")) {
-            throw new ConnectionCredentialsException(
-                    "Enable the connection subject dimension on this OIDC connection to use it outside a build.");
+        if (buildType.isEmpty()) {
+            requireConnectionDimension(settings);
         }
-        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
-        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
-            throw new ConnectionCredentialsException("The TeamCity issuer URL is not HTTPS, so OIDC tokens cannot be issued.");
-        }
+        final var issuerUrl = requireHttpsIssuerUrl();
 
         final var subject = SubjectComposer.compose(settings.subjectDimensions(), Optional.of(connection),
                 scope.getProjectId(), buildType.map(SBuildType::getInternalId).orElse(null), "", TRIGGER_TYPE);
-        final var now = Instant.now();
-        final var expiry = now.plus(TTL_MINUTES, ChronoUnit.MINUTES);
-        final var claims = new JWTClaimsSet.Builder()
-                .jwtID(UUID.randomUUID().toString())
-                .subject(subject)
-                .audience(List.of(settings.audience()))
-                .issuer(issuerUrl)
-                .issueTime(Date.from(now))
-                .notBeforeTime(Date.from(now))
-                .expirationTime(Date.from(expiry))
-                .claim("project_external_id", scope.getExternalId())
-                .claim("project_internal_id", scope.getProjectId())
-                .claim("trigger_type", TRIGGER_TYPE);
-        buildType.ifPresent(bt -> claims
-                .claim("build_type_external_id", bt.getExternalId())
-                .claim("build_type_internal_id", bt.getInternalId()));
-
-        final SignedJWT signed;
-        try {
-            signed = keyManager.sign(claims.build(), settings.signingAlgorithm());
-        } catch (final JOSEException | RuntimeException e) {
-            LOG.log(Level.SEVERE, "JWT plugin: signing an edit-time OIDC token failed", e);
-            throw new ConnectionCredentialsException(
-                    "Signing the OIDC token failed — check the TeamCity server log for details", e);
-        }
+        final var issuedAt = Instant.now();
+        final var expiry = issuedAt.plus(TTL_MINUTES, ChronoUnit.MINUTES);
+        final var signed = sign(claims(subject, settings, issuerUrl, scope, buildType, issuedAt, expiry), settings);
         LOG.info("JWT plugin: issued an edit-time OIDC token to " + callerName()
                 + " for connection '" + sanitize(connection.id()) + "' (sub=" + sanitize(subject)
                 + ", aud=" + sanitize(settings.audience()) + ", kid=" + signed.getHeader().getKeyID() + ")");
@@ -172,6 +133,92 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
                 ID_TOKEN, signed.serialize(),
                 SUBJECT, subject,
                 EXPIRES_AT, String.valueOf(expiry.getEpochSecond())));
+    }
+
+    private @NotNull AuthorityHolder requireSignedInUser() throws ConnectionCredentialsException {
+        final AuthorityHolder caller = securityContext.getAuthorityHolder();
+        if (caller.getAssociatedUser() == null) {
+            throw new ConnectionCredentialsException("An OIDC token can only be issued to a signed-in user.");
+        }
+        return caller;
+    }
+
+    private static void requireEditProject(@NotNull final AuthorityHolder caller, @NotNull final SProject project)
+            throws ConnectionCredentialsException {
+        if (!canEditProject(caller, project.getProjectId())) {
+            throw new ConnectionCredentialsException(
+                    "You do not have permission to edit project '" + project.getExternalId() + "'.");
+        }
+    }
+
+    /**
+     * Re-resolved rather than read from the descriptor: TeamCity merges the caller's parameters over
+     * the stored ones, so the descriptor's audience or dimensions could be the caller's.
+     */
+    private @NotNull OidcConnection resolveConnection(@NotNull final SProject scope,
+                                                      @NotNull final ConnectionDescriptor connectionDescriptor)
+            throws ConnectionCredentialsException {
+        final var connectionId = connectionDescriptor.getId();
+        final OidcConnection connection = connectionsManager.resolve(scope, connectionId)
+                .orElseThrow(() -> new ConnectionCredentialsException("OIDC connection '" + connectionId
+                        + "' is not available to project '" + scope.getExternalId() + "'."));
+        // Feature ids are unique only within a project, so a nearer project can reuse the id.
+        if (!connection.projectId().equals(connectionDescriptor.getProjectId())) {
+            throw new ConnectionCredentialsException("OIDC connection '" + connectionId
+                    + "' resolves to a different connection from project '" + scope.getExternalId() + "'.");
+        }
+        return connection;
+    }
+
+    private static void requireConnectionDimension(@NotNull final IssuanceSettings settings)
+            throws ConnectionCredentialsException {
+        if (!settings.subjectDimensions().contains("connection")) {
+            throw new ConnectionCredentialsException(
+                    "Enable the connection subject dimension on this OIDC connection to use it outside a build.");
+        }
+    }
+
+    private @NotNull String requireHttpsIssuerUrl() throws ConnectionCredentialsException {
+        final var issuerUrl = issuerUrlProvider.getIssuerUrl();
+        if (!OidcUrlUtils.isHttpsUrl(issuerUrl)) {
+            throw new ConnectionCredentialsException("The TeamCity issuer URL is not HTTPS, so OIDC tokens cannot be issued.");
+        }
+        return issuerUrl;
+    }
+
+    private static @NotNull JWTClaimsSet claims(@NotNull final String subject,
+                                                @NotNull final IssuanceSettings settings,
+                                                @NotNull final String issuerUrl,
+                                                @NotNull final SProject scope,
+                                                @NotNull final Optional<SBuildType> buildType,
+                                                @NotNull final Instant issuedAt,
+                                                @NotNull final Instant expiry) {
+        final var claims = new JWTClaimsSet.Builder()
+                .jwtID(UUID.randomUUID().toString())
+                .subject(subject)
+                .audience(List.of(settings.audience()))
+                .issuer(issuerUrl)
+                .issueTime(Date.from(issuedAt))
+                .notBeforeTime(Date.from(issuedAt))
+                .expirationTime(Date.from(expiry))
+                .claim("project_external_id", scope.getExternalId())
+                .claim("project_internal_id", scope.getProjectId())
+                .claim("trigger_type", TRIGGER_TYPE);
+        buildType.ifPresent(configuration -> claims
+                .claim("build_type_external_id", configuration.getExternalId())
+                .claim("build_type_internal_id", configuration.getInternalId()));
+        return claims.build();
+    }
+
+    private @NotNull SignedJWT sign(@NotNull final JWTClaimsSet claims, @NotNull final IssuanceSettings settings)
+            throws ConnectionCredentialsException {
+        try {
+            return keyManager.sign(claims, settings.signingAlgorithm());
+        } catch (final JOSEException | RuntimeException e) {
+            LOG.log(Level.SEVERE, "JWT plugin: signing an edit-time OIDC token failed", e);
+            throw new ConnectionCredentialsException(
+                    "Signing the OIDC token failed — check the TeamCity server log for details", e);
+        }
     }
 
     /**
