@@ -39,6 +39,7 @@
     for (final OidcConnection conn : jwtConnectionsRaw) {
         final java.util.Map<String, String> view = new java.util.HashMap<>();
         view.put("id", conn.id());
+        view.put("projectId", conn.projectId());
         view.put("displayName", conn.displayName());
         view.put("audience", conn.settings().audience());
         view.put("ttl", String.valueOf(conn.settings().ttlMinutes()));
@@ -180,6 +181,7 @@
     <c:forEach var="c" items="${jwtConnections}">
         <span class="jwt-connection-entry"
               data-id="${fn:escapeXml(c.id)}"
+              data-project-id="${fn:escapeXml(c.projectId)}"
               data-display-name="${fn:escapeXml(c.displayName)}"
               data-audience="${fn:escapeXml(c.audience)}"
               data-ttl="${fn:escapeXml(c.ttl)}"
@@ -291,6 +293,21 @@
             $j(el).prop('checked', enabled.includes(el.value));
         });
 
+        // Read connection metadata once from the data-* attributes emitted by the JSP.
+        const connectionData = {};
+        $j('#jwtConnectionsData .jwt-connection-entry').each((_, el) => {
+            const $e = $j(el);
+            connectionData[$e.attr('data-id')] = {
+                projectId: $e.attr('data-project-id'),
+                displayName: $e.attr('data-display-name'),
+                audience: $e.attr('data-audience'),
+                ttl: $e.attr('data-ttl'),
+                algorithm: $e.attr('data-algorithm'),
+                subjectDimensions: $e.attr('data-subject-dimensions'),
+                tokenVariableName: $e.attr('data-token-variable-name')
+            };
+        });
+
         // Live preview of the resulting sub claim. Uses real sample values from the
         // last finished build when available, falling back to <name> placeholders
         // so the shape of the composed sub is always visible.
@@ -303,7 +320,12 @@
         const sampleTriggerType = previewData.attr('data-sample-trigger-type') || '<trigger_type>';
 
         function updatePreview() {
+            const selectedConnId = $j('#connection_id').val();
+            const selectedConn = selectedConnId && connectionData[selectedConnId];
             let sub = 'project:' + projectId + ':build_type:' + buildTypeId;
+            if (selectedConn && (selectedConn.subjectDimensions || '').split(',').includes('connection')) {
+                sub = 'connection_project:' + selectedConn.projectId + ':connection:' + selectedConnId + ':' + sub;
+            }
             if ($j('.jwt-subject-dimension-cb[value="branch"]').is(':checked')) {
                 sub += ':branch:' + sampleBranch;
             }
@@ -323,26 +345,13 @@
 
         updatePreview();
 
-        // Read connection metadata once from the data-* attributes emitted by the JSP.
-        const connectionData = {};
-        $j('#jwtConnectionsData .jwt-connection-entry').each((_, el) => {
-            const $e = $j(el);
-            connectionData[$e.attr('data-id')] = {
-                displayName: $e.attr('data-display-name'),
-                audience: $e.attr('data-audience'),
-                ttl: $e.attr('data-ttl'),
-                algorithm: $e.attr('data-algorithm'),
-                subjectDimensions: $e.attr('data-subject-dimensions'),
-                tokenVariableName: $e.attr('data-token-variable-name')
-            };
-        });
-
         // Helper: resolve algorithm/ttl/audience from the selected connection (if any),
         // falling back to the inline form fields when no connection is selected.
         const resolveTestParams = () => {
             const selectedConn = document.getElementById('connection_id') ? document.getElementById('connection_id').value : '';
             const fromConn = selectedConn && connectionData[selectedConn];
             return {
+                connectionId: fromConn ? selectedConn : '',
                 algorithm: fromConn ? fromConn.algorithm : document.getElementById('algorithm').value,
                 ttl: fromConn ? fromConn.ttl : (document.getElementById('ttl_minutes').value || '10'),
                 audience: fromConn ? fromConn.audience : document.getElementById('audience').value
@@ -350,11 +359,11 @@
         };
 
         window.jwtTestRunChecks = async () => {
-            const {algorithm, ttl, audience} = resolveTestParams();
+            const {connectionId, algorithm, ttl, audience} = resolveTestParams();
             const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
 
             document.getElementById('jwtRow0').textContent = '⏳ Issuing JWT...';
-            const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+            const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId, connectionId:connectionId});
             jwtSetRow('jwtRow0', r1.ok, r1.message);
             if (!r1.ok) return;
             _jwtTokenRef = r1.tokenRef;
@@ -376,14 +385,14 @@
         window.jwtTestExchange = async () => {
             const serviceUrl = document.getElementById('jwtServiceUrl').value.trim();
             if (!serviceUrl) return;
-            const {algorithm, ttl, audience} = resolveTestParams();
+            const {connectionId, algorithm, ttl, audience} = resolveTestParams();
             const buildTypeId = document.getElementById('jwtTestConnectionBtnHolder').dataset.buildTypeId || '';
             document.getElementById('jwtExchangeBtn').disabled = true;
             document.getElementById('jwtRow3').textContent = '⏳ Issuing fresh JWT for exchange...';
             document.getElementById('jwtRow3').style.color = '#888';
             // Issue a fresh token each time — the 1-minute TTL may have expired since
             // the initial Test Connection checks ran.
-            const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId});
+            const r1 = await jwtPost({step:'jwt', algorithm:algorithm, ttl_minutes:ttl, audience:audience, buildTypeId:buildTypeId, connectionId:connectionId});
             if (!r1.ok) {
                 jwtSetRow('jwtRow3', false, 'Could not issue JWT: ' + r1.message);
                 document.getElementById('jwtExchangeBtn').disabled = false;

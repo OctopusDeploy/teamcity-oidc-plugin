@@ -12,6 +12,7 @@ import jetbrains.buildServer.ExtensionHolder;
 import jetbrains.buildServer.controllers.BaseController;
 import jetbrains.buildServer.serverSide.SBuildServer;
 import jetbrains.buildServer.serverSide.SBuildType;
+import jetbrains.buildServer.serverSide.SProject;
 import jetbrains.buildServer.serverSide.impl.SecondaryNodeSecurityManager;
 import jetbrains.buildServer.serverSide.auth.Permission;
 import jetbrains.buildServer.users.SUser;
@@ -21,6 +22,7 @@ import jetbrains.buildServer.web.util.SessionUser;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.servlet.ModelAndView;
 
@@ -53,6 +55,7 @@ public class JwtTestController extends BaseController {
 
     private final JwtKeyManager keyManager;
     private final SBuildServer buildServer;
+    private final OidcConnectionsManager connectionsManager;
     private final OidcIssuerUrlProvider issuerUrlProvider;
     private final HttpClient httpClient;
     private final CSRFFilter csrfFilter;
@@ -62,9 +65,10 @@ public class JwtTestController extends BaseController {
     public JwtTestController(@NotNull final WebControllerManager controllerManager,
                              @NotNull final JwtKeyManager keyManager,
                              @NotNull final SBuildServer buildServer,
+                             @NotNull final OidcConnectionsManager connectionsManager,
                              @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                              @NotNull final ExtensionHolder extensionHolder) {
-        this(controllerManager, keyManager, buildServer, issuerUrlProvider,
+        this(controllerManager, keyManager, buildServer, connectionsManager, issuerUrlProvider,
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
                 new CSRFFilter(extensionHolder), InetAddress::getAllByName);
     }
@@ -72,21 +76,24 @@ public class JwtTestController extends BaseController {
     JwtTestController(@NotNull final WebControllerManager controllerManager,
                       @NotNull final JwtKeyManager keyManager,
                       @NotNull final SBuildServer buildServer,
+                      @NotNull final OidcConnectionsManager connectionsManager,
                       @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter) {
-        this(controllerManager, keyManager, buildServer, issuerUrlProvider, httpClient, csrfFilter, InetAddress::getAllByName);
+        this(controllerManager, keyManager, buildServer, connectionsManager, issuerUrlProvider, httpClient, csrfFilter, InetAddress::getAllByName);
     }
 
     JwtTestController(@NotNull final WebControllerManager controllerManager,
                       @NotNull final JwtKeyManager keyManager,
                       @NotNull final SBuildServer buildServer,
+                      @NotNull final OidcConnectionsManager connectionsManager,
                       @NotNull final OidcIssuerUrlProvider issuerUrlProvider,
                       @NotNull final HttpClient httpClient,
                       @NotNull final CSRFFilter csrfFilter,
                       @NotNull final AddressResolver addressResolver) {
         this.keyManager = keyManager;
         this.buildServer = buildServer;
+        this.connectionsManager = connectionsManager;
         this.issuerUrlProvider = issuerUrlProvider;
         this.httpClient = httpClient;
         this.csrfFilter = csrfFilter;
@@ -182,7 +189,7 @@ public class JwtTestController extends BaseController {
         }
         // The subject the token is scoped to, plus a label distinguishing a build
         // configuration's concrete token from a template's representative one.
-        final var resolved = resolveSubject(buildTypeId, user);
+        final var resolved = resolveSubject(buildTypeId, request.getParameter("connectionId"), user);
 
         final var now = new Date();
         final var claims = new JWTClaimsSet.Builder()
@@ -224,10 +231,12 @@ public class JwtTestController extends BaseController {
      * configuration ("buildType:&lt;externalId&gt;", or a bare external id) yields a concrete
      * subject. A template ("template:&lt;externalId&gt;") has no concrete build type, so the subject
      * uses a {@code <build_type_id>} placeholder — the token is still signed so the discovery and
-     * JWKS steps can exercise the server's OIDC endpoints.
+     * JWKS steps can exercise the server's OIDC endpoints. When the selected connection enables the
+     * {@code connection} dimension, the subject carries the same connection prefix a build's token does.
      */
-    private ResolvedSubject resolveSubject(@NotNull final String buildTypeId, @NotNull final SUser user)
-            throws TestStepException {
+    private ResolvedSubject resolveSubject(@NotNull final String buildTypeId,
+                                           @Nullable final String connectionId,
+                                           @NotNull final SUser user) throws TestStepException {
         final var projectManager = buildServer.getProjectManager();
         if (buildTypeId.startsWith("template:")) {
             final var externalId = buildTypeId.substring("template:".length());
@@ -238,7 +247,7 @@ public class JwtTestController extends BaseController {
             final var projectId = template.getProject().getProjectId();
             requireEditProject(user, projectId);
             return new ResolvedSubject(
-                    "project:" + projectId + ":build_type:<build_type_id>",
+                    connectionPrefix(template.getProject(), connectionId) + "project:" + projectId + ":build_type:<build_type_id>",
                     "Representative JWT issued for template");
         }
         // TC passes the id param as "buildType:<externalId>" — strip the prefix if present.
@@ -251,8 +260,18 @@ public class JwtTestController extends BaseController {
         }
         requireEditProject(user, buildType.getProjectId());
         return new ResolvedSubject(
-                "project:" + buildType.getProjectId() + ":build_type:" + buildType.getInternalId(),
+                connectionPrefix(buildType.getProject(), connectionId)
+                        + "project:" + buildType.getProjectId() + ":build_type:" + buildType.getInternalId(),
                 "JWT issued");
+    }
+
+    private String connectionPrefix(@NotNull final SProject project, @Nullable final String connectionId)
+            throws TestStepException {
+        if (connectionId == null || connectionId.isBlank()) return "";
+        final var connection = connectionsManager.resolve(project, connectionId)
+                .orElseThrow(() -> new TestStepException("Connection not found: " + connectionId));
+        if (!connection.settings().subjectDimensions().contains("connection")) return "";
+        return "connection_project:" + connection.projectId() + ":connection:" + connection.id() + ":";
     }
 
     /**
