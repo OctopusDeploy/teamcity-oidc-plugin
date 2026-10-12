@@ -38,6 +38,8 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -247,7 +249,7 @@ public class JwtTestController extends BaseController {
             final var projectId = template.getProject().getProjectId();
             requireEditProject(user, projectId);
             return new ResolvedSubject(
-                    connectionPrefix(template.getProject(), connectionId) + "project:" + projectId + ":build_type:<build_type_id>",
+                    testSubject(template.getProject(), connectionId, projectId, "<build_type_id>"),
                     "Representative JWT issued for template");
         }
         // TC passes the id param as "buildType:<externalId>" — strip the prefix if present.
@@ -260,18 +262,25 @@ public class JwtTestController extends BaseController {
         }
         requireEditProject(user, buildType.getProjectId());
         return new ResolvedSubject(
-                connectionPrefix(buildType.getProject(), connectionId)
-                        + "project:" + buildType.getProjectId() + ":build_type:" + buildType.getInternalId(),
+                testSubject(buildType.getProject(), connectionId, buildType.getProjectId(), buildType.getInternalId()),
                 "JWT issued");
     }
 
-    private String connectionPrefix(@NotNull final SProject project, @Nullable final String connectionId)
+    /** A test token carries no branch or trigger, so only the connection prefix is optional. */
+    private String testSubject(@NotNull final SProject project,
+                               @Nullable final String connectionId,
+                               @NotNull final String projectId,
+                               @NotNull final String buildTypeId) throws TestStepException {
+        final Optional<OidcConnection> connection = resolveConnection(project, connectionId);
+        final Set<String> dimensions = connection.map(c -> c.settings().subjectDimensions()).orElse(Set.of());
+        return SubjectComposer.compose(dimensions, connection, projectId, buildTypeId, "", null);
+    }
+
+    private Optional<OidcConnection> resolveConnection(@NotNull final SProject project, @Nullable final String connectionId)
             throws TestStepException {
-        if (connectionId == null || connectionId.isBlank()) return "";
-        final var connection = connectionsManager.resolve(project, connectionId)
-                .orElseThrow(() -> new TestStepException("Connection not found: " + connectionId));
-        if (!connection.settings().subjectDimensions().contains("connection")) return "";
-        return "connection_project:" + connection.projectId() + ":connection:" + connection.id() + ":";
+        if (connectionId == null || connectionId.isBlank()) return Optional.empty();
+        return Optional.of(connectionsManager.resolve(project, connectionId)
+                .orElseThrow(() -> new TestStepException("Connection not found: " + connectionId)));
     }
 
     /**

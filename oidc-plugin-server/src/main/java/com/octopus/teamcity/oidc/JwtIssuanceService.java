@@ -144,7 +144,8 @@ public class JwtIssuanceService {
                              final Optional<OidcConnection> connection) {
         final var branchName = ClaimsResolver.resolveBranchName(build);
         final var triggerType = ClaimsResolver.resolveTriggerType(build.getTriggeredBy());
-        final var subject = composeSubject(build, settings.subjectDimensions(), branchName, triggerType, connection);
+        final var subject = SubjectComposer.compose(settings.subjectDimensions(), connection,
+                build.getProjectId(), build.getBuildTypeId(), branchName, triggerType);
 
         final var now = Instant.now();
         final var claimsBuilder = new JWTClaimsSet.Builder()
@@ -180,43 +181,5 @@ public class JwtIssuanceService {
 
     private static String sanitize(final String s) {
         return s == null ? "" : s.replaceAll("[\\r\\n\\t]", "_");
-    }
-
-    /**
-     * Composes the {@code sub} claim as a colon-separated key:value string, in the style of
-     * GitHub Actions' {@code repo:org/repo:ref:...}. Always includes {@code project} and
-     * {@code build_type} (using the rename-stable internal IDs); appends {@code branch} and
-     * {@code trigger_type} only when configured via the build feature, mirroring the
-     * Octopus Deploy convention where trust policies match on {@code sub} with wildcards.
-     * {@code connection} comes first so {@code connection_project:...:connection:...:*} matches every
-     * build using the connection; everything before the wildcard is then set by the plugin rather than
-     * by build-controlled values such as the branch name. It pairs the connection id with its owning
-     * project's internal id because another project's settings can reuse the connection id, but not
-     * the internal id.
-     */
-    private String composeSubject(final SBuild build,
-                                  final Set<String> dimensions,
-                                  final String branchName,
-                                  final String triggerType,
-                                  final Optional<OidcConnection> connection) {
-        final var sb = new StringBuilder();
-        if (dimensions.contains("connection") && connection.isPresent()) {
-            sb.append("connection_project:");
-            sb.append(connection.get().projectId());
-            sb.append(":connection:");
-            sb.append(connection.get().id());
-            sb.append(":");
-        }
-        sb.append("project:");
-        sb.append(build.getProjectId());
-        sb.append(":build_type:");
-        sb.append(build.getBuildTypeId());
-        if (dimensions.contains("branch") && !branchName.isEmpty()) {
-            sb.append(":branch:").append(branchName);
-        }
-        if (dimensions.contains("trigger_type")) {
-            sb.append(":trigger_type:").append(triggerType);
-        }
-        return sb.toString();
     }
 }
