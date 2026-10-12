@@ -679,6 +679,41 @@ public class OidcFlowIT {
                 + " ttl=" + ttlSeconds + "s sub=" + claims.getSubject());
     }
 
+    @Test
+    void connectionSubjectUsesOwningProjectInternalIdAcrossRenames() throws Exception {
+        tc.createProject("OidcConnOwner", "_Root");
+        tc.createProject("OidcConnOwner_Child", "OidcConnOwner");
+        final var connectionId = tc.createOidcConnection(
+                "OidcConnOwner", "Owner Connection", "api://owner-connection-audience", 10, "RS256", "connection");
+        createBuildTypeReferencingConnection("OidcConnOwner_Child", "OidcConnOwner_Child_Build", connectionId);
+
+        final var internalId = (String) Json.parse(
+                tc.get("/httpAuth/app/rest/projects/id:OidcConnOwner?fields=internalId")).get("internalId");
+        org.assertj.core.api.Assertions.assertThat(internalId)
+                .as("the owning project's internal id must differ from its external id for this test to mean anything")
+                .matches("project\\d+");
+        final var expectedPrefix = "connection_project:" + internalId + ":connection:" + connectionId + ":";
+
+        org.assertj.core.api.Assertions.assertThat(subjectOfNextBuild("OidcConnOwner_Child_Build"))
+                .startsWith(expectedPrefix);
+
+        tc.put("/httpAuth/app/rest/projects/id:OidcConnOwner/id", "OidcConnOwnerRenamed");
+        log("Changed owning project's external id to OidcConnOwnerRenamed");
+
+        org.assertj.core.api.Assertions.assertThat(subjectOfNextBuild("OidcConnOwner_Child_Build"))
+                .as("the connection prefix must not change when the owning project's external id changes")
+                .startsWith(expectedPrefix);
+    }
+
+    private String subjectOfNextBuild(final String buildTypeId) throws Exception {
+        tc.waitForAgentIdle();
+        final var buildId = tc.triggerBuild(buildTypeId);
+        tc.waitForBuildSuccess(buildId);
+        final var subject = com.nimbusds.jwt.SignedJWT.parse(extractJwtFromBuild(buildId)).getJWTClaimsSet().getSubject();
+        log("Build " + buildId + " sub=" + subject);
+        return subject;
+    }
+
     // -------------------------------------------------------------------------
     // Helpers and test for two-feature / distinct-variable coverage
     // -------------------------------------------------------------------------
