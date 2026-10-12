@@ -200,7 +200,7 @@
 
 <%-- Test Connection modal --%>
 <div id="jwtTestModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center;">
-    <div style="background:#2b2b2b;border:1px solid #555;border-radius:6px;padding:20px;min-width:480px;max-width:600px;font-size:13px;font-family:monospace;">
+    <div style="background:#2b2b2b;border:1px solid #555;border-radius:6px;padding:20px;min-width:480px;max-width:600px;font-size:13px;font-family:monospace;overflow-wrap:anywhere;">
         <div style="font-weight:bold;color:#ccc;margin-bottom:14px;font-size:14px;">Test Connection</div>
         <div id="jwtRow0" style="margin-bottom:6px;color:#888;">&#x25CB; JWT issuance</div>
         <div id="jwtRow1" style="margin-bottom:6px;color:#888;">&#x25CB; OIDC discovery endpoint</div>
