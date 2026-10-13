@@ -29,14 +29,14 @@ final class SubjectComposer {
     /**
      * @param buildTypeId internal build configuration id, or {@code null} when the token is not for one
      * @param branchName  appended when the {@code branch} dimension is set and this is non-empty
-     * @param triggerType appended when the {@code trigger_type} dimension is set and this is non-null
+     * @param triggerType appended when the {@code trigger_type} dimension is set
      */
     static @NotNull String compose(@NotNull final Set<String> dimensions,
                                    @NotNull final Optional<OidcConnection> connection,
                                    @NotNull final String projectId,
                                    @Nullable final String buildTypeId,
                                    @NotNull final String branchName,
-                                   @Nullable final String triggerType) {
+                                   @NotNull final String triggerType) {
         final var sb = new StringBuilder();
         if (dimensions.contains("connection") && connection.isPresent()) {
             sb.append("connection_project:").append(connection.get().projectId())
@@ -49,7 +49,7 @@ final class SubjectComposer {
         if (dimensions.contains("branch") && !branchName.isEmpty()) {
             sb.append(":branch:").append(branchName);
         }
-        if (dimensions.contains("trigger_type") && triggerType != null) {
+        if (dimensions.contains("trigger_type")) {
             sb.append(":trigger_type:").append(triggerType);
         }
         return sb.toString();

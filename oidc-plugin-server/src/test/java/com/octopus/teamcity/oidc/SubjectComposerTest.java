@@ -20,13 +20,13 @@ class SubjectComposerTest {
 
     @Test
     void connectionPrefixComesFirstWhenDimensionIsSet() {
-        assertThat(SubjectComposer.compose(Set.of("connection"), Optional.of(CONNECTION), "project7", "bt42", "", null))
+        assertThat(SubjectComposer.compose(Set.of("connection"), Optional.of(CONNECTION), "project7", "bt42", "", "user"))
                 .isEqualTo("connection_project:project3:connection:conn1:project:project7:build_type:bt42");
     }
 
     @Test
     void connectionPrefixIsOmittedWithoutAConnection() {
-        assertThat(SubjectComposer.compose(Set.of("connection"), Optional.empty(), "project7", "bt42", "", null))
+        assertThat(SubjectComposer.compose(Set.of("connection"), Optional.empty(), "project7", "bt42", "", "user"))
                 .isEqualTo("project:project7:build_type:bt42");
     }
 
@@ -43,8 +43,8 @@ class SubjectComposerTest {
     }
 
     @Test
-    void emptyBranchAndNullTriggerTypeAreOmitted() {
-        assertThat(SubjectComposer.compose(Set.of("branch", "trigger_type"), Optional.empty(), "project7", "bt42", "", null))
+    void emptyBranchIsOmitted() {
+        assertThat(SubjectComposer.compose(Set.of("branch"), Optional.empty(), "project7", "bt42", "", "user"))
                 .isEqualTo("project:project7:build_type:bt42");
     }
 }

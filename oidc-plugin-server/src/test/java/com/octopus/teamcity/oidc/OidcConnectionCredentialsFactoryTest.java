@@ -120,6 +120,7 @@ class OidcConnectionCredentialsFactoryTest {
         lenient().when(descriptor.getProjectId()).thenReturn(CONNECTION_PROJECT_ID);
         lenient().when(project.getProjectId()).thenReturn("project7");
         lenient().when(project.getExternalId()).thenReturn("Deployments");
+        lenient().when(project.getProjectPath()).thenReturn(List.of(project));
         lenient().when(buildType.getProject()).thenReturn(project);
         lenient().when(buildType.getProjectId()).thenReturn("project7");
         lenient().when(buildType.getInternalId()).thenReturn("bt42");
@@ -138,9 +139,21 @@ class OidcConnectionCredentialsFactoryTest {
                         new IssuanceSettings("api://octopus", 30, algorithm, dimensions), "jwt.token")));
     }
 
-    /** A build configuration in a second project, on which the caller has Edit Project. */
+    /** A build configuration in a project beside the passed one, on which the caller has Edit Project. */
     private SProject otherProjectWithBuildType(final String buildTypeExternalId) {
+        return projectWithBuildType(buildTypeExternalId, List.of());
+    }
+
+    /** A build configuration in a subproject of the passed one, on which the caller has Edit Project. */
+    private SProject subprojectWithBuildType(final String buildTypeExternalId) {
+        return projectWithBuildType(buildTypeExternalId, List.of(project));
+    }
+
+    private SProject projectWithBuildType(final String buildTypeExternalId, final List<SProject> ancestors) {
         final var otherProject = mock(SProject.class);
+        final var path = new ArrayList<>(ancestors);
+        path.add(otherProject);
+        lenient().when(otherProject.getProjectPath()).thenReturn(path);
         final var otherBuildType = mock(SBuildType.class);
         lenient().when(otherProject.getProjectId()).thenReturn("project9");
         lenient().when(otherProject.getExternalId()).thenReturn("Secrets");
@@ -292,9 +305,20 @@ class OidcConnectionCredentialsFactoryTest {
     }
 
     @Test
-    void connectionIsResolvedFromTheBuildConfigurationsProjectNotThePassedOne() {
+    void refusedWhenTheBuildConfigurationIsOutsideThePassedProject() {
         final var otherProject = otherProjectWithBuildType("Secrets_Deploy");
-        when(connectionsManager.resolve(otherProject, CONNECTION_ID)).thenReturn(Optional.empty());
+        connectionWithDimensions(otherProject, "RS256", Set.of());
+        requestFor("Secrets_Deploy");
+
+        assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
+                .isInstanceOf(ConnectionCredentialsException.class)
+                .hasMessage("Build configuration 'Secrets_Deploy' is not in project 'Deployments' or its subprojects.");
+    }
+
+    @Test
+    void connectionIsResolvedFromTheBuildConfigurationsProjectNotThePassedOne() {
+        final var subproject = subprojectWithBuildType("Secrets_Deploy");
+        when(connectionsManager.resolve(subproject, CONNECTION_ID)).thenReturn(Optional.empty());
         requestFor("Secrets_Deploy");
 
         assertThatThrownBy(() -> factory.requestCredentials(project, descriptor))
@@ -303,9 +327,9 @@ class OidcConnectionCredentialsFactoryTest {
     }
 
     @Test
-    void tokenForABuildConfigurationInAnotherProjectUsesThatProjectsIds() throws Exception {
-        final var otherProject = otherProjectWithBuildType("Secrets_Deploy");
-        connectionWithDimensions(otherProject, "RS256", Set.of("connection", "trigger_type"));
+    void tokenForABuildConfigurationInASubprojectUsesThatProjectsIds() throws Exception {
+        final var subproject = subprojectWithBuildType("Secrets_Deploy");
+        connectionWithDimensions(subproject, "RS256", Set.of("connection", "trigger_type"));
         requestFor("Secrets_Deploy");
 
         final var claims = claimsOf(factory.requestCredentials(project, descriptor));

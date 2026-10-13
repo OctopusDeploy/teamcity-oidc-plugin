@@ -33,8 +33,8 @@ import java.util.logging.Logger;
  * TeamCity's {@code ProjectConnectionCredentialsManager.requestConnectionCredentials}, so callers
  * need no dependency on this plugin.
  *
- * <p>The token carries the subject a build of the requested build configuration gets, so it is as
- * powerful as that build's token. Callers must use it on the server only: never send it to a
+ * <p>The token carries the subject a build of the requested build configuration gets through the
+ * requested connection, so it is as powerful as that build's token. Callers must use it on the server only: never send it to a
  * browser, log it, or persist it.
  */
 public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFactory {
@@ -110,6 +110,9 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
         // For a build configuration, findBuildType also checks Edit Project on its project.
         final Optional<SBuildType> buildType =
                 findBuildType(caller, connectionDescriptor.getParameters().get(BUILD_TYPE_ID_PARAM));
+        if (buildType.isPresent()) {
+            requireWithin(project, buildType.get());
+        }
         final SProject scope = buildType.map(SBuildType::getProject).orElse(project);
         if (buildType.isEmpty()) {
             requireEditProject(caller, scope);
@@ -141,6 +144,16 @@ public class OidcConnectionCredentialsFactory implements ConnectionCredentialsFa
             throw new ConnectionCredentialsException("An OIDC token can only be issued to a signed-in user.");
         }
         return caller;
+    }
+
+    private static void requireWithin(@NotNull final SProject project, @NotNull final SBuildType buildType)
+            throws ConnectionCredentialsException {
+        final var inProject = buildType.getProject().getProjectPath().stream()
+                .anyMatch(ancestor -> ancestor.getProjectId().equals(project.getProjectId()));
+        if (!inProject) {
+            throw new ConnectionCredentialsException("Build configuration '" + buildType.getExternalId()
+                    + "' is not in project '" + project.getExternalId() + "' or its subprojects.");
+        }
     }
 
     private static void requireEditProject(@NotNull final AuthorityHolder caller, @NotNull final SProject project)
