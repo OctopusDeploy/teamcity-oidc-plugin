@@ -170,7 +170,7 @@ PR descriptions must always include:
 - **Background**: The high level of why the change is needed — the user-facing problem or motivation
 - **Details**: The details of the problem
 - **Results**: What was changed and how it fixes the problem
-- **Screenshots**: Include before/after screenshots where the change affects the UI. Screenshots must be uploaded by the human — Claude cannot upload binary files to GitHub. Take the screenshots (saving them to `/tmp/`), tell the human the file paths, and ask them to drag-and-drop the images into the PR description on GitHub.
+- **Screenshots**: Include before/after screenshots where the change affects the UI. Take the screenshots and attach them with `gh pr create --attach '<file>#<alt text>'` or `gh pr edit --attach` (gh 2.102+), referencing each one in the body as `![alt](<file>)` so it's uploaded in place.
 
 Create PRs in draft, so that human review is required before saying they are ready.
 
