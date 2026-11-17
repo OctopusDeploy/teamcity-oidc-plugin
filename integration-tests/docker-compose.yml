@@ -37,4 +37,7 @@ services:
       - ../:/workspace
       - /opt/buildagent/system/jetbrains.maven.runner/maven.repo.local:/root/.m2/repository
     working_dir: /workspace
-    command: mvn verify -pl integration-tests -ntp -Drevision=${REVISION:-1.0-SNAPSHOT}
+    # Playwright's bundled Node.js needs libatomic, which the Maven image lacks
+    command: >
+      sh -c "apt-get update -qq && apt-get install -y -qq libatomic1 &&
+             mvn verify -pl integration-tests -ntp -Drevision=${REVISION:-1.0-SNAPSHOT}"
